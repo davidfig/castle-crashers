@@ -42,10 +42,16 @@ function partPixels(def, name) {
 /** Builds one sheet (one palette variant). Returns {w,h,rgba,frames,anims}. */
 function buildSheet(def, pal, quiet) {
   const [cw, ch] = def.cell;
-  const animNames = Object.keys(def.anims);
-  const cols = Math.max(...animNames.map((a) => def.anims[a].frames.length));
-  // `derived` anims are generated from another frame (e.g. a corpse lying on its side) and get their own rows at the bottom
+  const visibleNames = Object.keys(def.anims);
+  // `derived` anims are generated from another frame (e.g. a corpse lying on its side) and get their own rows after the real ones.
+  // A derived anim may name `fromFrame`, a frame that is in no animation (e.g. a standing pose with the weapon removed); it is
+  // rendered into a hidden scratch row that is cut from the published sheet.
   const derivedNames = Object.keys(def.derived ?? {});
+  const animsAll = { ...def.anims };
+  for (const dn of derivedNames) if (def.derived[dn].fromFrame) animsAll['_src_' + dn] = { fps: 1, frames: [def.derived[dn].fromFrame] };
+  const animNames = Object.keys(animsAll);
+  const cols = Math.max(...animNames.map((a) => animsAll[a].frames.length));
+  const visibleRows = visibleNames.length + derivedNames.length;
   const W = cols * cw, H = (animNames.length + derivedNames.length) * ch;
   const rgba = new Uint8ClampedArray(W * H * 4);
   const frames = {}, anims = {};
@@ -55,8 +61,9 @@ function buildSheet(def, pal, quiet) {
   const clipped = new Set();
   let feet = -1;
 
-  animNames.forEach((an, ri) => {
-    const a = def.anims[an];
+  animNames.forEach((an, ri0) => {
+    const ri = ri0 >= visibleNames.length ? ri0 + derivedNames.length : ri0;   // hidden scratch rows sit below the derived rows
+    const a = animsAll[an];
     const ms = a.ms ?? a.frames.map(() => Math.round(1000 / a.fps));
     if (ms.length !== a.frames.length) throw new Error(`${def.name}: anim ${an} has ${a.frames.length} frames but ${ms.length} durations`);
     anims[an] = { fps: a.fps ?? Math.round(1000 / (ms.reduce((x, y) => x + y, 0) / ms.length)), loop: a.loop !== false, ms, frames: [] };
@@ -122,12 +129,13 @@ function buildSheet(def, pal, quiet) {
   // and spatter it with blood. Deterministic, so the sheet is stable between builds.
   derivedNames.forEach((dn, di) => {
     const d = def.derived[dn];
-    const src = frames[d.from];
-    if (!src) throw new Error(`${def.name}: derived ${dn} references missing frame ${d.from}`);
+    const srcName = d.fromFrame ? `_src_${dn}_0` : d.from;
+    const src = frames[srcName];
+    if (!src) throw new Error(`${def.name}: derived ${dn} references missing frame ${srcName}`);
     let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
     for (let y = 0; y < src.h; y++) for (let x = 0; x < src.w; x++) if (rgba[((src.y + y) * W + src.x + x) * 4 + 3]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     const bw = x1 - x0 + 1, bh = y1 - y0 + 1;                       // figure bbox; lying it is bh wide and bw tall
-    const oy = (animNames.length + di) * ch;
+    const oy = (visibleNames.length + di) * ch;
     const left = Math.round(cw / 2 - bh / 2), bottom = oy + ch - 1; // bottom row of the cell = the ground ink row, like the standing frames
     const hash = (a, b) => { let h = Math.imul(a, 374761393) + Math.imul(b, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) >>> 0; };
     for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
@@ -138,11 +146,28 @@ function buildSheet(def, pal, quiet) {
       const blood = hash(x + 7 * di, y) % 9 === 0;
       rgba[o] = blood ? 120 : rgba[so] * 0.86; rgba[o + 1] = blood ? 24 : rgba[so + 1] * 0.82; rgba[o + 2] = blood ? 24 : rgba[so + 2] * 0.82; rgba[o + 3] = 255;
     }
+    // optional parts drawn on top of the lying figure (e.g. the dropped bow); [part, x, y] in cell coordinates, plain pixels
+    for (const [pn, px, py] of d.after ?? []) {
+      const p = parts[pn];
+      if (!p) throw new Error(`${def.name}: derived ${dn} references missing part ${pn}`);
+      for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
+        const c = p.rows[y][x];
+        if (c === undefined || c === '.' || c === ' ') continue;
+        const dx = px - p.ax + x, dy = py - p.ay + y;
+        if (dx < 0 || dy < 0 || dx >= cw || dy >= ch) continue;
+        const col = pal[c]; if (!col) continue;
+        const o = ((oy + dy) * W + dx) * 4; const [r, g, b] = hexToRGB(col);
+        rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 255;
+      }
+    }
     frames[`${dn}_0`] = { x: 0, y: oy, w: cw, h: ch };
     anims[dn] = { fps: 1, loop: false, ms: [1000], frames: [`${dn}_0`] };
   });
+  for (const k of Object.keys(frames)) if (k.startsWith('_src_')) delete frames[k];
+  for (const k of Object.keys(anims)) if (k.startsWith('_src_')) delete anims[k];
   if (clipped.size && !quiet) console.warn(`  ! ${def.name}: clipped by cell: ${[...clipped].join(', ')}`);
-  return { W, H, rgba, frames, anims, feet };
+  const Hpub = visibleRows * ch;                                   // cut the scratch rows from the published image
+  return { W, H: Hpub, rgba: rgba.slice(0, W * Hpub * 4), frames, anims, feet };
 }
 
 function upscale(w, h, rgba, k, bg) {
