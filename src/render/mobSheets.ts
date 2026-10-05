@@ -4,10 +4,9 @@ import orcPng from '../../art/out/orc.png';
 import archerPng from '../../art/out/mobarcher.png';
 import shieldPng from '../../art/out/shieldbearer.png';
 import bomberPng from '../../art/out/bomber.png';
-import weaponsPng from '../../art/out/weapons.png';
 
-/** Order matches MobType (goblin, orc, archer, shield, bomber), then the shared weapon sheet. */
-const SHEETS = [goblinPng, orcPng, archerPng, shieldPng, bomberPng, weaponsPng];
+/** Order matches MobType (goblin, orc, archer, shield, bomber). */
+const SHEETS = [goblinPng, orcPng, archerPng, shieldPng, bomberPng];
 
 export function loadMobImages(): Promise<HTMLImageElement[]> {
   return Promise.all(SHEETS.map((src) => new Promise<HTMLImageElement>((resolve, reject) => {

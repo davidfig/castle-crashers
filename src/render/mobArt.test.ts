@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMobArt, mobPose, WEAPON_COUNT, type MobPoseState } from './mobArt';
+import { buildMobArt, mobPose, type MobPoseState } from './mobArt';
 
 // Placements are fake; this checks that the generated sheet metadata lines up with what the renderer looks up.
-const places = [0, 1, 2, 3, 4, 5].map((k) => ({ x: 0, y: k * 100 }));
+const places = [0, 1, 2, 3, 4].map((k) => ({ x: 0, y: k * 100 }));
 const art = buildMobArt(places, 512, 2048);
 
 test('every enemy has a walk cycle with tight bottom-anchored cells', () => {
@@ -44,8 +44,3 @@ test('mobPose follows the priority order and falls through when an enemy lacks a
   assert.ok(art.anims[bomber].lit.includes(mobPose(art, bomber, { ...base, winding: true })));
 });
 
-test('weapons exist for every 15-degree step', () => {
-  assert.equal(art.dagger.length, WEAPON_COUNT);
-  assert.equal(art.club.length, WEAPON_COUNT);
-  for (const f of [...art.dagger, ...art.club]) assert.ok(f.w > 0 && f.h > 0);
-});

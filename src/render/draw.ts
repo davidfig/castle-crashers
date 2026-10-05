@@ -1,7 +1,7 @@
 // Draws a GameState into the low-res framebuffer. Reads state only; never mutates the sim.
 import { CLASSES } from '../data/classes';
 import { lerp } from '../engine/math';
-import type { Batcher, Frame } from '../platform/gl/batcher';
+import type { Batcher } from '../platform/gl/batcher';
 import { hex, rgba } from '../platform/gl/batcher';
 import { VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
 import { Kind } from '../sim/entities';
@@ -10,7 +10,7 @@ import { BLAST_RADIUS, Behavior, MOBS, MobType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { SLASH_TICKS, type Fx } from './fx';
 import { heroFrame } from './hero';
-import { WEAPON_GRIP, WEAPON_STEP, mobPose } from './mobArt';
+import { mobPose } from './mobArt';
 import type { FrameStats } from '../platform/perf';
 
 /** Screen y of world y=0 and of the horizon. */
@@ -381,12 +381,6 @@ function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, 
 
 const DEG = Math.PI / 180;
 
-/** Draws a pre-rotated weapon sprite about its grip at the arm pivot. theta: degrees, 0 = forward, +90 = down. */
-function drawWeaponSprite(b: Batcher, frames: Frame[], px: number, py: number, face: number, theta: number): void {
-  const k = Math.round((((theta % 360) + 360) % 360) / WEAPON_STEP) % frames.length;
-  const f = frames[k];
-  b.draw(f, px - (face < 0 ? f.w - 1 - WEAPON_GRIP : WEAPON_GRIP), py - WEAPON_GRIP, face < 0);
-}
 const STRIKE_TICKS = 8;
 
 /** Draws a weapon as a line of pixels from a pivot, at angle theta (degrees, 0 = forward, +90 = down). */
@@ -446,18 +440,16 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   const pivotX = sx + face * (f.w / 2 - 2) + ox, pivotY = sy - f.h * 0.5 + oy;
   if (type === MobType.Goblin || type === MobType.Orc) {
     const orc = type === MobType.Orc;
-    const rest = 65;
-    let theta = rest;
-    if (winding) theta = rest + (-150 - rest) * (p * p * (3 - 2 * p));
-    else if (striking) theta = -150 + (rest + 5 + 150) * Math.min(1, q * 1.5);
+    // The weapon is baked into the body frames (mobPose picks the windup/strike pose); only the swing trail is drawn here,
+    // fanned out from the hand.
     const len = orc ? 9 : 5;
-    drawWeaponSprite(b, orc ? S.mobArt.club : S.mobArt.dagger, pivotX, pivotY, face, theta);
+    const hx = sx + face * 3 + ox, hy = sy - (orc ? 7 : 3) + oy;
     if (striking && q < 0.75) {
       // swing trail
       const a = hex(0xffffff, 0.8 * (1 - q));
       for (let k = 0; k < 6; k++) {
         const th = -100 + k * 28;
-        b.drawScaled(S.px, pivotX + Math.cos(th * DEG) * face * (len + 2), pivotY + Math.sin(th * DEG) * (len + 2), 1, 1, a);
+        b.drawScaled(S.px, hx + Math.cos(th * DEG) * face * (len + 2), hy + Math.sin(th * DEG) * (len + 2), 1, 1, a);
       }
     }
   } else if (type === MobType.Archer) {

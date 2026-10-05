@@ -1,23 +1,16 @@
 // Enemy sprites from the art workbench. Frames are tight cells whose bottom row is the ground line and whose pivot
 // column is the cell centre, so the existing bottom-centre drawing code works unchanged. The enemies' swings,
-// leans and charges stay code-driven (draw.ts); `weapons` holds pre-rotated dagger/club sprites for those swings.
+// leans and charges stay code-driven (draw.ts). Weapons are baked into the body frames.
 import type { Frame } from '../platform/gl/batcher';
 import goblinMeta from '../../art/out/goblin.json';
 import orcMeta from '../../art/out/orc.json';
 import archerMeta from '../../art/out/mobarcher.json';
 import shieldMeta from '../../art/out/shieldbearer.json';
 import bomberMeta from '../../art/out/bomber.json';
-import weaponsMeta from '../../art/out/weapons.json';
 
 interface Rect { x: number; y: number; w: number; h: number }
 interface SheetMeta { frames: Record<string, Rect>; anims: Record<string, { frames: string[] }> }
 const MOB_METAS = [goblinMeta, orcMeta, archerMeta, shieldMeta, bomberMeta] as unknown as SheetMeta[];
-const WEAPONS = weaponsMeta as unknown as SheetMeta;
-
-export const WEAPON_STEP = 15;
-export const WEAPON_COUNT = 360 / WEAPON_STEP;
-/** Where in a weapon frame the grip sits (the weapon is rotated about this point). */
-export const WEAPON_GRIP = 12;
 
 export interface MobArt {
   /** Indexed by MobType: the walk cycle. */
@@ -27,9 +20,6 @@ export interface MobArt {
    * archers have aim/release, orcs have paw/charge/dazed, bombers have lit.
    */
   anims: Record<string, Frame[]>[];
-  /** Weapon sprites at WEAPON_STEP-degree steps, 0 = forward, +90 = down. */
-  dagger: Frame[];
-  club: Frame[];
 }
 
 const uv = (r: Rect, pl: { x: number; y: number }, W: number, H: number): Frame => ({
@@ -44,10 +34,7 @@ export function buildMobArt(places: { x: number; y: number }[], W: number, H: nu
     return out;
   });
   const walk = anims.map((a) => a.walk);
-  const wp = places[5];
-  // weapons.mjs lays each weapon out as two rows (A: 0-165 degrees, B: 180-345) named <weapon>A_<n> / <weapon>B_<n>
-  const weapon = (name: string) => Array.from({ length: WEAPON_COUNT }, (_, k) => uv(WEAPONS.frames[`${name}${k < 12 ? 'A' : 'B'}_${k % 12}`], wp, W, H));
-  return { walk, anims, dagger: weapon('dagger'), club: weapon('club') };
+  return { walk, anims };
 }
 
 /** What an enemy is doing this tick (the same flags drawMob already derives). */
