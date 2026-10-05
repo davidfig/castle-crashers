@@ -9,7 +9,7 @@ npm install
 npm run dev        # http://localhost:5188 (override with PORT=...)
 ```
 
-Optional URL param: `?seed=1234` for a reproducible battlefield.
+Optional URL params: `?seed=1234` for a reproducible battlefield; dev builds also take `?boss=1` (start at the boss arena), `?bots=3` (bot-controlled extra players) and `&auto=1` (a bot plays player 1 too).
 
 ## Controls
 
@@ -17,6 +17,7 @@ Optional URL param: `?seed=1234` for a reproducible battlefield.
 |---|---|---|---|
 | Move | WASD | Arrows | Left stick / D-pad |
 | Attack (cleave) | J | , | X |
+| Big swing (special, costs stamina) | I | ; | X |
 | Nova (AoE, costs fury) | K | . | A / Y |
 | Dash | L | / | B / RB |
 

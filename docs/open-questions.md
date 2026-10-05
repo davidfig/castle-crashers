@@ -3,8 +3,16 @@
 Track undecided items here. When resolved, move to an ADR in [decisions](decisions/README.md) and link it.
 
 ## Identity
-- [ ] **Game title and story.** Deferred until the game is playable. Using a placeholder name; "castle crashers" is an existing trademark so it won't ship.
+- [ ] **Game title.** Deferred until the game is playable. Story is drafted in [12 Story](12-story.md). Using a placeholder name; "castle crashers" is an existing trademark so it won't ship.
 - [ ] Tone: goofy-cartoon (Castle Crashers) vs. grim-ish (Dead Cells)? Affects art and humor.
+
+## Story (see [12](12-story.md))
+- [ ] Hard midpoint reveal (Chapter III) vs. a continuous slow drift.
+- [ ] How much should mercy cost before it feels like a punishment?
+- [ ] Is an accidental AoE kill of a Surrendered mob fair? How is it surfaced?
+- [ ] Minimum ordinary Writs per chapter before its milestone appears (starting targets: 2 / 3 / 3 / 3).
+- [ ] Witness template count needed to avoid repeats in the first ten runs.
+- [ ] Is the second ("escort") campaign in scope for v1?
 
 ## Technical
 - [x] **Float vs. fixed-point sim.** Resolved: doubles with discipline; see [ADR-0004](decisions/0004-float-sim-and-characters.md).

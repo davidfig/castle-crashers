@@ -12,7 +12,7 @@ Built: esbuild/TypeScript toolchain, deterministic sim with seeded RNG streams a
 - **Exit:** colored sprites move on screen at a stable 60 Hz, pixel-perfect at any window size.
 
 ## M1 — The Horde Feel (in progress)
-Done so far: Warrior with a sweeping 3-hit combo (wide arcs, finisher wave, lunge, bowling knockback, launched bodies), fury-powered AoE nova and plowing dash; sim-level hit-stop; five enemy types (goblin, orc, archer, shield bearer, bomber) with telegraphs that hits interrupt; arrows, chain-explosions, reinforcement director; level of ~1,400 mobs in clumps along a 4,800 px field; corpses, particles, screen shake, kill-streak counter, 1–4 player join, tethered camera, down/revive, win/lose; headless bot playtest (`npm run playtest`). Coins drop from kills, scatter, and are magnet-collected into shared gold. **Still to do:** mini-boss, summoner/elite enemies, damage numbers or aggregated hit feedback, balance with real playtesters, sound, XP.
+Done so far: Warrior with a sweeping 3-hit combo (wide arcs, finisher wave, lunge, bowling knockback, launched bodies), fury-powered AoE nova and plowing dash; sim-level hit-stop; five enemy types (goblin, orc, archer, shield bearer, bomber) with telegraphs that hits interrupt; arrows, chain-explosions, reinforcement director; level of ~1,400 mobs in clumps along a 4,800 px field; corpses, particles, screen shake, kill-streak counter, 1–4 player join, tethered camera, down/revive, win/lose; headless bot playtest (`npm run playtest`). Coins drop from kills, scatter, and are magnet-collected into shared gold. **Boss (first pass):** the Orc Warlord ends the battlefield: huge, super-armored, with a retinue and war-cry summons, a club smash, ground slam, bull charge, and an enrage phase; killing it wins the run. **Still to do:** more bosses and mini-bosses, summoner/elite enemies, damage numbers or aggregated hit feedback, balance with real playtesters, sound, XP.
 
 Original M1 goals:
 - Depth-lane movement, jump, attacks, hitboxes/hurtboxes, hit-stop, knockback.
@@ -46,6 +46,13 @@ Original M1 goals:
 - Hub, renown payout, class tree data + UI, profile persistence (versioned).
 - Achievement-gated nodes, codex.
 - **Exit:** play 5 runs and watch your class tree materially change your offers.
+
+## M6.5 — UI & Screen Art
+The menus, the camp, the board and the story screens work but are placeholder: flat rectangles and a 3x5 caps-only font. This milestone gives them a look. Plan and status per screen in [13 UI & Screen Art](13-ui-art.md).
+- **The look:** an illuminated ledger: vellum pages, lead outlines, gold leaf (the "Glass" palette in `art/palette.mjs`), because the game is about a bounty office and its books.
+- **Kit first:** panel and card frames, rarity borders, cursors, ornaments; a story font with lowercase and punctuation; icons for upgrades, wares, node types and the level-up pip. Everything else reuses these.
+- **Then:** portraits (the Registrar, the peddler, one per class), scene art for the hub (tavern, board, market, city square), the camp backdrop, the title and logo, clan banners.
+- **Exit:** every screen in a full run, from the Writ board to the summary, is drawn from the kit with no flat-rectangle placeholders left.
 
 ## M7 — Content & Polish
 - Biomes 2–3, more enemies/items/bosses, music & SFX pass, settings, accessibility.

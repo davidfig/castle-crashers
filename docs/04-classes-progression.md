@@ -11,7 +11,7 @@ The link between them: meta unlocks **expand what you can be offered during a ru
 
 | Class | Role | Core fantasy | Signature mechanic (proposed) |
 |---|---|---|---|
-| **Warrior** | Frontline tank/bruiser | Hold the line | *Fury* built by cleaving, killing and being hit; spent on an AoE nova (bigger at full) |
+| **Warrior** | Frontline tank/bruiser | Hold the line | *Fury* built by cleaving, killing and being hit; spent on an AoE nova (bigger at full). *Stamina* funds swings, dashes and the big-swing special |
 | **Mage** | Ranged AoE glass cannon | Elemental destruction | Mana + element attunement (fire/ice/lightning) switching |
 | **Cleric** | Support/healer, light melee | Keep everyone alive | Holy *Favor* resource; healing aura, revive speed, smite |
 | **Rogue** | Fast melee burst | Hit and vanish | Combo points, stealth/backstab, dodge-through |
@@ -28,7 +28,7 @@ Keep small and legible: **Vitality** (HP), **Strength** (physical dmg), **Magic*
 
 - Kill enemies / clear rooms → XP. Level cap per run (proposed **~20**).
 - Each **level-up** offers **3 choices** drawn from the pool of everything *you've unlocked in your class tree* plus generic perks. Pick one; it applies instantly.
-  - **Non-blocking:** the offer appears next to the character as a small card strip; gameplay continues. Unpicked offers persist until the next level or a short timer. See [06 UI](06-ui.md).
+  - **Non-blocking:** a level-up is a pending pick. The player opens it with the Level button, into their lane of the sky band at the top of the screen, when they choose; gameplay continues. Unchosen offers never expire: they wait, and are resolved at the camp between levels at the latest. See [06 UI](06-ui.md).
 - Choices come in kinds:
   - **Ability unlock/upgrade** (new ability, or +rank to an existing one)
   - **Passive** (stat or trigger-based: "crits explode", "dodging leaves frost")

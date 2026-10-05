@@ -26,24 +26,37 @@ Physical bindings live in [09](09-input-audio-assets.md). The sim only sees logi
 - **Hit-stop** (2–6 ticks) on hit, scaled by attack weight. **Knockback** and **launch** (z velocity) enable juggles.
 - **Status effects:** burn, freeze/chill, poison, stun, slow, bleed, shield, haste, taunt. Stack rules are data-driven.
 - **Damage types:** physical, fire, ice, lightning, holy, shadow. Enemies have resistances/weaknesses. Keep the list short so it's readable.
-- **Basic attack = a sweep, not a poke.** Design rule: a basic strike must feel like a small nova, because against a horde, hitting 3 enemies feels like nothing. The warrior's 3-hit combo is built on three levers: **mass**, **motion** and **spectacle**.
-  - *Mass:* hits 1–2 are wide sweeps (up to ~180° ahead, reach ~40 px) that one-shot goblins. Hit 3 is a heavy finisher (~240° arc, bigger damage) that **breaks shields** and also cuts a **straight wave ~120 px down the facing line**, so it carves a lane through the horde. Swings are deliberately slower (21/42 tick cooldowns): fewer, heavier blows.
-  - *Motion:* knockback is strong (a goblin is shoved ~30 px). Mobs that survive a blow and slide fast **bowl into others**, damaging and launching them (credit goes to the original attacker), so a hit ripples outward. Mobs that die are **launched as tumbling bodies** in the direction of the blow and land as corpses. The hero **lunges** forward a few pixels on each swing.
-  - *Spectacle:* a bold slash arc with a bright blade edge sweeps through the swing; the camera kicks along the swing direction (harder on the finisher); screen shake scales with how many enemies were hit; hit-stop grows with the number of hits.
-  - Each cleave that connects builds **fury**.
+- **Basic attack = a sweep, not a poke.** Design rule: a basic strike must feel like a small nova, because against a horde, hitting 3 enemies feels like nothing. The warrior's basic attack is a **two-hit combo** of wide sweeps (up to ~180° ahead, reach ~40 px) that one-shot goblins, built on three levers: **mass**, **motion** and **spectacle**.
+  - *Mass:* wide arcs that one-shot the small fry. Swings are deliberately slow-ish (21-tick cooldown): fewer, heavier blows.
+  - *Motion:* knockback is strong (a goblin is shoved ~30 px). Mobs that survive a blow and slide fast **bowl into others**, damaging and launching them (credit goes to the original attacker). Mobs that die are **launched as tumbling bodies** and land as corpses. The hero **lunges** forward a few pixels on each swing.
+  - *Spectacle:* a bold slash arc with a bright blade edge; camera kick along the swing; screen shake scaling with how many enemies were hit; hit-stop growing with the number of hits.
+  - Each swing that connects builds **fury**, and costs a little **stamina**.
+- **Ability 2 (warrior): the big swing.** What used to be the combo's third hit is now its own button (`I` / `;` / gamepad X): a much wider arc (~240°) and bigger damage that **breaks shields**, plus a **straight wave ~120 px down the facing line** that carves a lane through the horde. It costs **35 stamina** and has a **2.5 s cooldown** (a pip next to the fury bar shows when it is ready and affordable).
+- **Stamina.** Every hero has a stamina pool (100 for the warrior), spent by actions and recovered when not spending:
+  - Costs: a basic swing 4, a dash 22, the big swing 35. The nova costs fury, not stamina.
+  - Regen: 0.75/tick (~45 per second), starting 12 ticks after the last spend. It is tuned so that **ordinary swinging is net-positive** (you recover *while* fighting, about a dash's worth every 3 s) but chaining dashes and big swings drains you.
+  - Empty means **winded**: movement ~30% slower, and no attacks, dashes or big swing until stamina has recovered to 25. A hero who is revived comes back with full stamina.
+  - HUD: a thin blue bar above the hero's health bar, shown only while stamina is not full; it turns amber when you cannot afford a dash and flashes red with a "WINDED" label when winded.
+  - Design intent: the horde never pauses, so stamina is a rhythm rather than a gate: pick your moments for the expensive moves, and use the basic combo to refill. Numbers are in `src/data/classes.ts`.
 - **Fury loop (warrior):** cleaving and killing build fury (and taking hits does too: pain feeds rage). **Nova** (ability) costs 50 fury and pierces shields; casting it at **100 fury** unleashes a bigger, harder nova. Aggression feeds the AoE, and the AoE clears space for more aggression. Kills also heal a little.
 - **Dash:** brief invulnerable burst that plows through small mobs (light damage + knockback). Short cooldown; the answer to telegraphs.
 - **Hit-stop:** a sim-level global freeze (1 tick on a normal hit, 3–4 on finisher/nova, scaling with kills) gives hits weight. Button presses are still buffered during the freeze.
 - **Attack animation:** every mob telegraphs visibly: a lean back and a raised weapon (goblin dagger, orc axe) during the windup, a lunge and weapon swing on the strike, a drawn bow with a nocked arrow and aim line for archers, a swelling, shaking fuse for bombers, and a shield bash. Mobs waiting out a cooldown beside you hop restlessly instead of standing still.
 - **Telegraph interrupts:** hits cancel an enemy's windup (not a lit bomber's fuse), so aggressive play is rewarded; stepping out of range dodges a strike.
-- **Forward-only battlefield:** the camera never scrolls back and the hero cannot leave the screen to the left, so cleared ground **stays cleared**. Reinforcements come only from *ahead* (just off the right edge) whenever too few mobs are awake, so there are no lulls, and nothing spawns behind you. Mobs that never engaged are removed once they fall ~90 px behind the left edge; engaged mobs get ~360 px to rejoin, so a mob knocked or flanking offscreen still comes back and attacks. Archers never shoot from offscreen: they walk back into view first.
+- **Spawns are trigger points, not a clock:** authored encounters stream in as the camera approaches, and the top-up reinforcements and flank waves fire every N px of *forward camera progress* (`REINFORCE_INTERVAL`, `FLANK_INTERVAL` in `step.ts`; `spawnTimer`/`flankTimer` count px, `trigCamX` is the furthest camera x already counted). A party that stands still faces no growing horde.
+- **Forward-only battlefield:** the camera never scrolls back and the hero cannot leave the screen to the left, so cleared ground **stays cleared**, and **nothing spawns behind you**. Mobs left more than ~360 px behind the left edge are removed; closer ones can still rejoin.
+- **Flank waves (implemented):** on top of the encounters streaming in from ahead, big packs pour in over the **top** and **bottom** edges **in front of the party** (between the lead hero and the right edge of the screen), so the pressure comes from every side and you cannot just walk forward killing what is in front of you. A wave is as big as an authored encounter (about 28-70 enemies for a party of one, scaled by party size), arrives roughly every 7 s early on and every 4.5 s at full depth, and 30% of the time is a **pincer** from both edges at once. The waves are independent of how many enemies are already awake. Entrants walk straight in and cannot attack until they are on the field; after that they are confined to it like everyone else. A top-up director also tops up packs from ahead whenever few enemies are awake.
+  - **Over the hill (top entrance):** enemies coming over the top climb up from *behind* a hill. Seen from the field, a bumpy grassy crest runs along the horizon in front of the mountains. A climber's feet start just below the crest, so its head appears first, then its body rises out from behind the crest as the hill hides the lower half along its curved edge; it stands on the crest for a moment, then walks down the near slope onto the field and heads for the player. (Rendering: climbers are drawn before the ground so the ground and crest cover them; the slope descent remaps their height onto the slope; see `draw.ts`. The sim treats top entrants as still "entering", unable to attack, until they are 22 px into the field.)
+  - **Leaving is arriving in reverse:** every mob that leaves the play area (party-wipe retreat, surrender flight) uses the same entrance paths backwards: over the top it walks up the near slope, stands on the crest and sinks head-last behind the hill (removed only once fully hidden, `TOP_EXIT_DEPTH` in `step.ts`); over the bottom it drops behind the ridge. New exits must reuse this.
+  - **Bottom entrance:** a low foreground ridge runs along the bottom of the screen; enemies coming from below walk up from behind it.
+- **Kill-heal is rate limited.** Each kill can heal a little, but healing draws from a per-hero budget that refills at a steady rate (`healPerSecond`, `healBudgetMax`), so a bigger horde cannot out-heal the damage it deals. Without the cap, more enemies meant more kills and more healing, and difficulty got *easier* as enemy pressure rose.
 
 ### Enemy roster (v0)
 
 | Enemy | Role | The question it asks |
 |---|---|---|
 | Goblin | Fodder, fast | Fuel for fury; arrives in waves |
-| Orc | Slow brute, big telegraphed smash | Interrupt it, dash out, or nova it down |
+| Orc | Slow brute, big telegraphed smash, and a random **bull charge** | Interrupt the smash; read the charge lane and sidestep or dash it; punish the daze |
 | Archer | Ranged, keeps its distance, red aim line then a dodgeable arrow | Close in, dash the line, or swat arrows out of the air with a cleave/nova |
 | Shield bearer | Blocks frontal non-piercing hits | Use the finisher, nova, or get behind it |
 | Bomber | Fast, explodes on a short fuse | Kill it *away from you*, or into a pack: its blast chain-kills nearby mobs and credits you |
@@ -54,16 +67,43 @@ Use `npm run playtest` to run a scripted bot over several seeds for balance sani
 ## Enemies
 
 - **Archetypes:** grunt (melee), brute (slow, high HP, armor), skirmisher (fast, hit-and-run), ranged (archer/caster), summoner, shielded, flyer, swarm.
-- **AI:** cheap per-mob behaviors, run for hundreds at a time: idle until aggro'd (by proximity or because a neighbour was), then chase the nearest standing player, separate from neighbours via the spatial grid, stop at attack reach, attack on a cooldown. Aggro spreads through a clump so a pack wakes up as a wave. Because enemies are numerous and individually weak, readability comes from **scale and silhouette**, not telegraph-per-enemy; elites, ranged units and bosses still get explicit windups. An attack-token system is deferred until ranged/elite enemies need it.
+- **AI:** cheap per-mob behaviors, run for hundreds at a time: **hold until you advance**: a mob still ahead of the right screen edge stays put, so a party that stands still faces nothing new coming. Once any part of it is on screen it heads for the nearest standing player, and mobs that were passed or knocked off the left edge come back. Mid-move mobs (stunned, winding up, charging, sliding) finish the move first. They separate from neighbours via the spatial grid, stop at attack reach, and attack on a cooldown. Because encounters stream in just past the screen's right edge, the horde arrives as a continuous tide rather than waiting in clumps. Because enemies are numerous and individually weak, readability comes from **scale and silhouette**, not telegraph-per-enemy; elites, ranged units and bosses still get explicit windups. An attack-token system is deferred until ranged/elite enemies need it.
 - **Telegraphs:** every damaging enemy attack has a clear windup and a visible shape/flash. Readability beats difficulty.
 - **Elites/Mini-bosses:** modifiers (e.g. *Frenzied, Shielded, Vampiric, Splitting*) drawn from a pool and applied at generation time.
-- **Scaling:** enemy count and HP scale by **player count** and **depth**; XP rewards scale to keep leveling pace constant regardless of party size.
+- **Party-size scaling (implemented):** the horde grows with the party; enemies do **not** get tankier. A party of 1/2/3/4 faces 1x / 2.4x / 3.8x / 5.2x the enemies (`PARTY_SCALE` in `src/sim/gen/level.ts`), steeper than linear because heroes stack their AoE on the same crowd. It applies to both the authored encounters and the reinforcement director (bigger, more frequent packs, and a higher "awake" floor). Depth scaling comes from the enemy mix thickening toward the far end. XP rewards will scale to keep leveling pace constant once XP exists.
+  - **Drop-in:** the party size is read when an encounter *streams in*, so a player who joins mid-run raises the difficulty from the next encounter on; leaving lowers it.
+  - **Known limit:** per-player pressure is *lower* in bigger parties than solo, mostly because of auto-revive (below): a solo hero loses the moment they go down, but a party only loses when everyone is down at once. Bot playtests show 2-4 players winning nearly every run even at several times the enemies. The real fix is a proper revive mechanic (hold Interact, limited revives per run), not ever-bigger hordes.
 
 ## Bosses
 
-- One boss per biome end, plus optional mini-bosses mid-biome.
-- Multi-phase with distinct patterns; patterns are named sim functions referenced from data.
-- Co-op friendly: bosses have arena-wide attacks that require spacing, and **revive windows** on player downs.
+One boss so far, at the end of the battlefield: the **Orc Warlord** (`MobType.Boss`, `src/data/mobs.ts`). **Killing it wins the run**; just reaching the end no longer does, and flank waves and top-up reinforcements stop for the fight. It appears just off the right edge once the party reaches the arena, with its retinue.
+
+- **Size and toughness.** Roughly five times a hero's height (the orc art drawn at 4x, so it picks up new orc art automatically), 650 HP for a solo hero (x1.6 / x2.1 / x2.6 for 2 / 3 / 4 players). It has **super armor**: it takes damage but is never shoved or staggered. A giant is hit when any part of it is in reach, not just its centre.
+- **Support.** A **retinue** of ~26 small enemies (goblins up front, shield bearers, archers behind) stands around it at the start, and its **war cry** summons a fresh burst of supporters that fly out from the boss and rush the party. Both scale with party size. The little ones are what you have to cut through to reach it.
+- **Moves** (it picks one every ~4 s, ~2.5 s once enraged; each has a tell):
+  - **Club smash**, up close: a windup with a "!", lands where you stand *now*, so stepping out of reach dodges it.
+  - **Ground slam**: it rears up while a red ring marks the zone for ~1 s, then hits everything inside (24 damage, a screen-shaking shockwave). Dash through it or get out of the ring.
+  - **Bull charge**: the orc charge (see above) at a bigger scale: a red lane, 280 px, super armor, ends in a long daze. It does not trample its own supporters.
+  - **War cry**: a windup with rings and "!!!", then supporters burst out. Skipped if the field is already crowded.
+- **Enrage at 50% health:** an immediate war cry, glowing red eyes, 40% faster, quicker special moves, and bigger summons that can include bombers.
+- **Health bar:** a wide bar at the top of the screen, with a mark at the enrage line.
+- **Death:** a long hit-stop, a huge shockwave and fireworks, a burst of 14 coins (12 each), and about three seconds to gather them before the battle is won.
+- **Tuning notes:** with the scripted bot, 4 players kill it about 5 times in 8, while 1-2 players get it to a few percent. Bots do not dodge the club, so a human who does should fare better.
+- **Dev:** `?boss=1` starts at the arena.
+
+### Boss repertoires
+
+A boss has a **repertoire** (`BossDef.moves`): a weighted list of moves. Each time it is free to act (every `specialGap` ticks, shorter once enraged) it draws among the moves that can happen right now, by weight, and starts one. A move is one of the boss's own three (`slam`, `roar`: the war cry that calls the retinue, `charge`) or **any telegraphed special** from the enemy special system (`kind: 'special'`; see "Enemy roster by biome"), cast with that special's own range rules. Specials can be marked `enragedOnly`, and the lob, storm and trap specials take a `count` and `spread` so a boss fires a volley or a field of them. Each boss should have moves the others do not, so every boss fight asks something different. Everything is data in `src/data/mobs.ts`; `pickBossMove` in `step.ts` runs it and the boss's windup pose and telegraph are the move's own.
+
+| Boss | Moves | What it asks |
+|---|---|---|
+| **Orc Warlord** (Meadow) | Ground slam, war cry (retinue), charge, **rally** (its retinue into a frenzy), **boulder volley** (four rocks scattered round you, landing in a ripple) | Cut down the warband before it is rallied; keep moving through the volley; dodge the charge lane |
+| **Rime King** (Frozen Pass) | War cry (the Pass's folk), charge, **frost nova** (a wide ring with a long slow, when you are close), **blizzard barrage** (four storms that settle into ice), **glacier snares** (a field of rooting traps), **ice ward** (its retinue wrapped in ice), and, enraged only, a **whiteout** (your movement reversed) | Do not stand still, read the ground, and break the ward before the retinue grinds you down |
+| **Dread Regent** (Haunted Keep) | War cry, **soul beam** (a long, wide, telegraphed line), **raise the dead** (five skeletons), **spectral blink** (it vanishes and reappears near you), **banshee scream** (a close ring that slows), **soul drain** (heals its retinue), and, enraged only, a **death wail** (damage and silence) | Step out of the beam's line, kill the raised dead before they pile up, and stay out of the wail's ring |
+
+The Rime King has no ground slam (the frost nova takes its place): a frost-giant chieftain (`MobType.RimeKing`, art `art/chars/rimeking.mjs`) with shaggy blue-grey fur, a mane, a crown of ice shards over curled horns, a glacier-ice pauldron and an ice maul. 720 HP before party scaling (the Warlord has 650), enraging at half health; its health bar reads RIME KING.
+
+The Dread Regent (`MobType.DreadRegent`, art `art/chars/dreadregent.mjs`) is an undead king: a gaunt skeleton with a gilt spiked crown, green-glinting sockets, a rotted iron breastplate over the ribs, a tattered purple cape and tabard, and a great rusted greatsword. It has no charge and no ground slam (a caster king). 700 HP before party scaling, enraging at half health; its health bar reads DREAD REGENT.
 
 ## Co-op rules
 
@@ -90,3 +130,56 @@ Hub (meta) → choose class(es) + modifiers → Run:
 - Run ends when all players are down simultaneously.
 - You keep: renown, any meta unlocks, discovered items (codex). You lose: items, in-run levels, gold.
 - No permadeath of *characters* across runs; the *run* is the unit of risk.
+
+### Orc bull charge
+
+- **Trigger:** while the orc is 60-240 px from its target, on screen, and off cooldown, it has a small random chance each tick to start a charge (~1 in 500 per tick; many orcs close in before they roll one, so roughly half of them charge on the way in).
+- **Windup (0.6 s):** it paws the ground, rocking back and stomping, with a "!!" and a dotted red **lane** drawn along the locked direction. The direction is locked at the start, so sidestepping works. A hit during the windup **cancels** the charge.
+- **Charge:** ~3.4 px/tick (about nine times its walking speed) for a fixed **190 px**. It cannot be stopped, turned or staggered: **super armor** (it still takes damage, but no knockback or stun). It tramples anything on the way: heavy damage to the hero (a dash's invulnerability carries you through), light damage and knockback to other mobs, with a dust trail and motion ghosts. It ends early only at the edge of the world.
+- **Daze:** afterwards it is winded and helpless for about a second (stars circle its head), then has a ~7 second cooldown. That is the window to punish it.
+- All numbers are in `src/data/mobs.ts` (`charge`). Any mob type can get a `charge` entry.
+
+## Enemy roster by biome
+
+Each biome has its own cast (`src/data/roster.ts`, one `RosterEntry` per enemy). The sim learns the biome from `biomeIndex(seed)` (also stored as `GameState.biome`), so the scenery and the enemies always agree; `?biome=N` forces both in dev builds. An enemy is absent until its `from` (level progress 0..1), then its share of the crowd grows steadily to the end of the level, so the first minutes are mostly fodder and the last are full of casters and elites. The boss's retinue is drawn from the same biome (`ROSTERS[b].support`).
+
+Abilities are data on `MobDef` (`special`, `shot`, `charge`, `onDeath`, `slowOnHit`, `weave`, `regen`, `retreat`, `launch`, `berserk`, `aura`, `pack`, `revive`) and run in `src/sim/abilities.ts`. Every special is telegraphed (the mob plants itself, an authored windup pose plays, a ground ring or lane shows), and a hit on the mob breaks the telegraph and costs it half its cooldown.
+
+| Biome | Enemy | Appears | Ability |
+|---|---|---|---|
+| Meadow | Goblin | start | Swarm melee |
+| | Orc | start | Bull charge, then dazed |
+| | Archer | 4% | Single aimed arrow |
+| | Bomber | 8% | Runs in, lights a fuse, explodes |
+| | Wolf | 10% | Hunts in packs: each packmate close by makes it faster and harder-hitting |
+| | Shield bearer | 12% | Blocks frontal hits |
+| | Slinger | 20% | Lobs a rock: a red circle marks the landing spot, it lands 0.8s later |
+| | Shaman | 30% | Heals hurt allies in a radius (only casts when someone is hurt) |
+| | Drummer | 40% | Rally: allies in range move and attack faster for 5s |
+| | Troll | 55% | Regenerates; ground stomp when you stay close |
+| Haunted Keep | Skeleton | start | Swarm melee |
+| | Skull | 5% | Fast, zig-zagging biter |
+| | Skeleton archer | 5% | Two-arrow volley |
+| | Ghoul | 12% | Fast; claws slow you |
+| | Wraith | 22% | Blinks to your side, then slashes |
+| | Bone brute | 30% | Bursts into three skulls when killed |
+| | Necromancer | 35% | Raises skeletons (capped) |
+| | Banshee | 45% | Wail: heroes in the ring are silenced (no ability buttons) for 4s |
+| | Plague zombie | 50% | Leaves a poison pool when killed |
+| | Lich | 65% | Locked death ray: step out of the lane |
+| | Dread knight | 75% | Rises once more at 40% health after its first death |
+| Frozen Pass | Trapper | start | Sets a snare ahead of you: it arms, then roots whoever steps in (a dodge-roll tears free) |
+| | Snow Sprite | 8% | Leaps onto a hero and clings: gnaws and slows until killed or rolled off |
+| | Harpooner | 16% | Harpoon with a line: a hit hauls you across the field toward it |
+| | Frost Wolf | 24% | Hit and run: one bite, then it darts away before coming back |
+| | Bighorn Ram | 32% | Headbutt that launches you a long way (into the rest of the horde) |
+| | Ice Husk | 40% | Shatters into a ring of flying ice shards when killed |
+| | Yeti | 48% | Berserk below half health: frenzied, harder-hitting, never staggered |
+| | Frost Shaman | 56% | Wards its allies: the next hit on each is absorbed whole |
+| | Blizzard Witch | 64% | Conjures a blizzard on your spot that settles into a lingering pool of chilling ice |
+| | Whiteout Spirit | 72% | Howls a whiteout: your movement is reversed for 1.5s (a dodge-roll slips through) |
+| | Tundra Guard | 80% | Permafrost aura: heroes beside it are chilled and frostbitten |
+
+**Design rule: no ability repeats, in any biome.** Every enemy does something no other enemy does (the plain Goblin, Skeleton and Archer are the baseline). The test "no ability is used by two enemies, in any biome" (`src/sim/roster.test.ts`) enforces it; the one bull charge belongs to the Orc, the one shield to the Shield bearer, the one stomp to the Troll. New abilities go in `src/sim/abilities.ts` as a `Special` kind, a `MobDef` field, or an `onDeath` entry.
+
+**Bosses are per biome** (`Roster.boss` in `roster.ts`, the level spawns `ROSTERS[biome].boss`): the Meadow has the Orc Warlord, the Frozen Pass the **Rime King**, and the Haunted Keep the **Dread Regent**. Any enemy type with a `boss` def (`BossDef`) is a boss; `isBossType` in `mobs.ts` is the check. A boss's moves are data (its `moves` repertoire, below), so a new boss is mostly a list of moves plus art.

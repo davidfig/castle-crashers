@@ -19,6 +19,10 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 | [08 Multiplayer & Netcode](08-multiplayer.md) | Local co-op now, network plumbing for later |
 | [09 Input, Audio, Assets](09-input-audio-assets.md) | Controllers, Web Audio, asset pipeline |
 | [10 Roadmap](10-roadmap.md) | Milestones |
+| [11 Backgrounds](11-backgrounds.md) | Sky, parallax, ground, biomes, time of day |
+| [12 Story](12-story.md) | Premise, chapters, the Ledger, how procgen carries the story |
+| [13 UI & Screen Art](13-ui-art.md) | The illuminated-ledger look, what every screen needs, the kit and its status |
+| [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster) |
 | [Open Questions](open-questions.md) | Things we haven't decided |
 | [Decisions (ADRs)](decisions/README.md) | Log of decisions and why |
 | [Glossary](glossary.md) | Shared vocabulary |

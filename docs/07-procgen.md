@@ -3,10 +3,10 @@
 Every run is built from a **run seed**. All generation uses seeded, independent RNG streams derived from it, so a run can be reproduced exactly (and shared as a seed string).
 
 ```
-runSeed ──► split ─► streams: map, rooms, enemies, loot, events, combat, cosmetic
+runSeed ──► split ─► streams: map, rooms, enemies, loot, events, combat, cosmetic, story
 ```
 
-Changing how a stream is consumed (e.g. loot) must not shift unrelated streams (e.g. room layout). Always derive per-room sub-seeds as `hash(runSeed, 'room', roomIndex)`.
+Changing how a stream is consumed (e.g. loot) must not shift unrelated streams (e.g. room layout). Always derive per-room sub-seeds as `hash(runSeed, 'room', roomIndex)`. The `story` stream generates the run's Clan, Writ text and Witness vignette fills; see [12 Story](12-story.md).
 
 ## Run structure
 
@@ -22,6 +22,19 @@ Run
 
 - **Biome order** is chosen from a pool (some fixed final).
 - Each biome is a short **node graph** (Slay-the-Spire-style forks) with 5–8 steps. Players see node *types* (not exact content) and the party picks a direction by walking through a **fork door** in the world (no map menu; a small signpost/UI shows icons near the doors).
+
+### The camp (between levels)
+
+The fork and the camp are not the same thing. Between levels the party stops at a **camp**: the one place in a run where the action stops and menus are allowed (the rule that nothing pauses applies *during* levels). All players are on one screen with a panel each, and ready up when finished. In order:
+
+1. **Spoils.** Heads, spared, gold, XP, and the story: the Registrar's remark, aftermath scenes ([12](12-story.md)).
+2. **Leftover picks.** Any level-up the player did not choose during the level ([06](06-ui.md)). Simultaneous per player.
+3. **Merchant or fire**, by the node type: a shop (shared gold, hand-over between players) or a rest (heal, revive, class banter).
+4. **The doors.** The crossroads: the party walks through one of two or three doors, each with an icon for what lies behind it, with a thin strip showing the route so far. No separate map screen. Forks between biomes are the big choices; within a biome the doors choose the next node type.
+
+**Implemented (v0).** A campaign run is a route of two levels (`ROUTE_LEVELS` in `src/campaign/route.ts`) with one camp between them. Level 1 has no boss and is won by reaching the far end; the last level ends in the boss. At the camp: the spoils; then, if anyone has a pick waiting, a panel per player (attack / ability 1 / ability 2 choose a card, the Level button keeps the rest for later; simultaneous, read per player slot); then the doors, two roads into different biomes, chosen with left/right and attack. The party rests to full health on the way through. What the party carries into the next level (`src/sim/carry.ts`): class, level, XP, pending picks, upgrade ranks, health, gold, and the run's tallies (so the run summary covers the whole route). Offers are drawn from the *run* seed, so a pick offers the same cards at the camp as it did in the level. Entered-seed runs are one level unless `?levels=N`. **The merchant (v0):** after the picks, a peddler's stock for the camp: three different upgrade scrolls and the Veterans Lesson (+1 level, with a pick to make), drawn from the run seed and priced up the deeper the route goes (`src/data/wares.ts`). Gold is the party's shared purse; every hero shops at the same time with their own cursor and buys for themselves, and each good is one-of-a-kind, so the first to the counter gets it. The Level button means done; the merchant's patter changes with the chapter. Not yet: rest as a choice, node types beyond a battle, a fork with more than two roads, and walking through the doors instead of choosing from a screen.
+
+**Dev shortcut.** `?camp=spoils|picks|shop|doors` goes straight to that part of the camp after a won first level, with no need to play the level. Optional: `&players=N` (1-4, classes in order), `&class=N` (the first hero's class), `&gold=N`, `&pending=N` (level-ups waiting per hero), `&level=N`, `&kills=N`, `&chapter=N` (the wording of the story). For example `/?camp=shop&players=3&gold=300&chapter=3`.
 
 ### Node types
 
@@ -78,3 +91,15 @@ Uses a per-player **offer stream**, seeded by `(runSeed, playerSlot, levelNumber
 
 - `tools/chunk-editor` — a tiny browser tool to author chunks (can be built on our own renderer).
 - Validation CLI: loads all chunks/templates, runs thousands of seeds headlessly, asserts validity & budgets.
+
+## Streamed encounters (implemented)
+
+The level is **planned** at the start (`planLevel(seed)`: a cheap list of ~48 encounters with position, size, shape and progress, a pure function of the seed) but **spawned lazily**: `streamLevel` spawns an encounter once the camera is within ~520 px of it, i.e. out of sight. Each encounter has its own random stream (`1000 + index`), so its contents don't depend on when it streams in; only its size does, via the party-size scale at that moment (see [03](03-gameplay-combat.md)). Streaming starts after ~2 s so players who join right away are counted, and holds back if the 4,096-entity budget is nearly full. A side benefit: only the encounters near the camera exist, so the opening has a few hundred enemies instead of ~2,200.
+
+## Battlefield layout (implemented v0)
+
+The current generator (`src/sim/gen/level.ts`) lays ~46 encounters along the field, thickening toward the far end. Enemies come from **every height** of the field, not just the middle:
+- **Blobs** (3 of every 4 encounters): a loose cluster centered anywhere from the top edge to the bottom edge, with wide vertical spread so it spills across several lanes.
+- **Lines** (every 4th): a thin vertical wall of enemies spanning the full field height, so the front arrives from all lanes at once. The final stand is two such walls.
+- Reinforcements (the director) arrive from ahead (any height) or walk in over the top or bottom edge; see [03](03-gameplay-combat.md).
+- A test guards the distribution (no band of the field may hold under ~12% of the level's enemies).

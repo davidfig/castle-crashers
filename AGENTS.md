@@ -1,0 +1,5 @@
+# Agent notes
+
+- **Never use `git stash`** (including `git stash -u`, `pop`, `drop`). Multiple agents often work on the same branch and working tree at once, so stashing sweeps up, hides, or loses other agents' in-progress changes. To inspect a clean state, use `git diff`/`git show` or a worktree instead.
+- **Mobs enter and leave the play area the same way.** Arriving and leaving share one path: over the top = over the hill (flag 2 "entering", drawn climbing behind the crest and down the near slope; exit only once fully hidden, `TOP_EXIT_DEPTH`), over the bottom = behind the foreground ridge. Any new way for a mob to leave (retreat, surrender, scripted exit) must reuse this, mirrored from the arrival, never just vanish at the edge. See `docs/03-gameplay-combat.md` (Over the hill).
+

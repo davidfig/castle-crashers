@@ -81,7 +81,7 @@ docs/
 
 ## Entity model
 
-Horde scale means **struct-of-arrays typed arrays** (decided; see ADR-0005): one `Float64Array`/`Uint8Array` per field, a free-list for slot reuse, and a `highWater` mark for iteration. No per-entity objects, no allocation in the tick. Mobs are looked up spatially through a uniform **spatial hash grid** rebuilt each tick (`sim/grid.ts`), which AoE abilities, separation, and aggro spreading all use.
+Horde scale means **struct-of-arrays typed arrays** (decided; see ADR-0005): one `Float64Array`/`Uint8Array` per field, a free-list for slot reuse, and a `highWater` mark for iteration. No per-entity objects, no allocation in the tick. Mobs are looked up spatially through a uniform **spatial hash grid** rebuilt each tick (`sim/grid.ts`), which AoE abilities, separation, and chain-reaction knockback all use.
 
 Original plan, still the direction for richer entities:
 - Entities are integer IDs (index + generation).
