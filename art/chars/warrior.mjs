@@ -66,7 +66,7 @@ const rig = robedRig({
     const k = add('sw' + o.ang, () => sword(o.ang));
     out.push([k, ...T(...h)]);
     const [sx, sy] = o.shield ?? [0, 0];
-    out.push(['shield', ...T(12 + (o.lean ?? 0) + sx, 8 + (o.bob ?? 0) + sy)]);
+    out.push(['shield', ...T(8 + (o.lean ?? 0) + sx, 7 + (o.bob ?? 0) + sy)]);   // held at his side: centred on the torso, shoulder height
     return out;
   },
 });
