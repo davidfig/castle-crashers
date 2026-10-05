@@ -60,7 +60,7 @@ const club = (ang) => weapon({
     if (d < 2.3) return d < 1.1 ? 'X' : 'z';
     return null;
   },
-  outlineChar: 'l',
+  // no outline of its own: the builder's edge pass already inks the whole silhouette, and a second ring made it 2px thick
 });
 const clubLying = outline(rows(`
   gggggzz
