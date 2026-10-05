@@ -49,6 +49,7 @@
       <label>background <select id="cmpBg"><option value="#4b8039">grass (game)</option><option value="#5a5f6a">slate</option><option value="#9cc5df">sky (game)</option><option value="#14121a">near-black</option><option value="#d6cfc2">bone</option></select></label>
       <button id="cmpRef" class="on" title="White boxes = the game's current placeholder sprites (hero 10×14, goblin 8×9, orc 12×13), drawn to scale on the ground line">size ref boxes</button>
       <button id="cmpFlip">flip</button>
+      <button id="cmpDead" class="on" title="Show each enemy's corpse frame beside it (sheets without a dead frame are unaffected)">corpse</button>
     </div>
     <div class="stagewrap" style="padding:8px"><div id="cmpGrid" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end"></div></div>
     <p class="note">Each cell is drawn at the same integer zoom with its own timing and the ground line aligned, so height, silhouette and motion can be judged directly. Click a label to open that sheet below.</p>
@@ -307,7 +308,7 @@ async function drawCompare() {
   try { await drawCompareInner(); } finally { cmpBusy = false; }
 }
 // Every box is the same large size with the ground line at the same height, so each sprite sits with space all around.
-const BOX_W = 72, BOX_H = 60, BOX_BASE = 42;   // art pixels; base = the ground line inside the box
+const BOX_W = 88, BOX_H = 60, BOX_BASE = 42;   // art pixels; base = the ground line inside the box
 async function drawCompareInner() {
   const k = Number($('cmpZoom').value), vi = Number($('cmpVar').value), bg = $('cmpBg').value, flip = cmp.flip;
   const now = performance.now();
@@ -321,8 +322,16 @@ async function drawCompareInner() {
     g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1;
     for (let x = 0; x <= BOX_W; x += 8) { g.beginPath(); g.moveTo(x * kk + .5, 0); g.lineTo(x * kk + .5, BOX_H * kk); g.stroke(); }
     for (let y = 0; y <= BOX_H; y += 8) { g.beginPath(); g.moveTo(0, y * kk + .5); g.lineTo(BOX_W * kk, y * kk + .5); g.stroke(); }
-    const ox = Math.round(BOX_W / 2 - meta.pivot[0]), oy = BOX_BASE - meta.pivot[1];   // where the cell's origin lands in the box
-    drawShadow(g, kk, BOX_W / 2, BOX_BASE, meta.shadow ?? [9, 5]);
+    const showDead = $('cmpDead').classList.contains('on') && meta.anims.dead;      // corpse goes on the right, the live sprite shifts left
+    const cx = showDead ? Math.round(BOX_W * 0.3) : BOX_W / 2;
+    const ox = Math.round(cx - meta.pivot[0]), oy = BOX_BASE - meta.pivot[1];       // where the cell's origin lands in the box
+    drawShadow(g, kk, cx, BOX_BASE, meta.shadow ?? [9, 5]);
+    if (showDead) {
+      const cxd = Math.round(BOX_W * 0.74), df = meta.frames[meta.anims.dead.frames[0]];
+      drawShadow(g, kk, cxd, BOX_BASE, meta.shadow ?? [9, 5]);
+      g.drawImage(im, df.x, df.y, df.w, df.h, Math.round(cxd - meta.pivot[0]) * kk, oy * kk, df.w * kk, df.h * kk);
+      g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '10px monospace'; g.fillText('dead', (cxd - 7) * kk, (BOX_BASE + 7) * kk);
+    }
     g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(0, (BOX_BASE + 1) * kk, BOX_W * kk, 1);
     if ($('cmpRef').classList.contains('on')) {
       let rx = 3; for (const [nm, w, h] of REF_SIZES) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.strokeRect(rx * kk + .5, (BOX_BASE + 1 - h) * kk + .5, w * kk - 1, h * kk - 1); g.fillStyle = 'rgba(255,255,255,.8)'; g.font = '10px monospace'; g.fillText(nm + ' ' + w + '×' + h, rx * kk + 2, (BOX_BASE + 1 - h) * kk - 3); rx += w + 3; }
@@ -350,6 +359,8 @@ $('pzoom').value = mem.get('pzoom', 4);
 $('pzoom').onchange = () => { mem.set('pzoom', $('pzoom').value); drawPoses(); };
 $('cmpZoom').onchange = () => localStorage.setItem('wb.cmpZoom', $('cmpZoom').value);
 $('cmpRef').onclick = () => { $('cmpRef').classList.toggle('on'); mem.set('cmpRef', $('cmpRef').classList.contains('on') ? 1 : 0); };
+$('cmpDead').classList.toggle('on', mem.get('cmpDead', '1') === '1');
+$('cmpDead').onclick = () => { $('cmpDead').classList.toggle('on'); mem.set('cmpDead', $('cmpDead').classList.contains('on') ? 1 : 0); };
 $('cmpFlip').onclick = () => { cmp.flip = !cmp.flip; mem.set('cmpFlip', cmp.flip ? 1 : 0); $('cmpFlip').classList.toggle('on', cmp.flip); };
 $('cmpVar').onchange = () => mem.set('cmpVar', $('cmpVar').value);
 $('cmpBg').onchange = () => mem.set('cmpBg', $('cmpBg').value);
