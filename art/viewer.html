@@ -185,7 +185,7 @@ function drawShadow(g, kk, cx, gy, size) {
 }
 // ---- in-game scale stage: ground + one of each character + a horde of mobs, all at 1:1 art pixels
 function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function reshuffle() { const r = mulberry(Date.now() & 0xffff); horde = Array.from({ length: 70 }, () => ({ x: r() * 640, y: 150 + r() * 190, who: r() < 0.82 ? 'gaunt' : 'slab', t: r() * 8, flip: r() < 0.5 })); }
+function reshuffle() { const r = mulberry(Date.now() & 0xffff); horde = Array.from({ length: 70 }, () => ({ x: r() * 640, y: 150 + r() * 190, who: (() => { const q = r(); return q < 0.52 ? 'goblin' : q < 0.62 ? 'orc' : q < 0.77 ? 'mobarcher' : q < 0.9 ? 'shieldbearer' : 'bomber'; })(), t: r() * 8, flip: r() < 0.5 })); }
 function drawGame() {
   if (!Object.keys(imgs).length) return;
   const k = Number($('gzoom').value);

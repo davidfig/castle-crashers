@@ -32,6 +32,7 @@ export const GLASS = {
   s: '#c89574', S: '#f0cfae',                        // skin
   n: '#2c7554', m: '#5fb88a',                        // verdigris accent
   z: '#4a526e', Z: '#8f98b8', X: '#d4daf0',          // steel
+  o: '#5a2e1e', O: '#8a4a2e', t: '#b9744a',           // orc hide
 };
 export const GLASS_PLAYERS = [
   { id: 'p1', label: 'P1 crimson',  palette: { r: '#7a1a35', R: '#c23458', q: '#ec7a8c' } },

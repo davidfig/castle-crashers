@@ -2,6 +2,7 @@
 // at startup. Swap for real PNG atlases (tools/pack-atlas) once there is art.
 import type { Frame } from '../platform/gl/batcher';
 import { buildHeroSet, type HeroSet } from './hero';
+import { buildMobArt, mobCorpseSource, type MobArt } from './mobArt';
 
 export const PLAYER_COLORS = [0xe0443a, 0x3a7be0, 0xe8c43a, 0xa04ae0];
 
@@ -264,13 +265,15 @@ export interface Sprites {
   playerDown: Frame[];
   /** Warrior sprites from the art workbench, per player slot (see hero.ts). */
   hero: HeroSet;
+  /** Enemy art from the art workbench: walk cycles, the raised-bow archer, rotated weapons (see mobArt.ts). */
+  mobArt: MobArt;
   ground: Frame[];
   mountFar: Frame;
   mountNear: Frame;
   glyph: Record<string, Frame>;
 }
 
-export function buildSprites(heroImages: HTMLImageElement[]): Sprites {
+export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImageElement[]): Sprites {
   const blank: Frame = { u0: 0, v0: 0, u1: 0, v1: 0, w: 0, h: 0 };
   const mk = (): Frame => ({ ...blank });
   const items: { w: number; h: number; rgba: Uint8ClampedArray; frame: Frame }[] = [];
@@ -287,23 +290,17 @@ export function buildSprites(heroImages: HTMLImageElement[]): Sprites {
     return [add(bitmap(PLAYER_A, pal, `player${slot}A`)), add(bitmap(PLAYER_B, pal, `player${slot}B`))];
   });
 
-  const gpal = { G: 0x6fbf3f, g: 0x3f7f2a, y: 0xffe94a, k: 0x2a1a1a, d: 0xc9d1d9 };
-  const goblin = [add(bitmap(GOBLIN_A, gpal, 'goblinA')), add(bitmap(GOBLIN_B, gpal, 'goblinB'))];
-  const opal = { O: 0xa05a3a, o: 0x6e3a24, t: 0xf2ecd0, r: 0xff4040, a: 0x7d8a99, x: 0x5a3a22, w: 0xdde4ea };
-  const orc = [add(bitmap(ORC_A, opal, 'orcA')), add(bitmap(ORC_B, opal, 'orcB'))];
-  const apal = { C: 0x5a3a80, c: 0x8a5fb0, s: 0xf2c9a0, b: 0x8b5a2b, w: 0xe8e0c8 };
-  const archer = [add(bitmap(ARCHER_A, apal, 'archerA')), add(bitmap(ARCHER_B, apal, 'archerB'))];
-  const spal = { h: 0xb8c2cc, H: 0x7d8a99, s: 0xf2c9a0, e: 0x1b1b2b, t: 0x6a6a7a, S: 0x8b5a2b, r: 0xd9b04a };
-  const shield = [add(bitmap(SHIELD_A, spal, 'shieldA')), add(bitmap(SHIELD_B, spal, 'shieldB'))];
-  const bpal = { r: 0x8a1f1f, R: 0xd8402e, y: 0xffe94a, f: 0x5a3a22, k: 0x1a1010 };
-  const bomber = [add(bitmap(BOMBER_A, bpal, 'bomberA')), add(bitmap(BOMBER_B, bpal, 'bomberB'))];
-  const mob = [goblin, orc, archer, shield, bomber];
-
-  // Corpses are built from each enemy's own sprite so the dead look like what they were.
-  const mobBitmaps = [
-    [GOBLIN_A, gpal], [ORC_A, opal], [ARCHER_A, apal], [SHIELD_A, spal], [BOMBER_A, bpal],
-  ] as const;
-  const corpse = mobBitmaps.map(([rows, pal], t) => add(corpseOf(bitmap([...rows], pal, `corpse${t}`), 11 + t, false)));
+  // Enemy walk cycles come from the art workbench (placed in the atlas below); their corpses are derived from the
+  // first walk frame, lying on its side like the old procedural ones.
+  const corpse = mobImages.slice(0, 5).map((img, t) => {
+    const r = mobCorpseSource(t);
+    const cv = document.createElement('canvas');
+    cv.width = r.w; cv.height = r.h;
+    const c2 = cv.getContext('2d')!;
+    c2.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    const d = c2.getImageData(0, 0, r.w, r.h);
+    return add(corpseOf({ w: r.w, h: r.h, rgba: new Uint8ClampedArray(d.data) }, 11 + t, false));
+  });
   const playerDown = PLAYER_COLORS.map((col, slot) => {
     const pal = { h: 0xb8c2cc, H: 0x7d8a99, s: 0xf2c9a0, e: 0x1b1b2b, P: col, p: darken(col, 0.62), b: 0x5a3a22, w: 0xeef3f7, g: 0xe0b43a };
     return add(corpseOf(bitmap(PLAYER_A, pal, `down${slot}`), 40 + slot, false));
@@ -342,6 +339,7 @@ export function buildSprites(heroImages: HTMLImageElement[]): Sprites {
   // Hero sheets from the art workbench are stacked under the procedural sprites.
   let usedH = y + rowH + 1;
   const heroPlaces = heroImages.map((img) => { const pl = { x: 0, y: usedH }; usedH += img.height + 1; return pl; });
+  const mobPlaces = mobImages.map((img) => { const pl = { x: 0, y: usedH }; usedH += img.height + 1; return pl; });
   let H = 1;
   while (H < usedH) H <<= 1;
 
@@ -357,7 +355,10 @@ export function buildSprites(heroImages: HTMLImageElement[]): Sprites {
   }
 
   heroImages.forEach((img, k) => ctx.drawImage(img, heroPlaces[k].x, heroPlaces[k].y));
+  mobImages.forEach((img, k) => ctx.drawImage(img, mobPlaces[k].x, mobPlaces[k].y));
   const hero = buildHeroSet(heroPlaces, W, H);
+  const mobArt = buildMobArt(mobPlaces, W, H);
+  const mob = mobArt.walk;
 
-  return { atlas: canvas, px, player, mob, shadow, corpse, coin, playerDown, hero, ground, mountFar, mountNear, glyph };
+  return { atlas: canvas, px, player, mob, shadow, corpse, coin, playerDown, hero, mobArt, ground, mountFar, mountNear, glyph };
 }

@@ -1,7 +1,7 @@
 // Draws a GameState into the low-res framebuffer. Reads state only; never mutates the sim.
 import { CLASSES } from '../data/classes';
 import { lerp } from '../engine/math';
-import type { Batcher } from '../platform/gl/batcher';
+import type { Batcher, Frame } from '../platform/gl/batcher';
 import { hex, rgba } from '../platform/gl/batcher';
 import { VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
 import { Kind } from '../sim/entities';
@@ -10,6 +10,7 @@ import { BLAST_RADIUS, Behavior, MOBS, MobType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { SLASH_TICKS, type Fx } from './fx';
 import { heroFrame } from './hero';
+import { WEAPON_GRIP, WEAPON_STEP } from './mobArt';
 import type { FrameStats } from '../platform/perf';
 
 /** Screen y of world y=0 and of the horizon. */
@@ -379,6 +380,13 @@ function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, 
 }
 
 const DEG = Math.PI / 180;
+
+/** Draws a pre-rotated weapon sprite about its grip at the arm pivot. theta: degrees, 0 = forward, +90 = down. */
+function drawWeaponSprite(b: Batcher, frames: Frame[], px: number, py: number, face: number, theta: number): void {
+  const k = Math.round((((theta % 360) + 360) % 360) / WEAPON_STEP) % frames.length;
+  const f = frames[k];
+  b.draw(f, px - (face < 0 ? f.w - 1 - WEAPON_GRIP : WEAPON_GRIP), py - WEAPON_GRIP, face < 0);
+}
 const STRIKE_TICKS = 8;
 
 /** Draws a weapon as a line of pixels from a pivot, at angle theta (degrees, 0 = forward, +90 = down). */
@@ -396,9 +404,12 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   const type = e.sub[i];
   const def = MOBS[type];
   const face = flip ? -1 : 1;
-  const f = S.mob[type][((tick >> 3) + i) & 1];
+  const walk = S.mob[type];
+  const wf = walk[((tick >> 3) + i) % walk.length];
   const wind = e.wind[i];
   const winding = wind > 0;
+  // archers raise their bow for the windup
+  const f = type === MobType.Archer && winding ? S.mobArt.aim : wf;
   const since = def.atkCooldown - e.atk[i];
   const striking = !winding && def.behavior !== Behavior.Bomber && e.atk[i] > 0 && since >= 0 && since < STRIKE_TICKS;
   const p = winding ? 1 - wind / def.windup : 0;
@@ -439,7 +450,7 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
     if (winding) theta = rest + (-150 - rest) * (p * p * (3 - 2 * p));
     else if (striking) theta = -150 + (rest + 5 + 150) * Math.min(1, q * 1.5);
     const len = orc ? 9 : 5;
-    drawWeapon(b, S, pivotX, pivotY, face, theta, len, orc ? hex(0x6b4a2a) : hex(0xdfe6ee), hex(0xc4ccd6), orc ? 4 : 0);
+    drawWeaponSprite(b, orc ? S.mobArt.club : S.mobArt.dagger, pivotX, pivotY, face, theta);
     if (striking && q < 0.75) {
       // swing trail
       const a = hex(0xffffff, 0.8 * (1 - q));
