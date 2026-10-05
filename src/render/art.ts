@@ -1,0 +1,354 @@
+// Procedural placeholder art: sprites are defined as tiny text bitmaps and packed into one atlas
+// at startup. Swap for real PNG atlases (tools/pack-atlas) once there is art.
+import type { Frame } from '../platform/gl/batcher';
+
+export const PLAYER_COLORS = [0xe0443a, 0x3a7be0, 0xe8c43a, 0xa04ae0];
+
+function darken(rgb: number, k: number): number {
+  const r = Math.round(((rgb >> 16) & 255) * k), g = Math.round(((rgb >> 8) & 255) * k), b = Math.round((rgb & 255) * k);
+  return (r << 16) | (g << 8) | b;
+}
+
+function bitmap(rows: string[], pal: Record<string, number>, name: string): { w: number; h: number; rgba: Uint8ClampedArray } {
+  const w = Math.max(...rows.map((r) => r.length));
+  const h = rows.length;
+  if (__DEV__) {
+    for (const r of rows) if (r.length !== w) console.warn(`art: ${name} has ragged row "${r}" (${r.length} != ${w})`);
+  }
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ch = rows[y][x] ?? '.';
+      const c = pal[ch];
+      if (ch === '.' || c === undefined) continue;
+      const o = (y * w + x) * 4;
+      rgba[o] = (c >> 16) & 255;
+      rgba[o + 1] = (c >> 8) & 255;
+      rgba[o + 2] = c & 255;
+      rgba[o + 3] = 255;
+    }
+  }
+  return { w, h, rgba };
+}
+
+const PLAYER_A = [
+  '...PP.....',
+  '..hhhh....',
+  '.hhhhhH...',
+  '.hsseeH..w',
+  '.hssssH..w',
+  '..hhhH...w',
+  '..PPPPp..w',
+  '.PPPPPPpgg',
+  '.PsPPPPp.w',
+  '.pPPPPPp..',
+  '..PPPPp...',
+  '..hh.hh...',
+  '..hh.hh...',
+  '..bb.bb...',
+];
+const PLAYER_B = [...PLAYER_A.slice(0, 11), '...hhhh...', '...hhhh...', '...bbbb...'];
+
+const GOBLIN_A = [
+  'g.GGGG.g',
+  'ggGGGGgg',
+  '.GyGGyG.',
+  '.GGkkGG.',
+  '..GGGG..',
+  '.gGGGGg.',
+  '..GGGG..',
+  '..g..g..',
+  '..g..g..',
+];
+const GOBLIN_B = [...GOBLIN_A.slice(0, 7), '...gg...', '...gg...'];
+
+const ORC_A = [
+  '...oooooo...',
+  '..oOOOOOOo..',
+  '..OrrOOrrO..',
+  '..OOOOOOOO..',
+  '..OtOOOOtO..',
+  '.aaaaaaaaa..',
+  'aaaaaaaaaa..',
+  'aOaaaaaaaO..',
+  'aO.aaaaaa...',
+  '...aaaaaa...',
+  '...oo..oo...',
+  '...oo..oo...',
+  '..ooo..ooo..',
+];
+const ORC_B = [...ORC_A.slice(0, 10), '....oooo....', '....oooo....', '...oooooo...'];
+
+
+const ARCHER_A = [
+  '..CCC....',
+  '.CcccC.b.',
+  '.CcsscCb.',
+  '..Cccc.bw',
+  '..cccc.bw',
+  '.cccccbw.',
+  '.ccccc.bw',
+  '..cccc.b.',
+  '..cccc...',
+  '..c..c...',
+  '..C..C...',
+];
+const ARCHER_B = [...ARCHER_A.slice(0, 9), '...cc....', '...CC....'];
+
+const SHIELD_A = [
+  '...hhhh....',
+  '..hhhhhH...',
+  '..hsseHH...',
+  '...hhH.rrrr',
+  '..tttt.rSSr',
+  '.ttttttrSSr',
+  '.ttttttrSSr',
+  '..tttt.rSSr',
+  '..tttt..rr.',
+  '..hh.hh....',
+  '..hh.hh....',
+  '..HH.HH....',
+];
+const SHIELD_B = [...SHIELD_A.slice(0, 9), '...hhhh....', '...hhhh....', '...HHHH....'];
+
+const BOMBER_A = [
+  '....y...',
+  '....f...',
+  '..rrrr..',
+  '.rRRRRr.',
+  'rRyRRyRr',
+  'rRRkkRRr',
+  '.rRRRRr.',
+  '..rrrr..',
+  '..k..k..',
+];
+const BOMBER_B = [...BOMBER_A.slice(0, 8), '...kk...'];
+
+const GLYPHS: Record<string, string> = {
+  '0': '###' + '#.#' + '#.#' + '#.#' + '###',
+  '1': '.#.' + '##.' + '.#.' + '.#.' + '###',
+  '2': '###' + '..#' + '###' + '#..' + '###',
+  '3': '###' + '..#' + '###' + '..#' + '###',
+  '4': '#.#' + '#.#' + '###' + '..#' + '..#',
+  '5': '###' + '#..' + '###' + '..#' + '###',
+  '6': '###' + '#..' + '###' + '#.#' + '###',
+  '7': '###' + '..#' + '.#.' + '.#.' + '.#.',
+  '8': '###' + '#.#' + '###' + '#.#' + '###',
+  '9': '###' + '#.#' + '###' + '..#' + '###',
+  A: '.#.' + '#.#' + '###' + '#.#' + '#.#',
+  B: '##.' + '#.#' + '##.' + '#.#' + '##.',
+  C: '.##' + '#..' + '#..' + '#..' + '.##',
+  D: '##.' + '#.#' + '#.#' + '#.#' + '##.',
+  E: '###' + '#..' + '##.' + '#..' + '###',
+  F: '###' + '#..' + '##.' + '#..' + '#..',
+  G: '.##' + '#..' + '#.#' + '#.#' + '.##',
+  H: '#.#' + '#.#' + '###' + '#.#' + '#.#',
+  I: '###' + '.#.' + '.#.' + '.#.' + '###',
+  J: '..#' + '..#' + '..#' + '#.#' + '.#.',
+  K: '#.#' + '#.#' + '##.' + '#.#' + '#.#',
+  L: '#..' + '#..' + '#..' + '#..' + '###',
+  M: '#.#' + '###' + '###' + '#.#' + '#.#',
+  N: '##.' + '#.#' + '#.#' + '#.#' + '#.#',
+  O: '.#.' + '#.#' + '#.#' + '#.#' + '.#.',
+  P: '##.' + '#.#' + '##.' + '#..' + '#..',
+  Q: '.#.' + '#.#' + '#.#' + '##.' + '.##',
+  R: '##.' + '#.#' + '##.' + '#.#' + '#.#',
+  S: '.##' + '#..' + '.#.' + '..#' + '##.',
+  T: '###' + '.#.' + '.#.' + '.#.' + '.#.',
+  U: '#.#' + '#.#' + '#.#' + '#.#' + '###',
+  V: '#.#' + '#.#' + '#.#' + '#.#' + '.#.',
+  W: '#.#' + '#.#' + '###' + '###' + '#.#',
+  X: '#.#' + '#.#' + '.#.' + '#.#' + '#.#',
+  Y: '#.#' + '#.#' + '.#.' + '.#.' + '.#.',
+  Z: '###' + '..#' + '.#.' + '#..' + '###',
+  ':': '...' + '.#.' + '...' + '.#.' + '...',
+  '.': '...' + '...' + '...' + '...' + '.#.',
+  '-': '...' + '...' + '###' + '...' + '...',
+  '/': '..#' + '..#' + '.#.' + '#..' + '#..',
+  '!': '.#.' + '.#.' + '.#.' + '...' + '.#.',
+  '+': '...' + '.#.' + '###' + '.#.' + '...',
+  '?': '###' + '..#' + '.#.' + '...' + '.#.',
+};
+
+// Small deterministic hash for cosmetic noise (not the sim RNG).
+function hash2(x: number, y: number, s = 0): number {
+  let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(s, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** A body lying on its side: the sprite rotated 90 degrees, darkened and spattered with blood. */
+function corpseOf(b: { w: number; h: number; rgba: Uint8ClampedArray }, seed: number, flip: boolean): { w: number; h: number; rgba: Uint8ClampedArray } {
+  const w = b.h, h = b.w;
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < b.h; y++) {
+    for (let x = 0; x < b.w; x++) {
+      const o = (y * b.w + x) * 4;
+      if (b.rgba[o + 3] === 0) continue;
+      // rotate clockwise (or counter-clockwise for a mirrored pose)
+      const nx = flip ? y : b.h - 1 - y;
+      const ny = flip ? b.w - 1 - x : x;
+      const d = (ny * w + nx) * 4;
+      rgba[d] = b.rgba[o] * 0.86;
+      rgba[d + 1] = b.rgba[o + 1] * 0.82;
+      rgba[d + 2] = b.rgba[o + 2] * 0.82;
+      rgba[d + 3] = 255;
+    }
+  }
+  for (let i = 0; i < w * h; i++) {
+    if (rgba[i * 4 + 3] && hash2(i, w, seed) % 9 === 0) {
+      rgba[i * 4] = 120; rgba[i * 4 + 1] = 24; rgba[i * 4 + 2] = 24; // blood
+    }
+  }
+  return { w, h, rgba };
+}
+
+function makeGround(variant: number): { w: number; h: number; rgba: Uint8ClampedArray } {
+  const w = 16, h = 16;
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  const shades = [0x4b8039, 0x497d37, 0x4d8339];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const r = hash2(x, y, variant + 1);
+      let c = shades[r % 3];
+      if ((r >>> 8) % 70 === 0) c = 0x437535; // tufts
+      if ((r >>> 8) % 400 === 1) c = 0xd8d26a; // tiny flowers
+      const o = (y * w + x) * 4;
+      rgba[o] = (c >> 16) & 255; rgba[o + 1] = (c >> 8) & 255; rgba[o + 2] = c & 255; rgba[o + 3] = 255;
+    }
+  }
+  return { w, h, rgba };
+}
+
+function makeMountains(w: number, h: number, base: number, amp: number, seed: number, fill: number, edge: number): { w: number; h: number; rgba: Uint8ClampedArray } {
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  const TAU = Math.PI * 2;
+  for (let x = 0; x < w; x++) {
+    const t = (x / w) * TAU;
+    const ridge = base
+      - amp * (0.55 * Math.sin(t * 1 + seed) + 0.3 * Math.sin(t * 3 + seed * 2.1) + 0.15 * Math.sin(t * 7 + seed * 0.7));
+    const top = Math.max(0, Math.round(ridge));
+    for (let y = top; y < h; y++) {
+      const o = (y * w + x) * 4;
+      const c = y === top ? edge : (hash2(x, y, seed | 0) % 23 === 0 ? darken(fill, 0.92) : fill);
+      rgba[o] = (c >> 16) & 255; rgba[o + 1] = (c >> 8) & 255; rgba[o + 2] = c & 255; rgba[o + 3] = 255;
+    }
+  }
+  return { w, h, rgba };
+}
+
+function makeEllipse(w: number, h: number): { w: number; h: number; rgba: Uint8ClampedArray } {
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (x + 0.5 - w / 2) / (w / 2), dy = (y + 0.5 - h / 2) / (h / 2);
+      if (dx * dx + dy * dy <= 1) rgba[(y * w + x) * 4 + 3] = 255;
+    }
+  }
+  return { w, h, rgba };
+}
+
+export interface Sprites {
+  atlas: HTMLCanvasElement;
+  px: Frame;
+  player: Frame[][];
+  /** Indexed by MobType: two walk frames each. */
+  mob: Frame[][];
+  shadow: Frame[];
+  /** Indexed by MobType: a fallen body of that enemy. */
+  corpse: Frame[];
+  /** Coins: [small, big] x [face-on, edge-on]. */
+  coin: Frame[][];
+  /** Fallen hero per player slot. */
+  playerDown: Frame[];
+  ground: Frame[];
+  mountFar: Frame;
+  mountNear: Frame;
+  glyph: Record<string, Frame>;
+}
+
+export function buildSprites(): Sprites {
+  const blank: Frame = { u0: 0, v0: 0, u1: 0, v1: 0, w: 0, h: 0 };
+  const mk = (): Frame => ({ ...blank });
+  const items: { w: number; h: number; rgba: Uint8ClampedArray; frame: Frame }[] = [];
+  const add = (b: { w: number; h: number; rgba: Uint8ClampedArray }): Frame => {
+    const frame = mk();
+    items.push({ ...b, frame });
+    return frame;
+  };
+
+  const px = add({ w: 1, h: 1, rgba: new Uint8ClampedArray([255, 255, 255, 255]) });
+
+  const player: Frame[][] = PLAYER_COLORS.map((col, slot) => {
+    const pal = { h: 0xb8c2cc, H: 0x7d8a99, s: 0xf2c9a0, e: 0x1b1b2b, P: col, p: darken(col, 0.62), b: 0x5a3a22, w: 0xeef3f7, g: 0xe0b43a };
+    return [add(bitmap(PLAYER_A, pal, `player${slot}A`)), add(bitmap(PLAYER_B, pal, `player${slot}B`))];
+  });
+
+  const gpal = { G: 0x6fbf3f, g: 0x3f7f2a, y: 0xffe94a, k: 0x2a1a1a, d: 0xc9d1d9 };
+  const goblin = [add(bitmap(GOBLIN_A, gpal, 'goblinA')), add(bitmap(GOBLIN_B, gpal, 'goblinB'))];
+  const opal = { O: 0xa05a3a, o: 0x6e3a24, t: 0xf2ecd0, r: 0xff4040, a: 0x7d8a99, x: 0x5a3a22, w: 0xdde4ea };
+  const orc = [add(bitmap(ORC_A, opal, 'orcA')), add(bitmap(ORC_B, opal, 'orcB'))];
+  const apal = { C: 0x5a3a80, c: 0x8a5fb0, s: 0xf2c9a0, b: 0x8b5a2b, w: 0xe8e0c8 };
+  const archer = [add(bitmap(ARCHER_A, apal, 'archerA')), add(bitmap(ARCHER_B, apal, 'archerB'))];
+  const spal = { h: 0xb8c2cc, H: 0x7d8a99, s: 0xf2c9a0, e: 0x1b1b2b, t: 0x6a6a7a, S: 0x8b5a2b, r: 0xd9b04a };
+  const shield = [add(bitmap(SHIELD_A, spal, 'shieldA')), add(bitmap(SHIELD_B, spal, 'shieldB'))];
+  const bpal = { r: 0x8a1f1f, R: 0xd8402e, y: 0xffe94a, f: 0x5a3a22, k: 0x1a1010 };
+  const bomber = [add(bitmap(BOMBER_A, bpal, 'bomberA')), add(bitmap(BOMBER_B, bpal, 'bomberB'))];
+  const mob = [goblin, orc, archer, shield, bomber];
+
+  // Corpses are built from each enemy's own sprite so the dead look like what they were.
+  const mobBitmaps = [
+    [GOBLIN_A, gpal], [ORC_A, opal], [ARCHER_A, apal], [SHIELD_A, spal], [BOMBER_A, bpal],
+  ] as const;
+  const corpse = mobBitmaps.map(([rows, pal], t) => add(corpseOf(bitmap([...rows], pal, `corpse${t}`), 11 + t, false)));
+  const playerDown = PLAYER_COLORS.map((col, slot) => {
+    const pal = { h: 0xb8c2cc, H: 0x7d8a99, s: 0xf2c9a0, e: 0x1b1b2b, P: col, p: darken(col, 0.62), b: 0x5a3a22, w: 0xeef3f7, g: 0xe0b43a };
+    return add(corpseOf(bitmap(PLAYER_A, pal, `down${slot}`), 40 + slot, false));
+  });
+
+  const shadow = [add(makeEllipse(8, 3)), add(makeEllipse(12, 4)), add(makeEllipse(16, 5))];
+
+  const cpal = { y: 0xc98a14, Y: 0xffd84a, W: 0xfff6b0 };
+  const coin = [
+    [add(bitmap(['.yy.', 'yYWy', 'yYYy', '.yy.'], cpal, 'coinS')), add(bitmap(['yY', 'yY', 'yY', 'yY'], cpal, 'coinSe'))],
+    [add(bitmap(['.yyyy.', 'yYYYYy', 'yYWWYy', 'yYYYYy', 'yYYYYy', '.yyyy.'], cpal, 'coinB')), add(bitmap(['yY', 'yY', 'yY', 'yY', 'yY', 'yY'], cpal, 'coinBe'))],
+  ];
+
+  const ground = [0, 1, 2, 3].map((v) => add(makeGround(v)));
+  const mountFar = add(makeMountains(256, 64, 40, 20, 1.3, 0x8aa2c4, 0xaabfd9));
+  const mountNear = add(makeMountains(256, 44, 28, 14, 4.1, 0x6c8c84, 0x8aaba0));
+
+  const glyph: Record<string, Frame> = {};
+  for (const [ch, bits] of Object.entries(GLYPHS)) {
+    const rgba = new Uint8ClampedArray(3 * 5 * 4);
+    for (let i = 0; i < 15; i++) if (bits[i] === '#') rgba.set([255, 255, 255, 255], i * 4);
+    glyph[ch] = add({ w: 3, h: 5, rgba });
+  }
+
+  // Shelf-pack into a 512-wide atlas with 1px padding.
+  const W = 512;
+  const order = [...items].sort((a, b) => b.h - a.h);
+  let x = 0, y = 0, rowH = 0;
+  const placed: { it: (typeof items)[number]; x: number; y: number }[] = [];
+  for (const it of order) {
+    if (x + it.w + 1 > W) { x = 0; y += rowH + 1; rowH = 0; }
+    placed.push({ it, x, y });
+    x += it.w + 1;
+    if (it.h > rowH) rowH = it.h;
+  }
+  let H = 1;
+  while (H < y + rowH + 1) H <<= 1;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+  for (const p of placed) {
+    ctx.putImageData(new ImageData(new Uint8ClampedArray(p.it.rgba), p.it.w, p.it.h), p.x, p.y);
+    const f = p.it.frame;
+    f.u0 = p.x / W; f.v0 = p.y / H; f.u1 = (p.x + p.it.w) / W; f.v1 = (p.y + p.it.h) / H;
+    f.w = p.it.w; f.h = p.it.h;
+  }
+
+  return { atlas: canvas, px, player, mob, shadow, corpse, coin, playerDown, ground, mountFar, mountNear, glyph };
+}

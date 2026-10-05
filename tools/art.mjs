@@ -1,0 +1,167 @@
+// Sprite workbench builder. Reads art/chars/*.mjs (paper-doll rigs of hand-pixeled parts),
+// composes every frame at integer offsets (no rotation, no resampling), and writes
+// art/out/<name>[.variant].png + <name>.json. Zero dependencies (own PNG encoder).
+//   node tools/art.mjs            build once
+//   node tools/art.mjs --watch    (used by tools/art-dev.mjs)
+import { readdirSync, writeFileSync, mkdirSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
+import { pathToFileURL } from 'node:url';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const CHARS = join(ROOT, 'art/chars');
+const OUT = join(ROOT, 'art/out');
+
+// ---------- PNG ----------
+const CRC = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = (b) => { let c = 0xffffffff; for (const x of b) c = CRC[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function chunk(type, data) {
+  const out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0); out.write(type, 4, 'ascii'); data.copy(out, 8);
+  out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+  return out;
+}
+export function encodePNG(w, h, rgba) {
+  const raw = Buffer.alloc((w * 4 + 1) * h);
+  for (let y = 0; y < h; y++) { raw[y * (w * 4 + 1)] = 0; Buffer.from(rgba.buffer, rgba.byteOffset + y * w * 4, w * 4).copy(raw, y * (w * 4 + 1) + 1); }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+
+// ---------- compose ----------
+const hexToRGB = (s) => [parseInt(s.slice(1, 3), 16), parseInt(s.slice(3, 5), 16), parseInt(s.slice(5, 7), 16)];
+
+function partPixels(def, name) {
+  const rows = Array.isArray(def) ? def : def.rows;
+  const w = Math.max(...rows.map((r) => r.length));
+  for (const r of rows) if (r.length !== w) console.warn(`  ! ${name}: ragged row (${r.length} != ${w}): "${r}"`);
+  return { w, h: rows.length, rows, ax: def.ax ?? 0, ay: def.ay ?? 0 };
+}
+
+/** Builds one sheet (one palette variant). Returns {w,h,rgba,frames,anims}. */
+function buildSheet(def, pal, quiet) {
+  const [cw, ch] = def.cell;
+  const animNames = Object.keys(def.anims);
+  const cols = Math.max(...animNames.map((a) => def.anims[a].frames.length));
+  const W = cols * cw, H = animNames.length * ch;
+  const rgba = new Uint8ClampedArray(W * H * 4);
+  const frames = {}, anims = {};
+  const parts = {};
+  for (const [n, rows] of Object.entries(def.parts)) parts[n] = partPixels(rows, n);
+  const post = def.post ?? null;
+  const clipped = new Set();
+  let feet = -1;
+
+  animNames.forEach((an, ri) => {
+    const a = def.anims[an];
+    const ms = a.ms ?? a.frames.map(() => Math.round(1000 / a.fps));
+    if (ms.length !== a.frames.length) throw new Error(`${def.name}: anim ${an} has ${a.frames.length} frames but ${ms.length} durations`);
+    anims[an] = { fps: a.fps ?? Math.round(1000 / (ms.reduce((x, y) => x + y, 0) / ms.length)), loop: a.loop !== false, ms, frames: [] };
+    a.frames.forEach((fname, ci) => {
+      const fr = def.frames[fname];
+      if (!fr) throw new Error(`${def.name}: anim ${an} references missing frame ${fname}`);
+      const ox = ci * cw, oy = ri * ch;
+      const grid = new Array(cw * ch).fill(null);
+      const putc = (dx, dy, c) => {
+        if (dx < 0 || dy < 0 || dx >= cw || dy >= ch) return;
+        grid[dy * cw + dx] = c;
+      };
+      // fx entries only fill empty cells, so they read as sitting behind the character
+      let behind = false;
+      const putc2 = (dx, dy, c) => { if (dx < 0 || dy < 0 || dx >= cw || dy >= ch) return; if (grid[dy * cw + dx] === null) grid[dy * cw + dx] = c; };
+      const draw = (entry) => {
+        if (typeof entry === 'function') { entry(behind ? putc2 : putc); return; }
+        const [pn, px, py, flip] = entry;
+        const p = parts[pn];
+        if (!p) throw new Error(`${def.name}: frame ${fname} references missing part ${pn}`);
+        for (let y = 0; y < p.h; y++) for (let x = 0; x < p.w; x++) {
+          const c = p.rows[y][flip ? p.w - 1 - x : x];
+          if (c === undefined || c === '.' || c === ' ') continue;
+          const dx = px - (flip ? p.w - 1 - p.ax : p.ax) + x, dy = py - p.ay + y;
+          if (dx < 0 || dy < 0 || dx >= cw || dy >= ch) { clipped.add(`${fname}:${pn}`); continue; }
+          if (behind && grid[dy * cw + dx] !== null) continue;
+          if (/^leg/.test(pn) && (an === 'idle' || an === 'walk')) feet = Math.max(feet, dy);
+          grid[dy * cw + dx] = c;
+        }
+      };
+      // fx entries (names starting "fx", or entries flagged) are drawn after the edge pass and get no rim/ink
+      const isFx = (e) => Array.isArray(e) && typeof e[0] === 'string' && e[0].startsWith('fx');
+      for (const e of fr) if (!isFx(e)) draw(e);
+      if (post) {
+        const solid = grid.map((c) => c !== null);
+        const at = (x, y) => (x >= 0 && y >= 0 && x < cw && y < ch ? solid[y * cw + x] : false);
+        const next = grid.slice();
+        for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+          const i = y * cw + x;
+          if (solid[i]) {
+            const r = post.rim?.[grid[i]];
+            if (r && (!at(x - 1, y) || !at(x, y - 1))) next[i] = r;
+          } else if (post.ink && (post.all ? (at(x - 1, y) || at(x, y - 1) || at(x + 1, y) || at(x, y + 1)) : (at(x - 1, y) || at(x, y - 1)))) next[i] = post.ink;
+        }
+        for (let i = 0; i < grid.length; i++) grid[i] = next[i];
+      }
+      behind = true;
+      for (const e of fr) if (isFx(e)) draw(e);
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+        const c = grid[y * cw + x];
+        if (c === null) continue;
+        const col = pal[c];
+        if (!col) { console.warn(`  ! ${def.name}: unknown palette char "${c}"`); continue; }
+        const o = ((oy + y) * W + ox + x) * 4;
+        const [r, g, b] = hexToRGB(col);
+        rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 255;
+      }
+      frames[`${an}_${ci}`] = { x: ox, y: oy, w: cw, h: ch };
+      anims[an].frames.push(`${an}_${ci}`);
+    });
+  });
+  if (clipped.size && !quiet) console.warn(`  ! ${def.name}: clipped by cell: ${[...clipped].join(', ')}`);
+  return { W, H, rgba, frames, anims, feet };
+}
+
+function upscale(w, h, rgba, k, bg) {
+  const W = w * k, H = h * k, out = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = ((y / k | 0) * w + (x / k | 0)) * 4, o = (y * W + x) * 4;
+    const a = rgba[i + 3] ? 1 : 0;
+    // checker-free flat background; cell grid lines are drawn by the viewer, not here
+    for (let c = 0; c < 3; c++) out[o + c] = a ? rgba[i + c] : bg[c];
+    out[o + 3] = 255;
+  }
+  return { W, H, out };
+}
+
+export async function build() {
+  mkdirSync(OUT, { recursive: true });
+  const files = readdirSync(CHARS).filter((f) => f.endsWith('.mjs')).sort();
+  const index = [];
+  for (const f of files) {
+    const def = (await import(pathToFileURL(join(CHARS, f)).href + `?t=${Date.now()}`)).default;
+    const variants = def.variants ?? [{ id: 'base', palette: {} }];
+    let meta;
+    variants.forEach((v, i) => {
+      const pal = { ...def.palette, ...v.palette };
+      const sheet = buildSheet(def, pal, i > 0);
+      const file = i === 0 ? `${def.name}.png` : `${def.name}.${v.id}.png`;
+      writeFileSync(join(OUT, file), encodePNG(sheet.W, sheet.H, sheet.rgba));
+      if (process.env.ART_PREVIEW && i === 0) {
+        const k = Number(process.env.ART_SCALE) || 6;
+        const up = upscale(sheet.W, sheet.H, sheet.rgba, k, [0x5a, 0x5f, 0x6a]);
+        writeFileSync(join(process.env.ART_PREVIEW, `${def.name}.png`), encodePNG(up.W, up.H, up.out));
+      }
+      if (i === 0 && sheet.feet >= 0 && def.pivot[1] !== sheet.feet) {
+        // The ground line comes from the lowest sole of the `leg*` parts in idle/walk, never typed by hand
+        // (hand-set pivots drifted and made characters float). Weapons/capes may hang lower without moving it.
+        console.log(`  pivot y ${def.pivot[1]} -> ${sheet.feet} (derived from feet)`); def.pivot[1] = sheet.feet;
+      }
+      if (i === 0) meta = { name: def.name, title: def.title ?? def.name, notes: def.notes ?? '', cell: def.cell, pivot: def.pivot, shadow: def.shadow ?? [9, 5], size: [sheet.W, sheet.H], frames: sheet.frames, anims: sheet.anims, palette: pal, variants: variants.map((x, j) => ({ id: x.id, label: x.label ?? x.id, file: j === 0 ? `${def.name}.png` : `${def.name}.${x.id}.png` })) };
+    });
+    writeFileSync(join(OUT, `${def.name}.json`), JSON.stringify(meta, null, 1));
+    index.push(def.name);
+    console.log(`built ${def.name}: ${meta.size[0]}x${meta.size[1]}, ${Object.keys(meta.frames).length} frames, ${variants.length} variant(s)`);
+  }
+  writeFileSync(join(OUT, 'index.json'), JSON.stringify(index));
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) await build();

@@ -1,0 +1,21 @@
+{
+  "name": "game",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/dev.mjs",
+    "build": "node tools/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node tools/test.mjs",
+    "check": "node tools/check-sim.mjs",
+    "playtest": "node tools/playtest.mjs",
+    "art": "node tools/art-dev.mjs",
+    "art:build": "node tools/art.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}
