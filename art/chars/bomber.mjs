@@ -4,7 +4,8 @@ import { GLASS as G } from '../palette.mjs';
 import { rows } from '../lib.mjs';
 import { robedRig } from '../rigs/robed.mjs';
 
-const palette = { l: G.lead, e: G.lead, ...G };
+// orange sits between the crimson body and the yellow of a fully lit bomb
+const palette = { l: G.lead, e: G.lead, ...G, p: '#a24a1c', P: '#e8802a', Q: '#ffb848' };
 const post = { ink: 'l', all: true };
 
 const robe = rows(`
@@ -36,6 +37,11 @@ const robeLit = rows(`
   rRRlRr
   .rrrr.
 `);
+// the lit bomb blinks red -> orange -> yellow -> orange -> red: same shape, recoloured ramps (r/R/q = crimson, p/P/Q = orange, g/G/Y = yellow)
+const recolor = (rowsIn, map) => rowsIn.map((r) => [...r].map((c) => map[c] ?? c).join(''));
+const robeLitRed = robeLit;
+const robeLitOrange = recolor(robeLit, { r: 'p', R: 'P', q: 'Q' });
+const robeLitYellow = recolor(robeLit, { r: 'g', R: 'G', q: 'Y' });
 const robeHurt = rows(`
   ..rr..
   .rRRr.
@@ -48,7 +54,7 @@ const shoe = rows(`
   .l.
   ll.
 `);
-const parts = { head, fuseLit0, fuseLit1, robe, robeLit, robeHurt, shoe };
+const parts = { head, fuseLit0, fuseLit1, robe, robeLit: robeLitRed, robeLitOrange, robeLitYellow, robeHurt, shoe };
 const rig = robedRig({
   OX: 4, OY: 1, parts, shoe,
   layout: { robe: [2, 2], head: [3, 0], legB: [3, 8], legF: [5, 8], sleeve: null },
@@ -61,8 +67,10 @@ pose('walk2', { bob: 1, lf: -1, lb: 1 });
 pose('walk3', { bob: 0 });
 pose('idle0', { bob: 0 });
 pose('idle1', { bob: 1 });
-pose('lit0', { bob: 1, headPart: 'fuseLit0', robePart: 'robeLit' });
-pose('lit1', { bob: 0, headPart: 'fuseLit1', robePart: 'robeLit' });
+pose('lit0', { bob: 1, headPart: 'fuseLit0', robePart: 'robeLit' });              // red
+pose('lit1', { bob: 0, headPart: 'fuseLit1', robePart: 'robeLitOrange' });        // orange
+pose('lit2', { bob: 1, headPart: 'fuseLit0', robePart: 'robeLitYellow' });        // yellow
+pose('lit3', { bob: 0, headPart: 'fuseLit1', robePart: 'robeLitOrange' });        // orange
 pose('hurt0', { bob: 1, lean: -1, robePart: 'robeHurt' });
 
 export default {
@@ -74,7 +82,7 @@ export default {
   anims: {
     walk: { fps: 10, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
     idle: { fps: 3, frames: ['idle0', 'idle1'] },
-    lit: { fps: 12, frames: ['lit0', 'lit1'] },
+    lit: { fps: 8, frames: ['lit0', 'lit1', 'lit2', 'lit3'] },        // red -> yellow -> red blink
     hurt: { fps: 1, frames: ['hurt0'] },
   },
 };
