@@ -228,7 +228,7 @@ test('warrior dash is a charge that bowls over mobs in its path', () => {
   assert.ok(e.x[me] > 240, 'charged through');
 });
 
-test('the cleric attacks with a point-blank burst: it hits what is behind it, and emits no slash', () => {
+test('the cleric attacks all round her: it hits what is behind it, and emits no slash and no per-hit pulse', () => {
   const { s, e, me } = dashSetup(2);
   const front = allocEntity(e, Kind.Mob, 1, me >= 0 ? 215 : 0, 100, 200);
   const behind = allocEntity(e, Kind.Mob, 1, 185, 100, 200);
@@ -239,7 +239,7 @@ test('the cleric attacks with a point-blank burst: it hits what is behind it, an
   assert.equal(e.hp[far], 200);
   let slash = false, pulse = false;
   for (let k = 0; k < s.events.n; k++) { const t = s.events.data[k * EV_STRIDE]; if (t === Ev.Swing || t === Ev.Finisher) slash = true; if (t === Ev.Pulse) pulse = true; }
-  assert.ok(pulse && !slash);
+  assert.ok(!pulse && !slash);
 });
 
 test("the cleric's attack button toggles a pulsing aura that drains stamina and stops when toggled off or out of stamina", () => {
@@ -261,4 +261,77 @@ test("the cleric's attack button toggles a pulsing aura that drains stamina and 
   step(s, idle()); step(s, press);
   for (let k = 0; k < 30; k++) step(s, idle());
   assert.ok(!s.players[0].auraOn, 'runs dry');
+});
+
+test('the rogue hits a mob from behind (or out of a vanish) much harder than head-on', () => {
+  const hitFor = (faceAway: boolean, vanished = false): number => {
+    const s = createSim(1);
+    s.players[0].classId = 3; // rogue
+    const f = idle();
+    f[0].buttons = Btn.Join;
+    step(s, f);
+    const p = s.players[0], e = s.ents;
+    p.faceX = 1; p.faceY = 0;
+    const m = allocEntity(e, Kind.Mob, 0, e.x[p.ent] + 20, e.y[p.ent], 1);
+    e.hp[m] = e.maxhp[m] = 1000;
+    e.flags[m] = 1;
+    e.face[m] = faceAway ? 1 : -1;
+    if (vanished) p.vanishT = 50;
+    f[0].buttons = Btn.Attack;
+    step(s, f);
+    return 1000 - e.hp[m];
+  };
+  const front = hitFor(false), back = hitFor(true), ambush = hitFor(false, true);
+  assert.ok(back >= front * 2.4, `back ${back} vs front ${front}`);
+  assert.ok(ambush > back, `ambush ${ambush} vs back ${back}`);
+});
+
+test("the archer's arrows hit harder the farther they have flown", () => {
+  const dmgAt = (flown: number): number => {
+    const s = createSim(1);
+    s.players[0].classId = 4; // archer
+    const f = idle();
+    f[0].buttons = Btn.Join;
+    step(s, f);
+    const e = s.ents, a = CLASSES[4].shot!;
+    const m = allocEntity(e, Kind.Mob, 0, 300, 100, 1);
+    e.hp[m] = e.maxhp[m] = 1000;
+    e.flags[m] = 1;
+    const q = allocEntity(e, Kind.Proj, 1, 297, 100, a.ttl - Math.round(a.ttl * flown));
+    e.vx[q] = a.speed; e.vy[q] = 0;
+    step(s, idle());
+    return 1000 - e.hp[m];
+  };
+  assert.ok(dmgAt(0.95) > dmgAt(0.05) * 1.8, `${dmgAt(0.95)} vs ${dmgAt(0.05)}`);
+});
+
+test("the cleric's aura is continuous: steady chip damage every few ticks, no pulse bursts, and it never stuns or freezes", () => {
+  const s = createSim(1);
+  s.players[0].classId = 2; // cleric
+  const f = idle();
+  f[0].buttons = Btn.Join;
+  step(s, f);
+  const p = s.players[0], e = s.ents;
+  const m = allocEntity(e, Kind.Mob, 1, e.x[p.ent] + 20, e.y[p.ent], 1); // an orc
+  e.hp[m] = e.maxhp[m] = 1000;
+  e.flags[m] = 1;
+  e.vx[m] = 0;
+  f[0].buttons = Btn.Attack;
+  step(s, f);
+  f[0].buttons = 0;
+  assert.ok(p.auraOn);
+  let hits = 0, last = e.hp[m], pulses = 0, stunned = 0;
+  for (let t = 0; t < 80; t++) {
+    step(s, f);
+    if (e.hp[m] < last) hits++;
+    last = e.hp[m];
+    if (e.stun[m] > 0) stunned++;
+    for (let k = 0; k < s.events.n; k++) if (s.events.data[k * EV_STRIDE] === Ev.Pulse) pulses++;
+    assert.equal(s.hitStop, 0, 'the aura never freezes the game');
+    e.x[m] = e.x[p.ent] + 20; // hold it in reach so only the cadence is measured
+    e.y[m] = e.y[p.ent];
+  }
+  assert.ok(hits >= 8, `the aura hit ${hits} times in 80 ticks`);
+  assert.equal(pulses, 0);
+  assert.equal(stunned, 0);
 });

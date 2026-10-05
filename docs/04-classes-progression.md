@@ -20,6 +20,18 @@ The link between them: meta unlocks **expand what you can be offered during a ru
 
 Each class defines (in `src/data/classes/`): base stats, light-attack chain, dodge/block, 2 starting abilities, resource type, sprite set, palette rows, and a class tree.
 
+### What each class is best at
+
+Each class owns one thing the others cannot match; a kit that does not reinforce it is a bug.
+
+| Class | Excels at | How (in `src/data/classes.ts` / `sim/step.ts`) |
+|---|---|---|
+| Warrior | Holding the line | Most HP, the shoulder-charge plows a lane, the quake shoves a whole column back |
+| Mage | Crowds (area damage) | Splash fireballs and a huge slow special that hit the neighbours too |
+| Cleric | Keeping the party alive | Heal pulse on the dodge, healing nova, point-blank aura |
+| **Rogue** | Single-target burst by flanking | `backstab` ×2.5 on a mob facing away, `ambush` ×3.5 on the first strike out of a vanish. Front-on he is no better than the warrior, so he must dash round or vanish first |
+| **Archer** | Safe damage from range | `longShot`: arrows gain up to +120% damage over their flight, so full-range shots hit ×2.2. Piercing volley; rain of arrows for zones |
+
 ### Stats
 
 Keep small and legible: **Vitality** (HP), **Strength** (physical dmg), **Magic** (spell dmg/heal), **Agility** (speed, crit, dodge), **Defense** (damage reduction), plus a derived **Luck** hook for drops. Classes weight stats differently; items modify them.

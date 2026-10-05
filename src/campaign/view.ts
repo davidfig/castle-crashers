@@ -169,12 +169,13 @@ export function summaryScreen(sum: RunSummary, cfg: RunConfig, before: Ledger, a
   return { kind: 'text', header, body, footer: 'ATTACK TO CONTINUE', figure: sum.offLedger ? undefined : { name: 'registrar', talking: true } };
 }
 
-const BLURB: Record<string, string[]> = {
-  warrior: ['SWORD COMBO', 'WAVE SLASH'],
-  mage: ['FIREBALLS', 'TELEPORT'],
-  cleric: ['HOLY BURST', 'HEALS ALLIES'],
-  rogue: ['FAST BLADES', 'VANISH'],
-  archer: ['LONG RANGE', 'ARROW FAN'],
+/** What each class is for, shown on the character select (docs/04-classes-progression.md, "What each class is best at"): a headline, then how. */
+export const BLURB: Record<string, string[]> = {
+  warrior: ['HOLDS THE LINE', 'MOST HP', 'DODGE PLOWS A LANE', 'ABILITY: QUAKE'],
+  mage: ['AREA DAMAGE', 'SPLASH FIREBALLS', 'DODGE TELEPORTS', 'ABILITY: BIG FIREBALL'],
+  cleric: ['KEEPS ALLIES ALIVE', 'ATTACK TOGGLES AURA', 'AURA HURTS ALL NEAR', 'DODGE HEALS PARTY'],
+  rogue: ['BURST FROM BEHIND', 'BACKSTAB: 2.5X DAMAGE', 'VANISH, THEN STRIKE', 'WEAK HEAD-ON'],
+  archer: ['SNIPER', 'FAR SHOTS HIT HARDER', 'ARROW FAN AND RAIN', 'STAY BACK'],
 };
 
 export interface LobbySlot { joined: boolean; ready: boolean; classId: number }

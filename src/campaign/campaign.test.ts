@@ -325,3 +325,17 @@ test('an old save without betrayed loads with zero', () => {
   assert.equal(r.status, 'ok');
   assert.equal(r.ledger.betrayed, 0);
 });
+
+test('every class blurb on the select screen fits its card in the story font', async () => {
+  const { BLURB } = await import('./view');
+  const { storyWidth } = await import('../data/storyFont');
+  const { CLASSES } = await import('../data/classes');
+  for (const c of CLASSES) {
+    const lines = BLURB[c.name];
+    assert.ok(lines && lines.length >= 3 && lines.length <= 4, `${c.name} needs 3-4 note lines`);
+    for (const l of lines) {
+      assert.match(l, /^[0-9A-Z:.\-/!+?, ]*$/, `${c.name}: ${l}`);
+      assert.ok(storyWidth(l) <= 130, `${c.name}: "${l}" is ${storyWidth(l)}px wide`);
+    }
+  }
+});

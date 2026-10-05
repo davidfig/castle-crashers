@@ -74,7 +74,7 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
     const n = scr.slots.length, gap = 8;
     const cw = Math.floor((VIEW_W - 2 * MARGIN + 8 - gap * (n - 1)) / n);
     scr.slots.forEach((sl, i) => {
-      const x = MARGIN - 4 + i * (cw + gap), y = 58, h = 130;
+      const x = MARGIN - 4 + i * (cw + gap), y = 58, h = 152;
       const cx = x + Math.floor(cw / 2);
       const col = PLAYER_COLORS[i];
       drawPanel(b, S, x, y, cw, h, { fill: 'ink', accent: sl.ready ? 0x4fd05a : sl.joined ? col : GLASS.z });
@@ -97,14 +97,14 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
       }
       sl.blurb.forEach((t, k) => {
         const line = t[0] + t.slice(1).toLowerCase();
-        drawStory(b, S, line, cx - Math.floor(storyWidth(line) / 2), y + 86 + k * 11, TONE.dim);
+        drawStory(b, S, line, cx - Math.floor(storyWidth(line) / 2), y + 86 + k * 10, k === 0 ? TONE.normal : TONE.dim); // the first line is the class's one strength
       });
-      drawIcon(b, S, 'heart', cx - 18, y + 109, 1);
-      drawStory(b, S, String(sl.hp), cx - 6, y + 108, TONE.normal);
+      drawIcon(b, S, 'heart', cx - 18, y + 133, 1);
+      drawStory(b, S, String(sl.hp), cx - 6, y + 132, TONE.normal);
       if (sl.ready) drawStory(b, S, 'Ready', x + cw - 10 - storyWidth('Ready'), y + 9, 0x4fd05a);
     });
-    drawStory(b, S, 'Where you are headed', MARGIN, 196, TONE.dim);
-    biomeThumb(b, S, scr.biome, MARGIN, 210, VIEW_W - 2 * MARGIN, 96, tick);
+    drawStory(b, S, 'Where you are headed', MARGIN, 218, TONE.dim);
+    biomeThumb(b, S, scr.biome, MARGIN, 232, VIEW_W - 2 * MARGIN, 96, tick);
   } else if (scr.kind === 'board') {
     drawStory(b, S, scr.sub, MARGIN, 36, TONE.normal);
     drawStory(b, S, scr.mood, MARGIN, 47, TONE.dim);

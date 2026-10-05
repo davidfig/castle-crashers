@@ -47,6 +47,23 @@ function feetY(e: GameState['ents'], i: number, alpha: number): number {
 function slopeY(y: number): number {
   return GROUND_TOP + (FIELD_Y0 + TOP_ENTRY_DEPTH - GROUND_TOP) * (y / TOP_ENTRY_DEPTH);
 }
+/**
+ * How far a struck body is washed toward white, fading over its 6 hurt ticks. It must stay well short of solid white: a fully
+ * whitened enemy is invisible against snow and pale ground, so a knocked-back mob seemed to vanish for a moment.
+ */
+/** A four-point sparkle `arm` px long, centred on (x, y): a plus with a white-hot core. */
+function star(b: Batcher, S: Sprites, x: number, y: number, arm: number, color: number, alpha: number): void {
+  b.drawScaled(S.px, x - arm - 1, y - 1, arm * 2 + 3, 3, hex(0xb86a10, alpha * 0.55)); // a dark amber edge so it holds against snow
+  b.drawScaled(S.px, x - 1, y - arm - 1, 3, arm * 2 + 3, hex(0xb86a10, alpha * 0.55));
+  b.drawScaled(S.px, x - arm, y, arm * 2 + 1, 1, hex(color, alpha));
+  b.drawScaled(S.px, x, y - arm, 1, arm * 2 + 1, hex(color, alpha));
+  b.drawScaled(S.px, x - 1, y - 1, 3, 3, hex(0xffffff, alpha));
+}
+
+function hitFlash(hurt: number): number {
+  return hurt > 0 ? 0.12 + 0.06 * hurt : 0;
+}
+
 const bucket = new Int32Array(WORLD_H + 3);
 
 export interface DebugInfo {
@@ -111,7 +128,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const sx = lerp(e.px[i], e.x[i], alpha) - camX;
     if (y <= -RISE_RUN || sx < -20 || sx > VIEW_W + 20) continue; // still entirely behind the hill
     const u = (y + RISE_RUN) / RISE_RUN; // 0 = just behind the hill, 1 = standing on the crest
-    drawMob(b, S, e, i, s.tick, sx, GROUND_TOP + LIFT * (1 - u) + oy, e.face[i] < 0, e.hurt[i] > 0 ? 0.85 : 0);
+    drawMob(b, S, e, i, s.tick, sx, GROUND_TOP + LIFT * (1 - u) + oy, e.face[i] < 0, hitFlash(e.hurt[i]));
   }
 
   // --- ground, then the hill's crest in front of the climbers
@@ -222,6 +239,29 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     if (ph < 6) b.drawScaled(S.px, sx + 2, sy - e.z[i] - f.h - bob - 1 - (ph >> 1), 1, 1, hex(0x7dffa0, 0.9));
   }
 
+  // --- the cleric's aura: while it is on, a ring of holy light turns steadily on the ground around her (the damage is continuous, see sim/step.ts)
+  for (const pl of s.players) {
+    if (!pl.active || pl.downed || !pl.auraOn) continue;
+    const r = CLASSES[pl.classId].combo[0].range;
+    const ax = lerp(e.px[pl.ent], e.x[pl.ent], alpha) - camX, ay = FIELD_Y0 + lerp(e.py[pl.ent], e.y[pl.ent], alpha) + oy;
+    const spin = s.tick * 0.07;
+    const pulse = 0.5 + 0.5 * Math.sin(s.tick * 0.12);
+    // a soft golden pool on the ground, so the reach of the aura reads at a glance
+    b.drawScaled(S.disc, Math.round(ax - r), Math.round(ay - r * 0.85), r * 2, r * 1.7, hex(0xffc030, 0.2 + 0.08 * pulse));
+    // the outer ring: a bright, turning band of dots with a larger star at every fourth
+    for (let d = 0; d < 32; d++) {
+      const a = (d / 32) * Math.PI * 2 + spin;
+      const x = Math.round(ax + Math.cos(a) * r), y = Math.round(ay + Math.sin(a) * r * 0.85);
+      if ((d & 3) === 0) star(b, S, x, y, 3, 0xffe27a, 1);
+      else b.drawScaled(S.px, x - 1, y - 1, 2, 2, hex(0xe8961a, 0.85));
+    }
+    // big stars close in, turning the other way and twinkling
+    for (let d = 0; d < 6; d++) {
+      const a = -spin * 1.5 + d * (Math.PI / 3), rr = r * (0.38 + 0.1 * Math.sin(s.tick * 0.1 + d * 2));
+      star(b, S, Math.round(ax + Math.cos(a) * rr), Math.round(ay + Math.sin(a) * rr * 0.85) - 3, (d + (s.tick >> 3)) & 1 ? 4 : 3, 0xffe27a, 1);
+    }
+  }
+
   const shadowTint = hex(0x000000, 0.32);
   for (let k = 0; k < n; k++) {
     const i = sorted[k];
@@ -244,7 +284,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const sx = lerp(e.px[i], e.x[i], alpha) - camX;
     const sy = feetY(e, i, alpha) + oy;
     const flip = e.face[i] < 0;
-    let flash = e.hurt[i] > 0 ? 0.85 : 0;
+    let flash = hitFlash(e.hurt[i]);
     if (e.kind[i] === Kind.Proj) {
       // arrow: bright head, dim tail, flying a little above the ground
       const vl = Math.sqrt(e.vx[i] * e.vx[i] + e.vy[i] * e.vy[i]) || 1;
@@ -272,9 +312,11 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         b.drawScaled(S.px, sx - 2, sy - 9, 4, 4, hex(0xffd35a));
         b.drawScaled(S.px, sx - 1, sy - 8, 2, 2, hex(0xffffff));
       } else if (shot) {
-        b.drawScaled(S.px, sx - dx * 5, sy - 7 - dy * 5, 2, 2, hex(0xb98a30));
-        b.drawScaled(S.px, sx - dx * 2.5, sy - 7 - dy * 2.5, 2, 2, hex(0xffd35a));
-        b.drawScaled(S.px, sx, sy - 7, 2, 2, hex(0xffffff));
+        // dark enough to read on snow: a deep brown tail, a burnt-gold shaft and a dark-edged amber head (no white)
+        b.drawScaled(S.px, sx - dx * 5, sy - 7 - dy * 5, 2, 2, hex(0x5a3a12));
+        b.drawScaled(S.px, sx - dx * 2.5, sy - 7 - dy * 2.5, 2, 2, hex(0xa86f12));
+        b.drawScaled(S.px, sx - 1, sy - 8, 4, 4, hex(0x3a2408, 0.8));
+        b.drawScaled(S.px, sx, sy - 7, 2, 2, hex(0xf0b830));
       } else if (e.mode[i] === ProjStyle.Shard) {
         // a splinter of ice thrown off a shattering husk: a small pale blue sliver that glints
         b.drawScaled(S.px, Math.round(sx - dx * 2), Math.round(sy - 6 - dy * 2), 1, 1, hex(ICE.mid, 0.7));

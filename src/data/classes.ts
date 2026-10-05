@@ -108,6 +108,12 @@ export interface ClassDef {
   dashKnock: number;
   /** The attack button toggles a pulsing aura (the cleric) that drains this much stamina per tick while on; absent = a normal attack. */
   auraDrain?: number;
+  /** The rogue's edge: melee hits on a mob that faces away from him deal this many times damage (absent = none). */
+  backstab?: number;
+  /** Same, for the first strike thrown out of a vanish (the mob never saw it coming). */
+  ambush?: number;
+  /** The archer's edge: a shot's damage grows with the distance it flew, up to 1 + this at full range (absent = flat). */
+  longShot?: number;
   /** What the dodge does; absent = a plain invulnerable roll. Upgrades tune `dashPower` / `dashRadius`. */
   dashKind?: 'charge' | 'vanish' | 'teleport' | 'heal';
   /** vanish: ticks unseen; teleport: distance; heal: hp restored. */
@@ -182,7 +188,9 @@ CLASSES.push(
     ...WARRIOR, name: 'cleric', hp: 90, speed: 1.45,
     // No mace swing: a point-blank burst of holy light around the cleric hits everything close, in every direction.
     auraDrain: 0.12,
-    combo: [swing({ range: 40, dot: -1, damage: 3, knock: 6, cooldown: 22, aoe: true })],
+    // The aura is continuous: a small hit every 8 ticks all round her that barely nudges mobs (each hit slides one about 1.5 px) (the old pulse was 3 dmg / 22 ticks).
+    combo: [swing({ range: 40, dot: -1, damage: 1, knock: 0.3, cooldown: 8, hitStop: 0, aoe: true })],
+    furyPerHit: 0.5,
     special: swing({ range: 62, dot: -1, damage: 7, knock: 9, cooldown: 28, hitStop: 2, pierce: true, aoe: true }),
     specialCost: 30, specialCooldown: 140,
     novaCost: 45, novaRadius: 58, novaDamage: 6, novaBigRadius: 85, novaBigDamage: 10, novaHeal: 25, novaBigHeal: 45,
@@ -190,8 +198,10 @@ CLASSES.push(
   },
   {
     ...WARRIOR, name: 'rogue', hp: 75, speed: 1.9,
-    combo: [swing({ range: 30, dot: 0.1, damage: 5, knock: 2, cooldown: 14, lunge: 4 }), swing({ range: 32, dot: 0.1, damage: 5, knock: 2.2, cooldown: 14, lunge: 4 })],
-    special: swing({ range: 38, dot: -0.2, damage: 10, knock: 4, cooldown: 18, hitStop: 2, pierce: true, lunge: 8, wave: 80, waveWidth: 14 }),
+    // Front-on he is no better than anyone (4 dmg a quick jab); from behind or out of a vanish he is the hardest hitter in the game.
+    backstab: 2.5, ambush: 3.5,
+    combo: [swing({ range: 30, dot: 0.1, damage: 4, knock: 2, cooldown: 14, lunge: 4 }), swing({ range: 32, dot: 0.1, damage: 4, knock: 2.2, cooldown: 14, lunge: 4 })],
+    special: swing({ range: 38, dot: -0.2, damage: 8, knock: 4, cooldown: 18, hitStop: 2, pierce: true, lunge: 8, wave: 80, waveWidth: 14 }),
     specialCost: 30, specialCooldown: 120,
     novaRadius: 55, novaDamage: 8, novaBigRadius: 85, novaBigDamage: 12,
     dashSpeed: 4.2, dashTicks: 7, dashCost: 14, dashCooldown: 30, dashDamage: 0, dashKind: 'vanish', dashPower: 100,
@@ -201,6 +211,8 @@ CLASSES.push(
     // No swing: it shoots. (`combo` and `special` are required by the type but never used for this class.)
     combo: [swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 8 })],
     special: swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 8 }),
+    // Sniper: an arrow hits up to 2.2x harder at the far end of its flight, so he wants distance (and the mage's fireball does not scale).
+    longShot: 1.2,
     shot: { damage: 3, knock: 1.2, speed: 4.2, ttl: 70, cooldown: 8 },
     specialShot: { count: 5, spread: 0.09, damage: 5, knock: 2.5, speed: 4.6, ttl: 80, cooldown: 14, pierce: true },
     attackCost: 1,

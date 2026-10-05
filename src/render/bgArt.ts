@@ -617,15 +617,15 @@ export function makeIce(w: number, h: number, seed: number): Pix {
 /** A 16 px snow tile: near-white with a few sparkles, bluish shadow flecks and short wind-rippled streaks. */
 export function makeSnow(variant: number): Pix {
   const p: Pix = { w: 16, h: 16, rgba: new Uint8ClampedArray(16 * 16 * 4) };
-  const shades = [0xf0f5fb, 0xeaf1f9, 0xf4f8fd];
+  const shades = [0xdfe7f1, 0xd8e1ed, 0xe4ecf5]; // a soft blue-grey white, not glaring: heroes' arrows and pale enemies must read against it
   for (let y = 0; y < 16; y++) {
     for (let x = 0; x < 16; x++) {
       const r = hash2(x, y, variant + 31);
       let col = shades[r % 3];
       const k = (r >>> 8) % 70;
-      if (k === 0) col = 0xffffff; // a sparkle
-      else if (k === 1) col = 0xd2deee; // a shadow fleck
-      else if (k === 2 && x < 13) { setPix(p, x, y, 0xe0eaf6); setPix(p, x + 1, y, 0xe0eaf6); setPix(p, x + 2, y, 0xe6eef8); continue; } // a wind streak
+      if (k === 0) col = 0xf4f8fd; // a sparkle
+      else if (k === 1) col = 0xbccadf; // a shadow fleck
+      else if (k === 2 && x < 13) { setPix(p, x, y, 0xcddaea); setPix(p, x + 1, y, 0xcddaea); setPix(p, x + 2, y, 0xd3dfee); continue; } // a wind streak
       setPix(p, x, y, col);
     }
   }

@@ -19,6 +19,8 @@ import { activePlayers, hasBoss, partyScale, streamLevel } from './gen/level';
 export const REVIVE_TICKS = 600;
 const INPUT_BUFFER = 6;
 const PIERCE = 1;
+/** A chip hit (the cleric's aura, landing every few ticks): damage and a small shove, but no stun and no interrupting a wind-up, or it would lock everything in reach in place. */
+const CHIP = 2;
 const BLAST_DAMAGE = 8;
 const BLAST_KNOCK = 4;
 /** Reinforcement and flank triggers are spaced in px of forward progress (the camera), not in time: a party that stands still faces no growing horde. */
@@ -312,7 +314,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
       p.lungeT--;
     }
     if (cls.auraDrain) {
-      // The attack button flips the aura; while it is on it pulses every cooldown and the stamina bleeds away until it runs out.
+      // The attack button flips the aura; while it is on it hurts everything in reach every few ticks, a constant grind, and the stamina bleeds away until it runs out.
       if (pressed & Btn.Attack && (p.auraOn || (!p.winded && p.stamina > 0))) p.auraOn = !p.auraOn;
       if (p.auraOn) {
         spendStamina(s, slot, cls.auraDrain);
@@ -434,6 +436,16 @@ function cleave(s: GameState, slot: number, cls: ClassDef): void {
   swing(s, slot, cls, sw, false);
 }
 
+/**
+ * The rogue's damage multiplier against `m` (`dx` = the mob's x offset from him): a strike out of a vanish always lands as an ambush;
+ * otherwise it is a backstab when the mob faces the same way as the line from him to it, i.e. away from him.
+ */
+function flankMul(s: GameState, p: PlayerState, cls: ClassDef, m: number, dx: number): number {
+  if (p.vanishT > 0 && cls.ambush) return cls.ambush;
+  if (cls.backstab && dx * s.ents.face[m] > 0) return cls.backstab;
+  return 1;
+}
+
 /** One sweep of the weapon: arc hits, an optional wave down the field, fury, hit-stop. `heavy` is the special. */
 function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: boolean): void {
   const p = s.players[slot];
@@ -443,7 +455,7 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
   p.lungeT = sw.aoe ? 0 : sw.lunge;
   const cx = e.x[p.ent], cy = e.y[p.ent];
   // Facing scaled by range so the presentation can size the slash arc; c = arc dot.
-  if (sw.aoe) emit(s.events, Ev.Pulse, cx, cy, sw.range, heavy ? 1 : 0, 0, slot);
+  if (sw.aoe) { if (heavy) emit(s.events, Ev.Pulse, cx, cy, sw.range, 1, 0, slot); } // (the cleric's plain aura has no per-hit burst: the renderer draws it turning)
   else emit(s.events, heavy ? Ev.Finisher : Ev.Swing, cx, cy, p.faceX * sw.range, p.faceY * sw.range, sw.dot, slot);
 
   const n = gatherCircle(s.grid, e, cx, cy, sw.range, s.scratch);
@@ -455,7 +467,7 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (!sw.aoe && dist > 6 && dx * p.faceX + dy * p.faceY < sw.dot * dist) continue;
     const inv = dist > 0.001 ? 1 / dist : 0;
-    const r = damageMob(s, m, sw.damage, dist > 0.001 ? dx * inv : p.faceX, dist > 0.001 ? dy * inv : p.faceY, sw.knock, slot, sw.pierce ? PIERCE : 0);
+    const r = damageMob(s, m, sw.damage * flankMul(s, p, cls, m, dx), dist > 0.001 ? dx * inv : p.faceX, dist > 0.001 ? dy * inv : p.faceY, sw.knock, slot, (sw.pierce ? PIERCE : 0) | (sw.aoe && !heavy ? CHIP : 0));
     if (r === 1) hits++;
   }
 
@@ -471,7 +483,7 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
       if (along < 0 || along > sw.wave) continue;
       const lateral = dx * -p.faceY + dy * p.faceX;
       if (lateral > sw.waveWidth || lateral < -sw.waveWidth) continue;
-      const r = damageMob(s, m, sw.damage * 0.6, p.faceX, p.faceY, sw.knock * 0.8, slot, PIERCE);
+      const r = damageMob(s, m, sw.damage * 0.6 * flankMul(s, p, cls, m, dx), p.faceX, p.faceY, sw.knock * 0.8, slot, PIERCE);
       if (r === 1) hits++;
     }
   }
@@ -479,7 +491,7 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
   destroyArrows(s, cx, cy, sw.range, p.faceX, p.faceY, sw.aoe ? -2 : sw.dot);
   if (hits > 0) {
     p.fury = Math.min(cls.furyMax, p.fury + Math.min(cls.furyPerSwingCap, hits * cls.furyPerHit));
-    stop(s, Math.min(6, sw.hitStop + Math.floor(hits / 5)));
+    if (!(sw.aoe && !heavy)) stop(s, Math.min(6, sw.hitStop + Math.floor(hits / 5))); // (the constant aura never freezes the game)
   }
 }
 
@@ -675,12 +687,12 @@ function damageMob(s: GameState, m: number, dmg: number, dirX: number, dirY: num
     const k = knock * def.knockResist;
     e.vx[m] += dirX * k;
     e.vy[m] += dirY * k;
-    e.stun[m] = Math.round(6 + 6 * def.knockResist);
+    if (!(flags & CHIP)) e.stun[m] = Math.round(6 + 6 * def.knockResist);
   }
   e.hurt[m] = 6;
   e.flags[m] |= 1; // being hit wakes the mob
   if (owner >= 0) e.by[m] = owner;
-  if (!armored && def.behavior !== Behavior.Bomber) {
+  if (!armored && !(flags & CHIP) && def.behavior !== Behavior.Bomber) {
     e.wind[m] = 0;
     if (e.mode[m] === 1) e.mode[m] = 0; // a hit during the paw-the-ground windup cancels the charge
     if (e.mode[m] === SP_WIND) {
@@ -832,7 +844,8 @@ function updateProjectiles(s: GameState): void {
         const m = s.scratch[k];
         if (!isLiveMob(e, m) || (pierce && e.hurt[m] >= 6)) continue;
         const vl = Math.sqrt(e.vx[i] * e.vx[i] + e.vy[i] * e.vy[i]) || 1;
-        const r = damageMob(s, m, a.damage, e.vx[i] / vl, e.vy[i] / vl, a.knock, owner, pierce ? PIERCE : 0);
+        const flown = (a.ttl - e.hp[i]) / a.ttl; // 0 at the bow, 1 at the end of its range
+        const r = damageMob(s, m, a.damage * (1 + (ocls.longShot ?? 0) * flown), e.vx[i] / vl, e.vy[i] / vl, a.knock, owner, pierce ? PIERCE : 0);
         if (r === 0) continue;
         if (r === 1) pl.fury = Math.min(ocls.furyMax, pl.fury + ocls.furyPerHit);
         if (!pierce || r === 2) { primary = m; freeEntity(e, i); spent = true; }
