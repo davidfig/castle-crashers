@@ -24,23 +24,30 @@ const shoe = rows(`
   .a.
   aa.
 `);
-function bowEntry(gx, gy, aim) {
+function bowEntry(gx, gy, aim, slack = false) {
   return (put) => {
     if (!aim) {                              // carried: horizontal, across the front at the waist, centred on the body
       for (let dx = -5; dx <= 5; dx++) put(gx + dx, gy - Math.round(2.2 * (1 - (dx / 5) ** 2)), Math.abs(dx) > 3 ? 'G' : 'g');
       put(gx - 5, gy, 'z'); put(gx + 5, gy, 'z');       // string only at the tips: keeps the bow from reading as a plank
     } else {                                 // aimed: upright, string drawn slightly
       for (let dy = -4; dy <= 4; dy++) put(gx + Math.round(1.8 * (1 - (dy / 4) ** 2)), gy + dy, Math.abs(dy) > 2 ? 'G' : 'g');
-      put(gx - 1, gy - 4, 'w'); put(gx - 2, gy - 3, 'w'); put(gx - 2, gy + 3, 'w'); put(gx - 1, gy + 4, 'w');
-      for (let dy = -3; dy <= 3; dy++) put(gx - 2, gy + dy, 'w');
+      if (slack) { for (let dy = -4; dy <= 4; dy++) put(gx, gy + dy, 'w'); }      // just released: string snaps straight
+      else { put(gx - 1, gy - 4, 'w'); put(gx - 2, gy - 3, 'w'); put(gx - 2, gy + 3, 'w'); put(gx - 1, gy + 4, 'w'); for (let dy = -3; dy <= 3; dy++) put(gx - 2, gy + dy, 'w'); }
     }
   };
 }
-const parts = { head, robe, shoe };
+const headHurt = rows(`
+  .aaa.
+  abbbb
+  abllb
+  .bbb.
+`);
+const parts = { head, headHurt, robe, shoe };
 const rig = robedRig({
-  OX: 3, OY: 4, parts, shoe,
+  OX: 2, OY: 4, parts, shoe,
   layout: { robe: [3, 4], head: [3, 0], legB: [3, 9], legF: [5, 9], sleeve: null },
-  prop(o, h, { T }) { return [bowEntry(...T(o.aim ? 8 : 5, o.aim ? 6 : 8), !!o.aim)]; },
+  // the carried bow is centred on the body and bobs with it (same bob/lean as the torso)
+  prop(o, h, { T }) { const bob = o.bob ?? 0, lean = o.lean ?? 0; return [bowEntry(...T((o.aim ? 8 : 5) + lean, (o.aim ? 6 : 8) + bob), !!o.aim, !!o.slack)]; },
 });
 const { pose } = rig;
 pose('walk0', { bob: 1, lf: 1, lb: -1 });
@@ -48,10 +55,20 @@ pose('walk1', { bob: 0 });
 pose('walk2', { bob: 1, lf: -1, lb: 1 });
 pose('walk3', { bob: 0 });
 pose('aim0', { aim: true, bob: 0, lean: -1 });
+pose('idle0', { bob: 0 });
+pose('idle1', { bob: 1 });
+pose('release0', { aim: true, slack: true, bob: 1, lean: -1 });          // arrow gone: string snaps straight, body recoils
+pose('hurt0', { bob: 1, lean: -1, hx: -1, hy: 1, headPart: 'headHurt' });
 
 export default {
   name: 'mobarcher', title: 'Archer (enemy)', notes: 'Hooded violet archer; bow carried low, raised on `aim`.',
-  cell: [12, 16], shadow: [8, 3], pivot: [6, 14], palette, post,
+  cell: [16, 16], shadow: [8, 3], pivot: [8, 14], palette, post,
   parts, frames: rig.frames,
-  anims: { walk: { fps: 8, frames: ['walk0', 'walk1', 'walk2', 'walk3'] }, aim: { fps: 1, frames: ['aim0'] } },
+  anims: {
+    walk: { fps: 8, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
+    idle: { fps: 3, frames: ['idle0', 'idle1'] },
+    aim: { fps: 1, frames: ['aim0'] },
+    release: { fps: 1, frames: ['release0'] },
+    hurt: { fps: 1, frames: ['hurt0'] },
+  },
 };

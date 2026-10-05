@@ -19,13 +19,38 @@ const head = rows(`
   .g.Y
   .gY.
 `);
+// lit fuse: a bigger, flickering spark (the game also swells, shakes and flashes the sprite)
+const fuseLit0 = rows(`
+  Y.Y.Y
+  .gY.
+`);
+const fuseLit1 = rows(`
+  .Y.Y.
+  .gYY.
+`);
+const robeLit = rows(`
+  ..rr..
+  .rRRr.
+  rRRqRr
+  rRWlWr
+  rRRlRr
+  .rrrr.
+`);
+const robeHurt = rows(`
+  ..rr..
+  .rRRr.
+  rRRqRr
+  rRllRr
+  rRRRRr
+  .rrrr.
+`);
 const shoe = rows(`
   .l.
   ll.
 `);
-const parts = { head, robe, shoe };
+const parts = { head, fuseLit0, fuseLit1, robe, robeLit, robeHurt, shoe };
 const rig = robedRig({
-  OX: 2, OY: 1, parts, shoe,
+  OX: 4, OY: 1, parts, shoe,
   layout: { robe: [2, 2], head: [3, 0], legB: [3, 8], legF: [5, 8], sleeve: null },
   prop: () => [],
 });
@@ -34,10 +59,20 @@ pose('walk0', { bob: 1, lf: 1, lb: -1 });
 pose('walk1', { bob: 0 });
 pose('walk2', { bob: 1, lf: -1, lb: 1 });
 pose('walk3', { bob: 0 });
+pose('idle0', { bob: 0 });
+pose('idle1', { bob: 1 });
+pose('lit0', { bob: 1, headPart: 'fuseLit0', robePart: 'robeLit' });
+pose('lit1', { bob: 0, headPart: 'fuseLit1', robePart: 'robeLit' });
+pose('hurt0', { bob: 1, lean: -1, robePart: 'robeHurt' });
 
 export default {
   name: 'bomber', title: 'Bomber', notes: 'Fuse bomb. Scamper cycle; the game swells/flashes it on the fuse.',
-  cell: [10, 12], shadow: [7, 3], pivot: [5, 9], palette, post,
+  cell: [14, 12], shadow: [7, 3], pivot: [7, 10], palette, post,
   parts, frames: rig.frames,
-  anims: { walk: { fps: 10, frames: ['walk0', 'walk1', 'walk2', 'walk3'] } },
+  anims: {
+    walk: { fps: 10, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
+    idle: { fps: 3, frames: ['idle0', 'idle1'] },
+    lit: { fps: 12, frames: ['lit0', 'lit1'] },
+    hurt: { fps: 1, frames: ['hurt0'] },
+  },
 };

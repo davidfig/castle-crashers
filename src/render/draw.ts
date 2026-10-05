@@ -10,7 +10,7 @@ import { BLAST_RADIUS, Behavior, MOBS, MobType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { SLASH_TICKS, type Fx } from './fx';
 import { heroFrame } from './hero';
-import { WEAPON_GRIP, WEAPON_STEP } from './mobArt';
+import { WEAPON_GRIP, WEAPON_STEP, mobPose } from './mobArt';
 import type { FrameStats } from '../platform/perf';
 
 /** Screen y of world y=0 and of the horizon. */
@@ -409,12 +409,13 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   const wind = e.wind[i];
   const winding = wind > 0;
   // archers raise their bow for the windup
-  const f = type === MobType.Archer && winding ? S.mobArt.aim : wf;
+  let f = wf;
   const since = def.atkCooldown - e.atk[i];
   const striking = !winding && def.behavior !== Behavior.Bomber && e.atk[i] > 0 && since >= 0 && since < STRIKE_TICKS;
   const p = winding ? 1 - wind / def.windup : 0;
   const q = striking ? since / STRIKE_TICKS : 0;
   const moving = Math.abs(e.x[i] - e.px[i]) + Math.abs(e.y[i] - e.py[i]) > 0.05;
+  f = mobPose(S.mobArt, type, { winding, windP: p, striking, strikeQ: q, chargeWind: false, charging: false, dazed: false, moving, hurt: hurtFlash > 0, tick, salt: i });
 
   let ox = 0, oy = 0;
   let flash = hurtFlash;

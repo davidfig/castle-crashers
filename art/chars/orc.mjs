@@ -1,5 +1,6 @@
-// ORC — the brute (and the charger). ~13px of body + outline. Broad, hunched, brown hide, jutting tusks, one iron
-// pauldron. The game draws the club and the charge/windup poses; the sprite is a weaponless walk cycle.
+// ORC — the brute (and the charger). ~13px of body + outline, plus horns. Broad, hunched, brown hide, jutting tusks, one iron
+// pauldron, and a horned iron skullcap. The game draws the club; the sprite supplies body poses: walk, idle, windup, strike,
+// hurt, and the charge set (paw = rocking back to charge, charge = full gallop, dazed = head-down after the rush).
 import { GLASS as G } from '../palette.mjs';
 import { rows } from '../lib.mjs';
 import { robedRig } from '../rigs/robed.mjs';
@@ -11,6 +12,24 @@ const head = rows(`
   .ooo..
   oOOOOe
   oOOOOY
+  .OWWW.
+`);
+const headRoar = rows(`
+  .ooo..
+  oOOOOe
+  oOOOOY
+  .ORRW.
+`);
+const headHurt = rows(`
+  .ooo..
+  oOOOOe
+  oOOOOl
+  .OWWW.
+`);
+const headDown = rows(`
+  .ooo..
+  oOOOOe
+  oOOOOl
   .OWWW.
 `);
 const robe = rows(`
@@ -26,10 +45,17 @@ const shoe = rows(`
   .oo
   ooo
 `);
-const parts = { head, robe, shoe };
+// an iron skullcap with two long bone horns sweeping up and out: the orc's calling card, readable even in the crowd
+const hat = rows(`
+  W......W
+  Ww....wW
+  .wZZZZw.
+  ..ZZXZ..
+`);
+const parts = { head, headRoar, headHurt, headDown, robe, shoe, hat };
 const rig = robedRig({
-  OX: 2, OY: 2, parts, shoe,
-  layout: { robe: [3, 4], head: [4, 0], legB: [4, 10], legF: [7, 10], sleeve: null },
+  OX: 4, OY: 5, parts, shoe,
+  layout: { robe: [3, 4], head: [4, 0], hat: [3, -3], legB: [4, 10], legF: [7, 10], sleeve: null },
   prop: () => [],
 });
 const { pose } = rig;
@@ -37,10 +63,33 @@ pose('walk0', { bob: 1, lf: 1, lb: -1, lbl: 0 });
 pose('walk1', { bob: 0, lf: 0, lb: 0 });
 pose('walk2', { bob: 1, lf: -1, lb: 1 });
 pose('walk3', { bob: 0, lf: 0, lb: 0 });
+pose('idle0', { bob: 0 });
+pose('idle1', { bob: 1 });
+pose('windup0', { lean: -1, bob: 1, hx: -1, lf: -1, lb: 1, headPart: 'headRoar' });
+pose('windup1', { lean: -2, bob: 1, hx: -1, hy: 1, lf: -1, lb: 1, headPart: 'headRoar' });
+pose('strike0', { lean: 3, bob: 1, hx: 1, lf: 2, lb: -2, headPart: 'headRoar' });
+pose('strike1', { lean: 2, bob: 1, lf: 1, lb: -1 });
+pose('hurt0', { lean: -1, hx: -1, hy: 1, bob: 1, headPart: 'headHurt' });
+// charge: rock back and stomp (paw), then a head-down gallop with the horns levelled, then daze
+pose('paw0', { lean: -1, bob: 2, hx: -1, hy: 1, lf: -1, lb: 1, lfl: 1, headPart: 'headRoar' });
+pose('paw1', { lean: -2, bob: 1, hx: -1, hy: 1, lf: 0, lb: 1, headPart: 'headRoar' });
+pose('charge0', { lean: 3, bob: 2, hx: 2, hy: 2, lf: 2, lb: -2, headPart: 'headRoar' });
+pose('charge1', { lean: 3, bob: 1, hx: 2, hy: 2, lf: -2, lb: 2, headPart: 'headRoar' });
+pose('dazed0', { lean: 1, bob: 2, hx: 1, hy: 3, lf: 1, lb: -1, headPart: 'headDown' });
+pose('dazed1', { lean: -1, bob: 2, hx: 0, hy: 3, lf: -1, lb: 1, headPart: 'headDown' });
 
 export default {
-  name: 'orc', title: 'Orc', notes: 'Brute / charger. Weaponless walk cycle; the game draws the club.',
-  cell: [18, 16], shadow: [14, 4], pivot: [9, 14], palette, post,
+  name: 'orc', title: 'Orc', notes: 'Horned brute / charger. Body poses only; the game draws the club.',
+  cell: [24, 19], shadow: [14, 4], pivot: [12, 17], palette, post,
   parts, frames: rig.frames,
-  anims: { walk: { fps: 8, frames: ['walk0', 'walk1', 'walk2', 'walk3'] } },
+  anims: {
+    walk: { fps: 8, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
+    idle: { fps: 3, frames: ['idle0', 'idle1'] },
+    windup: { fps: 1, frames: ['windup0', 'windup1'] },
+    strike: { fps: 1, frames: ['strike0', 'strike1'] },
+    hurt: { fps: 1, frames: ['hurt0'] },
+    paw: { fps: 6, frames: ['paw0', 'paw1'] },
+    charge: { fps: 12, frames: ['charge0', 'charge1'] },
+    dazed: { fps: 4, frames: ['dazed0', 'dazed1'] },
+  },
 };

@@ -17,9 +17,9 @@ export function robedRig({ parts, layout, prop, propBack = null, shoe, OX = 10, 
     if (back) out.push([back, ...T(L.back[0] + lean + hx, L.back[1] + bob + hy)]);
     if (propBack) for (const e of propBack(o, h, ctx)) out.push(e);
     out.push([legKey('B', lb, lbl), ...T(L.legB[0] + lean, L.legB[1])]);
-    out.push(['robe' + rb, ...T(L.robe[0] + lean, L.robe[1] + bob)]);
+    out.push([o.robePart ?? 'robe' + rb, ...T(L.robe[0] + lean, L.robe[1] + bob)]);
     out.push([legKey('F', lf, lfl), ...T(L.legF[0] + lean, L.legF[1])]);
-    out.push(['head', ...T(L.head[0] + lean + hx, L.head[1] + bob + hy)]);
+    out.push([o.headPart ?? 'head', ...T(L.head[0] + lean + hx, L.head[1] + bob + hy)]);
     if (L.hat) out.push(['hat', ...T(L.hat[0] + lean + hx, L.hat[1] + bob + hy)]);
     for (const e of prop(o, h, ctx)) out.push(e);
     if (L.sleeve) out.push(['sleeve', ...T(h[0] + L.sleeve[0], h[1] + L.sleeve[1])]);
