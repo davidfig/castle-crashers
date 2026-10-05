@@ -2,6 +2,7 @@ import { InputManager } from './platform/input/input';
 import { startLoop } from './platform/loop';
 import { Renderer } from './platform/gl/renderer';
 import { buildSprites } from './render/art';
+import { loadHeroImages } from './render/heroSheets';
 import { drawFrame } from './render/draw';
 import { Fx } from './render/fx';
 import { TICK_RATE, VIEW_H, VIEW_W } from './sim/constants';
@@ -17,7 +18,13 @@ function fail(msg: string): never {
 }
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
-const sprites = buildSprites();
+let heroImages: HTMLImageElement[];
+try {
+  heroImages = await loadHeroImages();
+} catch (err) {
+  fail(String(err instanceof Error ? err.message : err));
+}
+const sprites = buildSprites(heroImages);
 let renderer: Renderer;
 try {
   renderer = new Renderer(canvas, sprites.atlas, VIEW_W, VIEW_H);

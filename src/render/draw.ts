@@ -9,6 +9,7 @@ import { Phase, type GameState } from '../sim/state';
 import { BLAST_RADIUS, Behavior, MOBS, MobType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { SLASH_TICKS, type Fx } from './fx';
+import { heroFrame } from './hero';
 import type { FrameStats } from '../platform/perf';
 
 /** Screen y of world y=0 and of the horizon. */
@@ -174,20 +175,24 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     } else {
       const slot = e.sub[i];
       const p = s.players[slot];
+      // Hero art comes from the art workbench (hero.ts). Frames are cells with the feet-centre at (pivotX, pivotY),
+      // so mirror the pivot column when facing left.
+      const H = S.hero;
+      const place = (f: { w: number }) => sx - (flip ? f.w - 1 - H.pivotX : H.pivotX);
       if (p.downed) {
-        const df = S.playerDown[slot];
-        b.draw(df, sx - df.w / 2, sy - df.h, flip, 0xffffffff);
-        drawText(b, S, String(Math.ceil(p.downTimer / 60)), sx - 2, sy - df.h - 8, 0xffffffff);
+        const df = heroFrame(H, s, fx, slot, false);
+        b.draw(df, place(df), sy - H.pivotY, flip, 0xffffffff);
+        drawText(b, S, String(Math.ceil(p.downTimer / 60)), sx - 2, sy - 22, 0xffffffff);
         continue;
       }
       const moving = Math.abs(e.x[i] - e.px[i]) + Math.abs(e.y[i] - e.py[i]) > 0.05;
-      const f = S.player[slot][moving ? (s.tick >> 3) & 1 : 0];
+      const f = heroFrame(H, s, fx, slot, moving);
       const blink = p.invuln > 0 && (s.tick & 2) !== 0;
-      b.draw(f, sx - f.w / 2, sy - f.h, flip, blink ? hex(0xffffff, 0.5) : 0xffffffff, flash);
+      b.draw(f, place(f), sy - H.pivotY, flip, blink ? hex(0xffffff, 0.5) : 0xffffffff, flash);
       // overhead hp + ability pips
       const cls = CLASSES[p.classId];
-      bar(b, S, Math.round(sx - 8), Math.round(sy - f.h - 6), 16, 2, e.hp[i] / cls.hp, 0x4fd05a);
-      const fy = Math.round(sy - f.h - 3);
+      bar(b, S, Math.round(sx - 8), Math.round(sy - H.top - 6), 16, 2, e.hp[i] / cls.hp, 0x4fd05a);
+      const fy = Math.round(sy - H.top - 3);
       const fx0 = Math.round(sx - 8);
       const full = p.fury >= cls.furyMax;
       const canNova = p.fury >= cls.novaCost;

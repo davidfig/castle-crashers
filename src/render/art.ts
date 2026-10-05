@@ -1,6 +1,7 @@
 // Procedural placeholder art: sprites are defined as tiny text bitmaps and packed into one atlas
 // at startup. Swap for real PNG atlases (tools/pack-atlas) once there is art.
 import type { Frame } from '../platform/gl/batcher';
+import { buildHeroSet, type HeroSet } from './hero';
 
 export const PLAYER_COLORS = [0xe0443a, 0x3a7be0, 0xe8c43a, 0xa04ae0];
 
@@ -261,13 +262,15 @@ export interface Sprites {
   coin: Frame[][];
   /** Fallen hero per player slot. */
   playerDown: Frame[];
+  /** Warrior sprites from the art workbench, per player slot (see hero.ts). */
+  hero: HeroSet;
   ground: Frame[];
   mountFar: Frame;
   mountNear: Frame;
   glyph: Record<string, Frame>;
 }
 
-export function buildSprites(): Sprites {
+export function buildSprites(heroImages: HTMLImageElement[]): Sprites {
   const blank: Frame = { u0: 0, v0: 0, u1: 0, v1: 0, w: 0, h: 0 };
   const mk = (): Frame => ({ ...blank });
   const items: { w: number; h: number; rgba: Uint8ClampedArray; frame: Frame }[] = [];
@@ -336,8 +339,11 @@ export function buildSprites(): Sprites {
     x += it.w + 1;
     if (it.h > rowH) rowH = it.h;
   }
+  // Hero sheets from the art workbench are stacked under the procedural sprites.
+  let usedH = y + rowH + 1;
+  const heroPlaces = heroImages.map((img) => { const pl = { x: 0, y: usedH }; usedH += img.height + 1; return pl; });
   let H = 1;
-  while (H < y + rowH + 1) H <<= 1;
+  while (H < usedH) H <<= 1;
 
   const canvas = document.createElement('canvas');
   canvas.width = W;
@@ -350,5 +356,8 @@ export function buildSprites(): Sprites {
     f.w = p.it.w; f.h = p.it.h;
   }
 
-  return { atlas: canvas, px, player, mob, shadow, corpse, coin, playerDown, ground, mountFar, mountNear, glyph };
+  heroImages.forEach((img, k) => ctx.drawImage(img, heroPlaces[k].x, heroPlaces[k].y));
+  const hero = buildHeroSet(heroPlaces, W, H);
+
+  return { atlas: canvas, px, player, mob, shadow, corpse, coin, playerDown, hero, ground, mountFar, mountNear, glyph };
 }

@@ -13,7 +13,7 @@ import { activatePlayer, BLAST_CAP, Phase, type GameState } from './state';
 
 const AGGRO_RANGE = 260;
 const AGGRO_SPREAD = 18;
-const REVIVE_TICKS = 600;
+export const REVIVE_TICKS = 600;
 const INPUT_BUFFER = 6;
 const PIERCE = 1;
 const BLAST_DAMAGE = 8;
