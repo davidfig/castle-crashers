@@ -2,25 +2,50 @@
 import { CLASSES } from '../data/classes';
 import { lerp } from '../engine/math';
 import type { Batcher } from '../platform/gl/batcher';
-import { hex, rgba } from '../platform/gl/batcher';
-import { VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
-import { Kind } from '../sim/entities';
+import { hex } from '../platform/gl/batcher';
+import { TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
+import { Kind, ZoneKind } from '../sim/entities';
+import { BOSS_SPECIAL, isWarded, SP_CLING, SP_WIND } from '../sim/abilities';
 import { Phase, type GameState } from '../sim/state';
-import { BLAST_RADIUS, Behavior, MOBS, MobType } from '../data/mobs';
+import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, MobType, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
-import { SLASH_TICKS, type Fx } from './fx';
+import { drawAmbient, drawCrest, drawFog, drawGround, drawHaze, drawParallax, drawRidge, drawSky, FIELD_Y0, GROUND_TOP } from './background';
+import { makeBlendedMood, moodAt, sceneryFor } from '../data/biomes';
+import { BLINK_TICKS, SLASH_TICKS, type Fx } from './fx';
+import { drawCamps } from './camp';
+import { drawLevelUp } from './levelup';
+import { drawMercy } from './mercy';
 import { heroFrame } from './hero';
 import { mobPose } from './mobArt';
 import type { FrameStats } from '../platform/perf';
 
-/** Screen y of world y=0 and of the horizon. */
-const FIELD_Y0 = 134;
-const GROUND_TOP = 112;
-const SKY = [0x4a7fb5, 0x5a8fc2, 0x6c9fcc, 0x82b2d6, 0x9cc5df, 0xb4d6e8, 0xc9e3ee];
+const mood = makeBlendedMood();
 
-const SHADOW_FOR = [0, 2, 0, 1, 0];
+/** Shadow size (0 small, 1 medium, 2 large) by MobType. */
+const SHADOW_FOR = [0, 2, 0, 1, 0, 2, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 2, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 2, 0, 0, 0, 1, 2, 2];
 const order = new Int32Array(4096);
 const sortedBuf = new Int32Array(4096);
+/** Enemies still climbing up from behind the hill at the top edge (drawn before the ground, so the hill covers them). */
+const enterTop = new Int32Array(4096);
+/**
+ * The climb: over RISE_RUN px of walking (above the field's top edge) an enemy goes from entirely behind the hill
+ * to standing on its crest. LIFT is how far below the crest its feet start, a little more than a sprite is tall,
+ * so the head appears first. A long run and a small lift make the rise slow enough to read.
+ */
+const RISE_RUN = 56;
+const LIFT = 15;
+
+/** Screen y of an entity's feet. Enemies still coming down the near slope from the hill are drawn on the slope. */
+function feetY(e: GameState['ents'], i: number, alpha: number): number {
+  const y = lerp(e.py[i], e.y[i], alpha);
+  if (e.kind[i] === Kind.Mob && (e.flags[i] & 2) && y < TOP_ENTRY_DEPTH && e.y[i] < WORLD_H / 2) return slopeY(y);
+  return FIELD_Y0 + y;
+}
+
+/** Screen y of the feet of an enemy that has crested the hill and is walking down the near slope onto the field. */
+function slopeY(y: number): number {
+  return GROUND_TOP + (FIELD_Y0 + TOP_ENTRY_DEPTH - GROUND_TOP) * (y / TOP_ENTRY_DEPTH);
+}
 const bucket = new Int32Array(WORLD_H + 3);
 
 export interface DebugInfo {
@@ -28,6 +53,10 @@ export interface DebugInfo {
   simLag: boolean;
   drawCalls: number;
   sprites: number;
+  /** Replaces "press R to fight again" under the win/lose banner (campaign runs continue to the summary instead). */
+  endPrompt?: string;
+  /** "LEVEL 1 OF 2": where the party is on its route. */
+  routeLabel?: string;
 }
 
 export function drawText(b: Batcher, S: Sprites, text: string, x: number, y: number, color: number, scale = 1, shadow = true): number {
@@ -60,29 +89,38 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   const oy = shy;
   const e = s.ents;
 
-  // --- sky + parallax mountains
-  const bandH = Math.ceil(GROUND_TOP / SKY.length);
-  for (let i = 0; i < SKY.length; i++) b.drawScaled(S.px, 0, i * bandH, VIEW_W, bandH + 1, hex(SKY[i]));
-  for (const [f, k] of [[S.mountFar, 0.12], [S.mountNear, 0.3]] as const) {
-    const off = Math.floor(camXf * k);
-    const start = -(((off % 256) + 256) % 256);
-    for (let x = start; x < VIEW_W; x += 256) b.draw(f, x, GROUND_TOP - f.h + oy);
+  // --- sky + parallax layers (the light changes with how far the party has advanced)
+  const biome = sceneryFor(s.biome);
+  const progress = Math.min(1, Math.max(0, camXf / (WORLD_W - VIEW_W)));
+  moodAt(biome, progress, mood);
+  drawSky(b, S, biome, mood, camXf, s.tick, -shx, oy);
+  drawParallax(b, S, biome, mood, camXf, progress, -shx, oy, s.tick);
+  drawHaze(b, S, biome, mood, oy);
+
+  // --- enemies coming over the top: they climb up from behind the hill (head first, the hill hiding their
+  // lower body along its curved crest), stand on the crest, then walk down the near slope onto the field.
+  let nTop = 0;
+  for (let i = 0; i < e.highWater; i++) {
+    if (e.alive[i] && e.kind[i] === Kind.Mob && (e.flags[i] & 2) && e.y[i] < 0) enterTop[nTop++] = i;
+  }
+  for (let k = 0; k < nTop; k++) {
+    const i = enterTop[k];
+    const y = lerp(e.py[i], e.y[i], alpha);
+    const sx = lerp(e.px[i], e.x[i], alpha) - camX;
+    if (y <= -RISE_RUN || sx < -20 || sx > VIEW_W + 20) continue; // still entirely behind the hill
+    const u = (y + RISE_RUN) / RISE_RUN; // 0 = just behind the hill, 1 = standing on the crest
+    drawMob(b, S, e, i, s.tick, sx, GROUND_TOP + LIFT * (1 - u) + oy, e.face[i] < 0, e.hurt[i] > 0 ? 0.85 : 0);
   }
 
-  // --- ground
-  const tx0 = Math.floor(camX / 16), tx1 = Math.floor((camX + VIEW_W) / 16);
-  const rows = Math.ceil((VIEW_H - GROUND_TOP) / 16);
-  for (let ty = 0; ty < rows; ty++) {
-    const v = 0.86 + (ty / rows) * 0.14;
-    const tint = rgba(Math.round(255 * v), Math.round(255 * v), Math.round(255 * (v + 0.02)));
-    for (let tx = tx0; tx <= tx1; tx++) {
-      const h = Math.imul(tx, 73856093) ^ Math.imul(ty, 19349663);
-      b.draw(S.ground[(h >>> 8) & 3], tx * 16 - camX, GROUND_TOP + ty * 16 + oy, false, tint);
-    }
-  }
+  // --- ground, then the hill's crest in front of the climbers
+  drawGround(b, S, biome, mood, camX, oy, s.tick);
+  drawCrest(b, S, biome, mood, camX, oy);
+  drawFog(b, S, biome, mood, camX, oy, s.tick, progress);
   // start / goal markers
   b.drawScaled(S.px, 40 - camX, FIELD_Y0 + oy - 6, 2, WORLD_H + 12, hex(0xf0e6b0, 0.35));
   b.drawScaled(S.px, WORLD_W - 70 - camX, FIELD_Y0 + oy - 6, 3, WORLD_H + 12, hex(0xffd35a, 0.7));
+
+  drawCamps(b, S, s, camX, oy);
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);
@@ -90,8 +128,22 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const i = (fx.cHead + k) % fx.cx.length;
     const sx = fx.cx[i] - camX;
     if (sx < -12 || sx > VIEW_W + 12) continue;
+    if (isBossType(fx.ctype[i])) {
+      // the boss's body (and the club it dropped)
+      const bf = S.corpse[fx.ctype[i]];
+      b.draw(bf, sx - bf.w / 2, FIELD_Y0 + fx.cy[i] - bf.h + oy, fx.cflip[i] === 1, cTint, 0, fx.crot[i]);
+      continue;
+    }
     const f = S.corpse[fx.ctype[i]];
-    b.draw(f, sx - f.w / 2, FIELD_Y0 + fx.cy[i] - f.h + oy, fx.cflip[i] === 1, cTint);
+    b.draw(f, sx - f.w / 2, FIELD_Y0 + fx.cy[i] - f.h + oy, fx.cflip[i] === 1, cTint, 0, fx.crot[i]);
+  }
+
+  // --- ground zones: lobbed rocks about to land, poison pools
+  for (let i = 0; i < e.highWater; i++) {
+    if (!e.alive[i] || e.kind[i] !== Kind.Zone) continue;
+    const sx = e.x[i] - camX;
+    if (sx < -40 || sx > VIEW_W + 40) continue;
+    drawZone(b, S, e, i, sx, FIELD_Y0 + e.y[i] + oy, s.tick);
   }
 
   // --- visible entities, bucket-sorted by depth
@@ -102,7 +154,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const ix = lerp(e.px[i], e.x[i], alpha);
     const sx = ix - camX;
     if (sx < -20 || sx > VIEW_W + 20) continue;
-    if (e.kind[i] === Kind.Coin) continue; // coins are drawn in their own pass
+    if (e.kind[i] === Kind.Coin || e.kind[i] === Kind.Zone) continue; // coins and ground zones are drawn in their own passes
+    if (e.kind[i] === Kind.Mob && (e.flags[i] & 2) && e.y[i] < 0) continue; // climbing the far side of the hill: drawn earlier
     const yb = Math.min(WORLD_H, Math.max(0, Math.floor(e.y[i]))) + 1;
     bucket[yb]++;
     order[n++] = i;
@@ -147,8 +200,12 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   for (let k = 0; k < n; k++) {
     const i = sorted[k];
     const sx = lerp(e.px[i], e.x[i], alpha) - camX;
-    const sy = FIELD_Y0 + lerp(e.py[i], e.y[i], alpha) + oy;
+    const sy = feetY(e, i, alpha) + oy;
     if (e.kind[i] === Kind.Proj) continue;
+    if (e.kind[i] === Kind.Mob && isBossType(e.sub[i])) {
+      b.drawScaled(S.shadow[2], sx - 36, sy - 8, 72, 14, shadowTint);
+      continue;
+    }
     let sh = S.shadow[1];
     let tint = shadowTint;
     if (e.kind[i] === Kind.Mob) sh = S.shadow[SHADOW_FOR[e.sub[i]]];
@@ -159,19 +216,49 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   for (let k = 0; k < n; k++) {
     const i = sorted[k];
     const sx = lerp(e.px[i], e.x[i], alpha) - camX;
-    const sy = FIELD_Y0 + lerp(e.py[i], e.y[i], alpha) + oy;
+    const sy = feetY(e, i, alpha) + oy;
     const flip = e.face[i] < 0;
     let flash = e.hurt[i] > 0 ? 0.85 : 0;
     if (e.kind[i] === Kind.Proj) {
       // arrow: bright head, dim tail, flying a little above the ground
       const vl = Math.sqrt(e.vx[i] * e.vx[i] + e.vy[i] * e.vy[i]) || 1;
       const dx = e.vx[i] / vl, dy = e.vy[i] / vl;
-      b.drawScaled(S.px, sx - dx * 5, sy - 7 - dy * 5, 2, 2, hex(0x8b5a2b));
-      b.drawScaled(S.px, sx - dx * 2.5, sy - 7 - dy * 2.5, 2, 2, hex(0xd9c9a0));
-      b.drawScaled(S.px, sx, sy - 7, 2, 2, hex(0xffffff));
+      // A player's projectile (sub = 1 + slot) is drawn by its class's shot: a fireball for splash shots, a golden arrow otherwise.
+      const owner = e.sub[i] > 0 ? s.players[e.sub[i] - 1] : null;
+      const shot = owner ? ((e.flags[i] & 2) ? CLASSES[owner.classId].specialShot : CLASSES[owner.classId].shot) : null;
+      if (shot && shot.splash) {
+        const flick = (s.tick + i) & 2 ? 1 : 0;
+        for (let t = 4; t >= 1; t--) b.drawScaled(S.px, sx - dx * t * 3 - 1, sy - 7 - dy * t * 3 - 1, 3 - (t >> 1), 3 - (t >> 1), hex(t > 2 ? 0xd8402e : 0xff8a30, 0.8 - t * 0.14));
+        b.drawScaled(S.px, sx - 3, sy - 10, 6, 6, hex(0xff8a30, 0.45 + flick * 0.15));
+        b.drawScaled(S.px, sx - 2, sy - 9, 4, 4, hex(0xffd35a));
+        b.drawScaled(S.px, sx - 1, sy - 8, 2, 2, hex(0xffffff));
+      } else if (shot) {
+        b.drawScaled(S.px, sx - dx * 5, sy - 7 - dy * 5, 2, 2, hex(0xb98a30));
+        b.drawScaled(S.px, sx - dx * 2.5, sy - 7 - dy * 2.5, 2, 2, hex(0xffd35a));
+        b.drawScaled(S.px, sx, sy - 7, 2, 2, hex(0xffffff));
+      } else if (e.mode[i] === ProjStyle.Shard) {
+        // a splinter of ice thrown off a shattering husk: a small pale blue sliver that glints
+        b.drawScaled(S.px, Math.round(sx - dx * 2), Math.round(sy - 6 - dy * 2), 1, 1, hex(ICE.mid, 0.7));
+        b.drawScaled(S.px, Math.round(sx - 1), Math.round(sy - 7), 3, 3, hex(ICE.deep));
+        b.drawScaled(S.px, Math.round(sx), Math.round(sy - 6), 1, 1, hex(ICE.light)); // a dark body so it shows on the snow
+        if (((s.tick >> 1) + i) & 1) b.drawScaled(S.px, Math.round(sx + dx * 2), Math.round(sy - 6 + dy * 2), 1, 1, hex(0xffffff));
+      } else if (e.mode[i] === ProjStyle.Harpoon) {
+        drawHarpoon(b, S, sx, sy - 7, dx, dy);
+      } else if (e.mode[i] === ProjStyle.Bone) {
+        // a thrown bone: pale, tumbling
+        const spin = ((s.tick >> 1) + i) & 1;
+        b.drawScaled(S.px, sx - dx * 4, sy - 7 - dy * 4, 2, 2, hex(0xa39a98));
+        b.drawScaled(S.px, sx - 1, sy - 8, spin ? 4 : 2, spin ? 2 : 4, hex(0xefe9da));
+      } else {
+        b.drawScaled(S.px, sx - dx * 5, sy - 7 - dy * 5, 2, 2, hex(0x8b5a2b));
+        b.drawScaled(S.px, sx - dx * 2.5, sy - 7 - dy * 2.5, 2, 2, hex(0xd9c9a0));
+        b.drawScaled(S.px, sx, sy - 7, 2, 2, hex(0xffffff));
+      }
       continue;
     }
-    if (e.kind[i] === Kind.Mob) {
+    if (e.kind[i] === Kind.Mob && isBossType(e.sub[i])) {
+      drawBoss(b, S, e, i, s.tick, sx, sy, flip, flash);
+    } else if (e.kind[i] === Kind.Mob) {
       drawMob(b, S, e, i, s.tick, sx, sy, flip, flash);
     } else {
       const slot = e.sub[i];
@@ -189,16 +276,78 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       const moving = Math.abs(e.x[i] - e.px[i]) + Math.abs(e.y[i] - e.py[i]) > 0.05;
       const f = heroFrame(H, s, fx, slot, moving);
       const blink = p.invuln > 0 && (s.tick & 2) !== 0;
-      b.draw(f, place(f), sy - H.pivotY, flip, blink ? hex(0xffffff, 0.5) : 0xffffffff, flash);
+      const tint = p.vanishT > 0 ? hex(0xffffff, 0.3) : blink ? hex(0xffffff, 0.5) : 0xffffffff;
+      // Teleport arrival: re-form from a thin bright column into the full sprite.
+      let arrive = -1;
+      for (let k = 0; k < fx.blt.length; k++) {
+        if (fx.blt[k] >= 0 && Math.abs(fx.blx1[k] - e.x[i]) < 3 && Math.abs(fx.bly1[k] - e.y[i]) < 3) arrive = Math.min(1, fx.blt[k] / (BLINK_TICKS * 0.6));
+      }
+      if (arrive >= 0 && arrive < 1) {
+        const e1 = 1 - (1 - arrive) * (1 - arrive);
+        const w = f.w * (0.15 + 0.85 * e1), h = f.h * (1.5 - 0.5 * e1);
+        const x0 = sx - (flip ? f.w - 1 - H.pivotX : H.pivotX) + (f.w - w) / 2;
+        b.drawScaled(f, x0, sy - H.pivotY - (h - f.h), w, h, hex(0xd8c4ff, 0.4 + 0.6 * e1), flip, 0.7 * (1 - e1));
+      } else {
+        b.draw(f, place(f), sy - H.pivotY, flip, tint, flash);
+      }
+      if (p.silenceT > 0) {
+        // silenced: a violet cross hanging over the head
+        const cx = Math.round(sx), cy = Math.round(sy - H.top - 12);
+        for (const [dx, dy] of [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]]) b.drawScaled(S.px, cx + dx, cy + dy, 1, 1, hex(0xb890ff));
+      }
+      if (p.rootT > 0) groundRing(b, S, sx, sy, 7, 10, hex(ICE.steel, 0.95)); // held fast in a snare
+      if (p.confuseT > 0) {
+        // lost in a whiteout: question marks circling the head
+        for (let q = 0; q < 3; q++) {
+          const a = s.tick * 0.2 + q * 2.094;
+          drawText(b, S, '?', Math.round(sx + Math.cos(a) * 6 - 2), Math.round(sy - H.top - 3 + Math.sin(a) * 2), hex(0xbfe8ff), 1);
+        }
+      }
       // overhead hp + ability pips
       const cls = CLASSES[p.classId];
       bar(b, S, Math.round(sx - 8), Math.round(sy - H.top - 6), 16, 2, e.hp[i] / cls.hp, 0x4fd05a);
+      // Stamina: only shown while it is not full (or the hero is winded), so a rested hero stays uncluttered.
+      if (p.stamina < cls.staminaMax - 0.5 || p.winded) {
+        const sty = Math.round(sy - H.top - 9);
+        const col = p.winded ? ((s.tick >> 2) & 1 ? 0xff5a4a : 0xb83a2e) : p.stamina < cls.dashCost ? 0xe0a030 : 0x5ab8f0;
+        bar(b, S, Math.round(sx - 8), sty, 16, 2, p.stamina / cls.staminaMax, col, 0x161c28);
+        if (p.winded) drawText(b, S, 'WINDED', Math.round(sx - 12), sty - 7, hex(0xff8a7a));
+      }
       const fy = Math.round(sy - H.top - 3);
       const fx0 = Math.round(sx - 8);
       const full = p.fury >= cls.furyMax;
       const canNova = p.fury >= cls.novaCost;
       b.drawScaled(S.px, fx0, fy, Math.round(16 * p.fury / cls.furyMax), 2, hex(full ? ((s.tick >> 2) & 1 ? 0xffffff : 0xffd35a) : canNova ? 0xffc23a : 0xa07a30));
       b.drawScaled(S.px, fx0 + 8, fy, 1, 2, hex(0x000000, 0.7)); // nova cost notch
+      // big-swing pip: bright when it is ready and affordable
+      const spReady = p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost;
+      b.drawScaled(S.px, fx0 + 18, fy, 2, 2, hex(spReady ? 0xffd35a : 0x6a5a30));
+    }
+  }
+
+  // --- teleport: the wizard's afterimage dissolves upward at the origin, with a light column at each end
+  for (let k = 0; k < fx.blt.length; k++) {
+    if (fx.blt[k] < 0) continue;
+    const u = fx.blt[k] / BLINK_TICKS, fade = 1 - u;
+    let pl = -1, best = 12;
+    for (let q = 0; q < s.players.length; q++) {
+      const ei = s.players[q].ent;
+      if (ei === undefined || ei < 0) continue;
+      const d = Math.abs(s.ents.x[ei] - fx.blx1[k]) + Math.abs(s.ents.y[ei] - fx.bly1[k]);
+      if (d < best) { best = d; pl = q; }
+    }
+    if (pl >= 0) {
+      const Hh = S.heroes[s.players[pl].classId] ?? S.heroes[0];
+      const gf = heroFrame(Hh, s, fx, pl, false);
+      const gw = gf.w * (1 - u * 0.85), gh = gf.h * (1 + u * 0.8);
+      const gx = fx.blx0[k] - camX - (s.players[pl].faceX < 0 ? gf.w - 1 - Hh.pivotX : Hh.pivotX) + (gf.w - gw) / 2;
+      b.drawScaled(gf, gx, FIELD_Y0 + fx.bly0[k] + oy - Hh.pivotY - (gh - gf.h), gw, gh, hex(0xb78cff, fade * 0.8), s.players[pl].faceX < 0, 0.6);
+    }
+    for (let side = 0; side < 2; side++) {
+      const cx = (side === 0 ? fx.blx0[k] : fx.blx1[k]) - camX, cy = FIELD_Y0 + (side === 0 ? fx.bly0[k] : fx.bly1[k]) + oy;
+      const w = Math.max(1, Math.round(6 * (side === 0 ? fade : u < 0.5 ? u * 2 : 2 - u * 2)));
+      const a = side === 0 ? fade : 1 - u;
+      b.drawScaled(S.px, cx - w / 2, cy - 34, w, 34, hex(0xe6d8ff, a * 0.55));
     }
   }
 
@@ -210,6 +359,37 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const dots = Math.min(160, Math.ceil(radius * 1.6));
     const base = fx.rc[r];
     const col = ((base & 0x00ffffff) | (Math.round(255 * (1 - t)) << 24)) >>> 0;
+    if (fx.rbig[r] >= 2) {
+      // A holy halo: a bold two-pixel ring squashed onto the ground, with big four-point stars turning around it. It stays bright
+      // for most of its life and only fades at the end, and the stars have a dark gold edge so they read against any ground.
+      const heavy = fx.rbig[r] === 3;
+      const cxr = fx.rx[r] - camX, cyr = FIELD_Y0 + fx.ry[r] + oy;
+      const a = Math.min(1, 2.2 * (1 - t));
+      const bright = hex(heavy ? 0xffffff : 0xfff3b0, a);
+      const edge = hex(0xb07a10, a);
+      const n = Math.max(16, Math.ceil(radius * 0.9));
+      for (let d = 0; d < n; d++) {
+        const ang = (d / n) * Math.PI * 2;
+        const px = cxr + Math.cos(ang) * radius, py = cyr + Math.sin(ang) * radius * 0.6;
+        b.drawScaled(S.px, px - 1, py - 1, 3, 3, edge);
+      }
+      for (let d = 0; d < n; d++) {
+        const ang = (d / n) * Math.PI * 2;
+        b.drawScaled(S.px, cxr + Math.cos(ang) * radius, cyr + Math.sin(ang) * radius * 0.6, 2, 2, bright);
+      }
+      const stars = heavy ? 8 : 6;
+      const arm = heavy ? 5 : 4;
+      for (let d = 0; d < stars; d++) {
+        const ang = (d / stars) * Math.PI * 2 + t * 2.2;
+        const sx = Math.round(cxr + Math.cos(ang) * radius), sy = Math.round(cyr + Math.sin(ang) * radius * 0.6 - 2);
+        b.drawScaled(S.px, sx - arm - 1, sy - 1, arm * 2 + 3, 3, edge);
+        b.drawScaled(S.px, sx - 1, sy - arm - 1, 3, arm * 2 + 3, edge);
+        b.drawScaled(S.px, sx - arm, sy, arm * 2 + 1, 1, bright);
+        b.drawScaled(S.px, sx, sy - arm, 1, arm * 2 + 1, bright);
+        b.drawScaled(S.px, sx - 1, sy - 1, 3, 3, bright);
+      }
+      continue;
+    }
     const thick = fx.rbig[r] ? 3 : 2;
     for (let d = 0; d < dots; d++) {
       const ang = (d / dots) * Math.PI * 2;
@@ -223,6 +403,10 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       }
     }
   }
+
+  // --- foreground ridge along the bottom of the field
+  drawRidge(b, S, biome, mood, camX, oy, s.tick);
+  drawAmbient(b, S, biome, mood, camX, oy, s.tick);
 
   // --- launched bodies: tumbling mobs knocked out of the pack
   for (let i = 0; i < fx.nb; i++) {
@@ -283,7 +467,9 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     b.drawScaled(S.px, sx, FIELD_Y0 + fx.y[i] - fx.z[i] + oy, sz, sz, c >>> 0);
   }
 
+  drawMercy(b, S, s, camX, alpha, oy);
   drawHud(b, S, s, fx, dbg);
+  drawLevelUp(b, S, s);
 }
 
 function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): void {
@@ -298,6 +484,21 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
     b.drawScaled(S.px, bx + Math.round(t * (bw - 2)), 4, 2, 7, hex(PLAYER_COLORS[e.sub[p.ent]]));
   }
   drawText(b, S, 'GOAL', bx + bw + 6, 5, hex(0xffd35a));
+  if (dbg.routeLabel) drawText(b, S, dbg.routeLabel, bx - 6 - dbg.routeLabel.length * 4, 5, hex(0xcfd8e0));
+
+  // Boss health bar: a wide bar under the progress bar while the boss is on (or about to enter) the screen.
+  if (e.boss >= 0 && e.alive[e.boss] && e.x[e.boss] < s.camX + VIEW_W + 140) {
+    const bi = e.boss;
+    const frac = Math.max(0, e.hp[bi] / e.maxhp[bi]);
+    const enraged = (e.flags[bi] & 4) !== 0;
+    const w = 280, x = (VIEW_W - w) / 2, y = 21;
+    b.drawScaled(S.px, x - 2, y - 2, w + 4, 10, hex(0x000000, 0.8));
+    b.drawScaled(S.px, x, y, w, 6, hex(0x2a1414));
+    b.drawScaled(S.px, x, y, Math.round(w * frac), 6, hex(enraged ? ((s.tick >> 2) & 1 ? 0xff5a3a : 0xd82a1a) : 0xc8402e));
+    b.drawScaled(S.px, x + w / 2, y - 1, 1, 8, hex(0xffffff, 0.45)); // the enrage line
+    const title = MOBS[e.sub[bi]].boss!.title, label = enraged ? title + '  ENRAGED' : title;
+    drawText(b, S, label, Math.round(VIEW_W / 2 - label.length * 2), 13, hex(enraged ? 0xff7a5a : 0xffe0c0));
+  }
 
   // party strip
   let row = 0;
@@ -351,18 +552,23 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
     b.drawScaled(S.px, gx + k, gy + gh - h, 1, h, dropped ? bad : ms > st.typicalMs * 1.2 ? warn : hex(0x6ad07a, 0.9));
   }
 
-  drawText(b, S, 'MOVE WASD/ARROWS/L-STICK  AIM R-STICK  J/RT ATTACK  K/A NOVA  L/B DASH  R RESTART', 6, VIEW_H - 10, hex(0xffffff, 0.8));
+  drawText(b, S, `MOVE WASD/ARROWS/L-STICK  AIM R-STICK  J/RT ATTACK  I/X BIG SWING  K/A NOVA  L/B DASH  O/PAD-LB LEVEL UP${s.surrender ? '  U/PAD-B STAND DOWN' : ''}  R RESTART`, 6, VIEW_H - 10, hex(0xffffff, 0.8));
 
   if (s.phase !== Phase.Playing) {
     b.drawScaled(S.px, 0, VIEW_H / 2 - 30, VIEW_W, 60, hex(0x000000, 0.6));
     const msg = s.phase === Phase.Won ? 'BATTLE WON' : 'ROUTED';
     drawText(b, S, msg, VIEW_W / 2 - msg.length * 6, VIEW_H / 2 - 14, hex(s.phase === Phase.Won ? 0xffd35a : 0xe05050), 3);
-    drawText(b, S, 'PRESS R TO FIGHT AGAIN', VIEW_W / 2 - 44, VIEW_H / 2 + 14, 0xffffffff);
+    const prompt = dbg.endPrompt ?? 'PRESS R TO FIGHT AGAIN';
+    drawText(b, S, prompt, Math.round(VIEW_W / 2 - prompt.length * 2), VIEW_H / 2 + 14, 0xffffffff);
   }
 }
 
 /** Windup tells: a "!" over heavy attackers, an aim line for archers, a blast-radius ring for lit bombers. */
 function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, def: (typeof MOBS)[number], sx: number, top: number, feetY: number, tick: number): void {
+  if (e.mode[i] === SP_WIND && def.special) {
+    drawSpecialTelegraph(b, S, e, i, def.special, sx, top, feetY, tick);
+    return;
+  }
   if (def.behavior === Behavior.Bomber) {
     const dots = 20;
     const col = hex(0xff5a30, (tick >> 1) & 1 ? 0.8 : 0.35);
@@ -376,7 +582,211 @@ function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, 
     const col = hex(0xff4a3a, 0.65);
     for (let d = 10; d < 160; d += 6) b.drawScaled(S.px, sx + e.ax[i] * d, feetY - 6 + e.ay[i] * d, 1, 1, col);
   }
+  if (def.charge !== undefined && e.mode[i] === 1) {
+    // the charge lane: a dotted red path along the locked direction, with an arrowhead
+    // shortened to where the charge would hit the edge of the world
+    let len = def.charge.distance;
+    const ax = e.ax[i], ay = e.ay[i];
+    if (ax > 1e-6) len = Math.min(len, (WORLD_W - e.x[i]) / ax);
+    else if (ax < -1e-6) len = Math.min(len, -e.x[i] / ax);
+    if (ay > 1e-6) len = Math.min(len, (WORLD_H - e.y[i]) / ay);
+    else if (ay < -1e-6) len = Math.min(len, -e.y[i] / ay);
+    len = Math.max(0, len);
+    const blink = (tick >> 2) & 1 ? 0.85 : 0.5;
+    const col = hex(0xff3a2a, blink);
+    for (let d = 12; d <= len; d += 7) b.drawScaled(S.px, sx + e.ax[i] * d - 1, feetY - 2 + e.ay[i] * d, 2, 2, col);
+    for (let k = -2; k <= 2; k++) b.drawScaled(S.px, sx + e.ax[i] * (len + 4) - e.ay[i] * k * 2, feetY - 2 + e.ay[i] * (len + 4) + e.ax[i] * k * 2, 2, 2, col);
+    drawText(b, S, '!!', Math.round(sx - 3), Math.round(top - 8), hex(0xff5a3a), 1);
+    return;
+  }
   if (def.windup >= 16) drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(0xffe14a), 1);
+}
+
+/**
+ * The Frozen Pass's ice colors. The ground there is near-white snow by day and pale blue by night, so ice effects are mid-saturated
+ * blues that read on both, with white only as small highlights (pale cyan on snow disappears).
+ */
+const ICE = { deep: 0x2f94f0, mid: 0x4aa8f0, light: 0x7ad0ff, steel: 0x6a7488 } as const;
+
+/** A thrown harpoon at (x, y) flying along the unit vector (dx, dy): a long dark shaft, a barbed steel head, and a streak of frost behind it. */
+export function drawHarpoon(b: Batcher, S: Sprites, x: number, y: number, dx: number, dy: number): void {
+  for (let t = 2; t <= 8; t++) b.drawScaled(S.px, Math.round(x - dx * t), Math.round(y - dy * t), 1, 1, hex(t < 4 ? 0x8a5a30 : 0x6a4a2a));
+  b.drawScaled(S.px, Math.round(x - dx * 11), Math.round(y - dy * 11), 1, 1, hex(ICE.deep, 0.8));
+  b.drawScaled(S.px, Math.round(x - dx * 14), Math.round(y - dy * 14), 1, 1, hex(ICE.light, 0.5));
+  b.drawScaled(S.px, Math.round(x - dx), Math.round(y - dy), 2, 2, hex(0x9aaac8));
+  b.drawScaled(S.px, Math.round(x + dx * 1.5), Math.round(y + dy * 1.5), 1, 1, hex(0xffffff));
+  b.drawScaled(S.px, Math.round(x - dx * 2 - dy * 2), Math.round(y - dy * 2 + dx * 2), 1, 1, hex(0x7c8cac)); // the barbs
+  b.drawScaled(S.px, Math.round(x - dx * 2 + dy * 2), Math.round(y - dy * 2 - dx * 2), 1, 1, hex(0x7c8cac));
+}
+
+/** Rings of dots on the ground: radius r around (cx, cy), squashed to look flat. */
+function groundRing(b: Batcher, S: Sprites, cx: number, cy: number, r: number, dots: number, color: number): void {
+  for (let d = 0; d < dots; d++) {
+    const a = (d / dots) * Math.PI * 2;
+    b.drawScaled(S.px, cx + Math.cos(a) * r - 1, cy + Math.sin(a) * r * 0.85 - 1, 2, 2, color);
+  }
+}
+
+/** The tell of a special move while the mob winds up: a danger ring, a ray's lane, or a magic glow. */
+export function drawSpecialTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, sp: NonNullable<(typeof MOBS)[number]['special']>, sx: number, top: number, feetY: number, tick: number): void {
+  const p = 1 - e.wind[i] / sp.windup;
+  const blink = (tick >> 2) & 1 ? 0.8 : 0.45;
+  switch (sp.kind) {
+    case 'nova': {
+      const frost = sp.style === NovaStyle.Frost;
+      groundRing(b, S, sx, feetY, sp.radius, 40, hex(frost ? ICE.deep : sp.style === NovaStyle.Scream ? 0xb890ff : 0xff3a2a, blink));
+      groundRing(b, S, sx, feetY, sp.radius * (0.2 + 0.8 * p), 28, hex(frost ? ICE.light : 0xffe0b0, 0.5 + 0.4 * p));
+      if (frost) {
+        // icicles rising along the danger ring as the scream builds
+        for (let k = 0; k < 16; k++) {
+          const a = (k / 16) * Math.PI * 2 + tick * 0.01, h = 1 + Math.round(p * (2 + (k % 3)));
+          const ix = Math.round(sx + Math.cos(a) * sp.radius) - 1, iy = Math.round(feetY + Math.sin(a) * sp.radius * 0.85) - h;
+          b.drawScaled(S.px, ix, iy, 1, h, hex(ICE.deep, 0.7 + 0.3 * p));
+          b.drawScaled(S.px, ix, iy, 1, 1, hex(0xffffff, 0.9)); // a bright tip
+        }
+      }
+      drawText(b, S, '!!', Math.round(sx - 3), Math.round(top - 8), hex(0xff5a3a), 1);
+      break;
+    }
+    case 'beam': {
+      // the locked lane, thin at first and then a solid line just before it fires
+      const col = hex(p > 0.75 ? 0xffffff : 0xc070ff, p > 0.75 ? 0.9 : blink);
+      for (let d = 10; d < sp.range; d += p > 0.75 ? 2 : 5) b.drawScaled(S.px, sx + e.ax[i] * d, feetY - 8 + e.ay[i] * d, 1, 1, col);
+      drawText(b, S, '!!', Math.round(sx - 3), Math.round(top - 8), hex(0xc070ff), 1);
+      break;
+    }
+    case 'trap': {
+      // the snare's landing spot, marked on the ground ahead of the hero
+      const tx = sx + (e.ax[i] - e.x[i]), ty = feetY + (e.ay[i] - e.y[i]);
+      groundRing(b, S, tx, ty, sp.radius + 3 - 3 * p, 12, hex(ICE.steel, blink));
+      drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(0xffe14a), 1);
+      break;
+    }
+    case 'storm': {
+      // the blizzard's mark: a ring on the ground where the hero stands, swirling flakes gathering inside it
+      const tx = sx + (e.ax[i] - e.x[i]), ty = feetY + (e.ay[i] - e.y[i]);
+      groundRing(b, S, tx, ty, sp.radius, 24, hex(ICE.deep, blink));
+      for (let k = 0; k < 8; k++) {
+        const a = tick * 0.15 + k * 0.785, rr = sp.radius * (0.2 + 0.7 * ((k * 37 + tick) % 60) / 60);
+        b.drawScaled(S.px, Math.round(tx + Math.cos(a) * rr), Math.round(ty + Math.sin(a) * rr * 0.7 - 2), 1, 1, hex(ICE.light, 0.55 + 0.4 * p));
+      }
+      drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(ICE.deep), 1);
+      break;
+    }
+    case 'wail': {
+      groundRing(b, S, sx, feetY, sp.radius, 36, hex(0xb890ff, blink));
+      groundRing(b, S, sx, feetY, sp.radius * (0.2 + 0.8 * p), 24, hex(0xe0d0ff, 0.4 + 0.4 * p));
+      drawText(b, S, '!!', Math.round(sx - 3), Math.round(top - 8), hex(0xb890ff), 1);
+      break;
+    }
+    case 'whiteout': {
+      groundRing(b, S, sx, feetY, sp.radius, 36, hex(ICE.mid, blink));
+      groundRing(b, S, sx, feetY, sp.radius * (0.2 + 0.8 * p), 24, hex(0x9adcf8, 0.4 + 0.4 * p));
+      for (let k = 0; k < 10; k++) {
+        const a = -tick * 0.18 + k * 0.628, rr = sp.radius * (0.3 + 0.6 * (k % 3) / 2);
+        b.drawScaled(S.px, Math.round(sx + Math.cos(a) * rr), Math.round(feetY + Math.sin(a) * rr * 0.7 - 3), 2, 1, hex(0xffffff, 0.35 + 0.4 * p));
+      }
+      drawText(b, S, '??', Math.round(sx - 3), Math.round(top - 8), hex(0x9adcf8), 1);
+      break;
+    }
+    case 'cling':
+      drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(0xff5a3a), 1);
+      break;
+    case 'heal':
+    case 'rally':
+    case 'ward': {
+      const col = sp.kind === 'heal' ? 0x7dffa0 : sp.kind === 'ward' ? ICE.mid : 0xffc060;
+      groundRing(b, S, sx, feetY, sp.radius * (0.3 + 0.7 * p), 30, hex(col, 0.35 + 0.3 * p));
+      break;
+    }
+    case 'summon': {
+      for (let k = 0; k < 6; k++) {
+        const a = tick * 0.12 + k * 1.047;
+        b.drawScaled(S.px, sx + Math.cos(a) * 9 - 1, feetY - 2 + Math.sin(a) * 4, 2, 2, hex(0x8cff9c, 0.5 + 0.4 * p));
+      }
+      break;
+    }
+    case 'lob':
+      drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(0xffe14a), 1);
+      break;
+    case 'blink':
+      for (let k = 0; k < 4; k++) b.drawScaled(S.px, sx + ((tick * 3 + k * 5) % 11) - 5, feetY - 4 - ((tick + k * 3) % 9), 1, 1, hex(0xb78cff, 0.8));
+      break;
+  }
+}
+
+/** A ground zone: a rock about to land (a red target ring and a falling stone) or a lingering poison pool. */
+export function drawZone(b: Batcher, S: Sprites, e: GameState['ents'], i: number, sx: number, sy: number, tick: number): void {
+  const r = e.rem[i];
+  if (e.sub[i] === ZoneKind.Trap) {
+    if (e.mode[i] !== 2) {
+      // still being set: a faint ring that firms up as it arms
+      groundRing(b, S, sx, sy, r, 10, hex(ICE.steel, 0.4 + 0.3 * (((tick >> 2) & 1))));
+      return;
+    }
+    // armed: a steel-toothed ring of jaws lying open in the snow, with a stake and a short chain
+    groundRing(b, S, sx, sy, r * 0.85, 12, hex(ICE.steel));
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2;
+      b.drawScaled(S.px, Math.round(sx + Math.cos(a) * r * 0.55), Math.round(sy + Math.sin(a) * r * 0.45 - 1), 1, 2, hex(0xaab2c4));
+    }
+    b.drawScaled(S.px, Math.round(sx - 1), Math.round(sy - 1), 2, 2, hex(0x5a4a3a));
+    return;
+  }
+  if (e.sub[i] === ZoneKind.Storm) {
+    // a blizzard gathering: swirling flakes in a pale ring, thickening until it settles into ice
+    const left = e.wind[i];
+    const blink = (tick >> 2) & 1 ? 0.8 : 0.45;
+    groundRing(b, S, sx, sy, r, 26, hex(ICE.deep, blink));
+    for (let k = 0; k < 12; k++) {
+      const a = tick * 0.2 + k * 0.52, rr = r * (0.2 + 0.75 * (((k * 29 + tick) % 50) / 50));
+      b.drawScaled(S.px, Math.round(sx + Math.cos(a) * rr), Math.round(sy + Math.sin(a) * rr * 0.7 - 3 - (left & 3)), 1, 1, hex(ICE.light, 0.6 + 0.4 * (1 - left / 50)));
+    }
+    return;
+  }
+  if (e.sub[i] === ZoneKind.Frost) {
+    // a pool of black ice: a pale blue sheet, a bright rim, and ice crystals standing in it that glint
+    const fade = e.cool2[i] < 60 ? e.cool2[i] / 60 : 1;
+    const col = hex(ICE.mid, 0.38 * fade);
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2 + (i % 5);
+      const rr = r * (0.35 + ((k * 37 + i * 11) % 60) / 100);
+      b.drawScaled(S.px, sx + Math.cos(a) * rr - 4, sy + Math.sin(a) * rr * 0.7 - 2, 9, 5, col);
+    }
+    groundRing(b, S, sx, sy, r * 0.95, 26, hex(ICE.deep, 0.7 * fade));
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI * 2 + (i % 7), rr = r * (0.2 + ((k * 29 + i * 13) % 55) / 100);
+      const cx = Math.round(sx + Math.cos(a) * rr), cy = Math.round(sy + Math.sin(a) * rr * 0.7), h = 2 + ((k + i) % 3);
+      b.drawScaled(S.px, cx, cy - h, 1, h, hex(0x5ab4f4, 0.95 * fade));
+      b.drawScaled(S.px, cx - 1, cy - 1, 3, 1, hex(0x3a9af0, 0.8 * fade));
+      if (((tick >> 3) + k + i) % 6 === 0) b.drawScaled(S.px, cx, cy - h - 1, 1, 1, hex(0xffffff, fade)); // a glint
+    }
+    return;
+  }
+  if (e.sub[i] === ZoneKind.Poison) {
+    const fade = e.cool2[i] < 60 ? e.cool2[i] / 60 : 1;
+    const col = hex(0x7ac040, 0.28 * fade);
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2 + (i % 5);
+      const rr = r * (0.35 + ((k * 37 + i * 11) % 60) / 100);
+      b.drawScaled(S.px, sx + Math.cos(a) * rr - 4, sy + Math.sin(a) * rr * 0.7 - 2, 9, 5, col);
+    }
+    groundRing(b, S, sx, sy, r * 0.95, 26, hex(0xb8e060, 0.45 * fade));
+    // bubbles rising
+    for (let k = 0; k < 3; k++) {
+      const t = (tick * 0.5 + k * 13 + i * 7) % 24;
+      b.drawScaled(S.px, sx + ((k * 17 + i * 5) % (r | 0)) - r / 2, sy - t * 0.5 - 1, 1, 1, hex(0xd8f890, 0.7 * (1 - t / 24) * fade));
+    }
+    return;
+  }
+  // pending rock: the target ring pulses, the stone drops from above and lands as the ring is full
+  const left = e.wind[i];
+  const blink = (tick >> 2) & 1 ? 0.85 : 0.5;
+  groundRing(b, S, sx, sy, r, 22, hex(0xff3a2a, blink));
+  groundRing(b, S, sx, sy, r * Math.min(1, 0.3 + left * 0 + 0.7 * (1 - left / 46)), 16, hex(0xffd0a0, 0.5));
+  const h = left * 2.2;
+  b.drawScaled(S.px, sx - 2, sy - h - 3, 5, 5, hex(0x6e6470));
+  b.drawScaled(S.px, sx - 2, sy - h - 3, 2, 2, hex(0xa39a98));
 }
 
 const DEG = Math.PI / 180;
@@ -398,22 +808,41 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   const type = e.sub[i];
   const def = MOBS[type];
   const face = flip ? -1 : 1;
+  const gallop = def.charge !== undefined && e.mode[i] === 2;
   const walk = S.mob[type];
-  const wf = walk[((tick >> 3) + i) % walk.length];
+  const wf = walk[gallop ? (tick >> 1) % walk.length : ((tick >> 3) + i) % walk.length];
   const wind = e.wind[i];
   const winding = wind > 0;
   // archers raise their bow for the windup
   let f = wf;
   const since = def.atkCooldown - e.atk[i];
   const striking = !winding && def.behavior !== Behavior.Bomber && e.atk[i] > 0 && since >= 0 && since < STRIKE_TICKS;
-  const p = winding ? 1 - wind / def.windup : 0;
+  const chargeWind = def.charge !== undefined && e.mode[i] === 1;
+  const charging = def.charge !== undefined && e.mode[i] === 2;
+  const dazed = def.charge !== undefined && e.mode[i] === 0 && e.stun[i] > 20;
+  const special = e.mode[i] === SP_WIND && def.special !== undefined;
+  const p = winding ? Math.min(1, Math.max(0, 1 - wind / (chargeWind ? def.charge!.windup : special ? def.special!.windup : def.windup))) : 0;
   const q = striking ? since / STRIKE_TICKS : 0;
   const moving = Math.abs(e.x[i] - e.px[i]) + Math.abs(e.y[i] - e.py[i]) > 0.05;
-  f = mobPose(S.mobArt, type, { winding, windP: p, striking, strikeQ: q, chargeWind: false, charging: false, dazed: false, moving, hurt: hurtFlash > 0, tick, salt: i });
+  const cling = e.mode[i] === SP_CLING;
+  const rising = def.revive !== undefined && e.rem[i] === 1 && e.stun[i] > 20;
+  f = mobPose(S.mobArt, type, { winding, windP: p, striking, strikeQ: q, chargeWind, charging, dazed, cast: special, cling, rising, moving, hurt: hurtFlash > 0, tick, salt: i });
 
   let ox = 0, oy = 0;
   let flash = hurtFlash;
-  if (winding) {
+  if (cling) {
+    oy = -9; // riding a hero's back, not at their feet
+  } else if (charging) {
+    ox = face * 3;
+  } else if (dazed) {
+    oy = 1;
+    ox = (((tick >> 3) & 1) ? 1 : -1) * 0.5;
+  } else if (chargeWind) {
+    // pawing the ground: rock back and stomp
+    ox = -face * p * 3;
+    oy = -(((tick >> 1) & 1) ? 1 : 0) * (1 + p);
+    if (flash === 0) flash = ((tick >> 2) & 1) ? 0.6 * p : 0.1;
+  } else if (winding) {
     ox = -face * p * (type === MobType.Orc ? 3 : 2);
     oy = -p * 1.5;
     if (flash === 0) flash = def.behavior === Behavior.Bomber ? ((tick >> 1) & 1 ? 0.8 : 0.1) : ((tick >> 2) & 1 ? 0.45 : 0.1) * p;
@@ -434,7 +863,30 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   }
 
   const x0 = sx - f.w / 2 + ox, y0 = sy - f.h + oy;
-  b.draw(f, x0, y0, flip, 0xffffffff, flash);
+  if (charging) {
+    // motion trail: fading ghosts behind the charger
+    for (let g = 3; g >= 1; g--) b.draw(f, x0 - e.ax[i] * g * 6, y0 - e.ay[i] * g * 6, flip, hex(0xffffff, 0.34 - g * 0.08), 0.3);
+  }
+  let tint = 0xffffffff;
+  if (e.buff[i] > 0) tint = hex(0xffb090); // rallied: flushed and frenzied
+  if (isWarded(e, i)) tint = hex(0xb0e4ff); // wrapped in a shaman's ice
+  if (special && def.special!.kind === 'blink') tint = hex(0xffffff, 1 - p * 0.85); // fading out
+  if (def.aura) {
+    // the permafrost around it: a faint ring on the ground, and flakes drifting in it
+    groundRing(b, S, sx, sy, def.aura.radius, 30, hex(ICE.deep, 0.32));
+    const a = tick * 0.05 + i;
+    b.drawScaled(S.px, Math.round(sx + Math.cos(a) * def.aura.radius * 0.7), Math.round(sy + Math.sin(a) * def.aura.radius * 0.55 - 3), 1, 1, hex(ICE.light, 0.8));
+  }
+  b.draw(f, x0, y0, flip, tint, flash);
+  if (isWarded(e, i) && ((tick + i) & 5) === 0) b.drawScaled(S.px, sx + ((i * 11) % 9) - 4, y0 + ((tick * 3 + i) % Math.max(2, f.h)), 1, 1, hex(0xffffff, 0.9));
+  if (e.buff[i] > 0 && ((tick + i) & 7) === 0) b.drawScaled(S.px, sx + ((i * 7) % 5) - 2, y0 - 1, 1, 2, hex(0xff8a40, 0.9));
+  if (dazed) {
+    // stars circling the head
+    for (let k = 0; k < 3; k++) {
+      const a = tick * 0.15 + k * 2.094;
+      b.drawScaled(S.px, sx + Math.cos(a) * 5 - 1, y0 - 3 + Math.sin(a) * 2, 2, 2, hex(0xffe14a));
+    }
+  }
 
   // Animated weapons.
   const pivotX = sx + face * (f.w / 2 - 2) + ox, pivotY = sy - f.h * 0.5 + oy;
@@ -465,4 +917,94 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   }
 
   if (winding) drawTelegraph(b, S, e, i, def, sx, sy - f.h, sy, tick);
+}
+
+/**
+ * The boss: its own detailed sheet (art/chars/boss.mjs), authored poses for each move, plus code tells.
+ * Modes (see step.ts): 1 charge windup, 2 charging, 3 ground slam, 4 war cry, 5 club smash.
+ */
+function drawBoss(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: number, sx: number, sy: number, flip: boolean, hurtFlash: number): void {
+  const type = e.sub[i];
+  const def = MOBS[type];
+  const bd = def.boss!;
+  const face = flip ? -1 : 1;
+  const mode = e.mode[i], wind = e.wind[i];
+  const enraged = (e.flags[i] & 4) !== 0;
+  const chargeWind = mode === 1, charging = mode === 2, slam = mode === 3, roar = mode === 4, smash = mode === 5;
+  // one of its own specials (a frost nova, a barrage, a rally...): drawn with that special's telegraph and an authored pose
+  const move = mode === BOSS_SPECIAL ? (bd.moves ?? LEGACY_BOSS_MOVES)[e.rem[i]] : undefined;
+  const cast = move?.kind === 'special' ? move : undefined;
+  const winding = mode !== 0 && wind > 0 && mode !== 2;
+  const total = chargeWind ? def.charge!.windup : slam ? bd.slamWindup : roar ? bd.roarWindup : cast ? cast.special.windup : def.windup;
+  const p = winding ? 1 - wind / total : 0;
+  const since = def.atkCooldown - e.atk[i];
+  const striking = mode === 0 && e.atk[i] > 0 && since >= 0 && since < STRIKE_TICKS;
+  const q = striking ? since / STRIKE_TICKS : 0;
+  const dazed = mode === 0 && e.stun[i] > 40;
+  const moving = Math.abs(e.x[i] - e.px[i]) + Math.abs(e.y[i] - e.py[i]) > 0.05;
+  const f = mobPose(S.mobArt, type, {
+    special: slam ? 'slam' : roar ? 'roar' : smash ? 'smash' : cast ? (cast.pose ?? 'roar') : undefined,
+    winding: winding && !chargeWind, windP: p, striking, strikeQ: q, chargeWind, charging, dazed, moving,
+    hurt: hurtFlash > 0, tick, salt: i,
+  });
+  const w = f.w, h = f.h;
+
+  let ox = 0, oy = 0, flash = hurtFlash;
+  if (charging) ox = face * 10;
+  else if (chargeWind) { ox = -face * p * 10; oy = -(((tick >> 1) & 1) ? 3 : 0); }
+  else if (slam) { oy = -p * 6; ox = (((tick >> 1) & 1) ? 1 : -1) * p * 2; } // rears up before the slam
+  else if (roar) { ox = (((tick >> 1) & 1) ? 1 : -1) * 2; oy = -p * 4; }
+  else if (cast) { ox = (((tick >> 1) & 1) ? 1 : -1) * 2 * p; oy = -p * 4; }
+  else if (smash) { ox = -face * p * 8; oy = -p * 6; }
+  else if (striking) ox = face * 12 * (1 - q);
+  else if (dazed) { oy = 3; ox = (((tick >> 3) & 1) ? 1 : -1); }
+  if (flash === 0 && (winding || chargeWind)) flash = ((tick >> 2) & 1) ? 0.4 * p : 0.08;
+  const tint = enraged ? hex(bd.frost ? 0xb8d8ff : 0xffb8a8) : 0xffffffff;
+
+  const x0 = Math.round(sx - w / 2 + ox), y0 = Math.round(sy - h + oy);
+  b.drawScaled(f, x0, y0, w, h, tint, flip, flash);
+
+  // Enraged: glowing red eyes (the eye sits ~17px in front of the cell centre, 36 rows down).
+  if (enraged) b.drawScaled(S.px, Math.round(sx + ox + face * 17 - 2), y0 + 36, 4, 2, hex(0xff3020, 0.9));
+
+  // Tells.
+  if (cast) {
+    drawSpecialTelegraph(b, S, e, i, cast.special, sx, y0, sy, tick);
+  } else if (chargeWind) {
+    drawTelegraph(b, S, e, i, def, sx, y0, sy, tick);
+  } else if (slam) {
+    // the slam zone: a fixed red ring, with a second ring closing in as the strike nears
+    const R = bd.slamRadius;
+    const blink = (tick >> 2) & 1 ? 0.8 : 0.45;
+    for (let d = 0; d < 56; d++) {
+      const a = (d / 56) * Math.PI * 2;
+      b.drawScaled(S.px, sx + Math.cos(a) * R - 1, sy + Math.sin(a) * R * 0.85 - 1, 2, 2, hex(bd.frost ? ICE.deep : 0xff3a2a, blink));
+    }
+    const R2 = R * (1 - p * 0.0) * (0.25 + 0.75 * p);
+    for (let d = 0; d < 40; d++) {
+      const a = (d / 40) * Math.PI * 2;
+      b.drawScaled(S.px, sx + Math.cos(a) * R2 - 1, sy + Math.sin(a) * R2 * 0.85 - 1, 2, 2, hex(bd.frost ? ICE.light : 0xffd0a0, 0.5 + 0.4 * p));
+    }
+    if (bd.frost) {
+      // icicles rising along the ring as the blow nears
+      for (let k = 0; k < 28; k++) {
+        const a = (k / 28) * Math.PI * 2, hgt = 1 + Math.round(p * (3 + (k % 4)));
+        const ix = Math.round(sx + Math.cos(a) * R) - 1, iy = Math.round(sy + Math.sin(a) * R * 0.85) - hgt;
+        b.drawScaled(S.px, ix, iy, 1, hgt, hex(ICE.deep, 0.7 + 0.3 * p));
+        b.drawScaled(S.px, ix, iy, 1, 1, hex(0xffffff, 0.9));
+      }
+    }
+    drawText(b, S, '!!', Math.round(sx - 3), y0 - 18, hex(bd.frost ? ICE.deep : 0xff5a3a), 1);
+  } else if (roar) {
+    for (let k = 0; k < 3; k++) {
+      const rr = ((tick * 1.5 + k * 22) % 66) + 6;
+      for (let d = 0; d < 36; d++) {
+        const a = (d / 36) * Math.PI * 2;
+        b.drawScaled(S.px, sx + Math.cos(a) * rr - 1, sy - h * 0.4 + Math.sin(a) * rr * 0.6, 2, 2, hex(bd.frost ? ICE.light : 0xffe27a, 0.7 * (1 - rr / 72)));
+      }
+    }
+    drawText(b, S, '!!!', Math.round(sx - 5), y0 - 18, hex(0xffe27a), 1);
+  } else if (smash && winding) {
+    drawText(b, S, '!', Math.round(sx - 1), y0 - 16, hex(0xffe14a), 1);
+  }
 }

@@ -1,6 +1,10 @@
 // Uniform spatial hash over mobs, rebuilt every tick. Linked lists in typed arrays.
 import { GRID_CELL, MAX_ENTS, WORLD_H, WORLD_W } from './constants';
 import { Kind, type Entities } from './entities';
+import { MOBS } from '../data/mobs';
+
+/** The widest boss: a giant boss is hit when any part of it is in reach (see `gatherCircle`). */
+const BOSS_RADIUS = Math.max(...MOBS.filter((m) => m.boss).map((m) => m.radius));
 
 export interface Grid {
   cols: number;
@@ -48,6 +52,14 @@ export function gatherCircle(g: Grid, e: Entities, cx: number, cy: number, r: nu
         if (dx * dx + dy * dy <= r2) out[n++] = i;
       }
     }
+  }
+  // A giant boss is hit when any part of it is in reach, not only its centre.
+  const bi = e.boss;
+  if (bi >= 0 && e.alive[bi]) {
+    const dx = e.x[bi] - cx, dy = e.y[bi] - cy;
+    const reach = r + BOSS_RADIUS;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > r2 && d2 <= reach * reach) out[n++] = bi;
   }
   return n;
 }

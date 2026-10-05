@@ -15,14 +15,29 @@ function mixNum(h: number, v: number): number {
   return mix(h, new Uint8Array(f.buffer));
 }
 
+function e0(s: GameState): number { return s.ents.boss; }
+
 export function hashState(s: GameState): number {
   let h = 2166136261;
   h = mixNum(h, s.tick);
   h = mixNum(h, s.phase);
   h = mixNum(h, s.kills);
+  for (let i = 0; i < s.slain.length; i++) h = mixNum(h, s.slain[i]);
   h = mixNum(h, s.camX);
   h = mixNum(h, s.hitStop);
   h = mixNum(h, s.spawnTimer);
+  h = mixNum(h, s.flankTimer);
+  h = mixNum(h, s.trigCamX);
+  h = mixNum(h, s.nextClump);
+  h = mixNum(h, s.biome);
+  h = mixNum(h, s.bossDeadTick);
+  h = mixNum(h, s.beatIndex);
+  h = mixNum(h, s.beatPlayedTick);
+  h = mixNum(h, s.surrender ? 1 : 0);
+  h = mixNum(h, s.surrenders);
+  h = mixNum(h, s.betrayed);
+  for (let i = 0; i < s.spared.length; i++) h = mixNum(h, s.spared[i]);
+  h = mixNum(h, e0(s));
   h = mixNum(h, s.gold);
   h = mixNum(h, s.coinCount);
   h = mix(h, new Uint8Array(s.rngLoot.buffer));
@@ -44,6 +59,11 @@ export function hashState(s: GameState): number {
   h = mix(h, u8(e.stun));
   h = mix(h, u8(e.atk));
   h = mix(h, u8(e.wind));
+  h = mix(h, u8(e.mode));
+  h = mix(h, u8(e.cool));
+  h = mix(h, u8(e.cool2));
+  h = mix(h, u8(e.buff));
+  h = mix(h, u8(e.rem));
   h = mix(h, u8(e.by));
   h = mix(h, u8(e.flags));
   for (const p of s.players) {
@@ -53,6 +73,8 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.downTimer);
     h = mixNum(h, p.invuln);
     h = mixNum(h, p.dashT);
+    h = mixNum(h, p.vanishT);
+    h = mixNum(h, p.auraOn ? 1 : 0);
     h = mixNum(h, p.cdAttack);
     h = mixNum(h, p.cdAbility1);
     h = mixNum(h, p.cdDash);
@@ -62,6 +84,26 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.combo);
     h = mixNum(h, p.comboTimer);
     h = mixNum(h, p.lungeT);
+    h = mixNum(h, p.standT);
+    h = mixNum(h, p.xp);
+    h = mixNum(h, p.level);
+    h = mixNum(h, p.pending);
+    h = mixNum(h, p.panel ? 1 : 0);
+    h = mixNum(h, p.lock ? 1 : 0);
+    h = mix(h, p.ranks);
+    h = mixNum(h, p.stamina);
+    h = mixNum(h, p.staminaDelay);
+    h = mixNum(h, p.winded ? 1 : 0);
+    h = mixNum(h, p.cdSpecial);
+    h = mixNum(h, p.bufAbility2);
+    h = mixNum(h, p.healBudget);
+    h = mixNum(h, p.slowT);
+    h = mixNum(h, p.rootT);
+    h = mixNum(h, p.silenceT);
+    h = mixNum(h, p.confuseT);
+    h = mixNum(h, p.pullT);
+    h = mixNum(h, p.pullX);
+    h = mixNum(h, p.pullY);
   }
   return h >>> 0;
 }

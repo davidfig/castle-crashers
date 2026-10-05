@@ -1,0 +1,391 @@
+// Biome definitions for the world behind and under the action (see docs/11-backgrounds.md).
+// Render-only: nothing here may be read by the sim. (Which biome a level is comes from `biomeIndex` in roster.ts.)
+import { biomeIndex } from './roster';
+
+/** A look of the sky and light, reached at a point in the level; looks in between are blended. */
+export interface Mood {
+  /** Level progress (0..1) at which the look is fully in effect. */
+  at: number;
+  /** Sky gradient bands, top to horizon. */
+  sky: readonly number[];
+  /** Multiplies the background art (parallax layers, ground, clouds), 0xRRGGBB. */
+  tint: number;
+  /** Screen y of the sun's center; below the horizon (> ~110) it is set. */
+  sunY: number;
+  /** Screen y of the moon's center; below the horizon it is down. */
+  moonY: number;
+  /** Star brightness, 0..1. */
+  stars: number;
+  /** Northern lights, 0..1 (default none). */
+  aurora?: number;
+}
+
+/** The pseudo-sprite that marks where the destination landmark sits among the parallax layers. */
+export const DESTINATION_LAYER = '@destination';
+
+/** The next biome, seen far off on the horizon and growing closer as the level goes on. */
+export interface Destination {
+  /** Key into `Sprites.landmarks`. */
+  landmark: string;
+  /** Screen x of its center (as a fraction of the view width) at the start and at the end of the level. */
+  x0: number;
+  x1: number;
+  /** Pixels its base sits above the horizon at the start and at the end (high at first, so it clears the tree lines). */
+  lift0: number;
+  lift1: number;
+  /** Glow behind it, 0xRRGGBB. */
+  aura: number;
+}
+
+export interface ParallaxLayer {
+  /** Key into `Sprites.layers`: the 256px strip this layer repeats. */
+  sprite: string;
+  /** Scroll factor: 0 is fixed to the screen, 1 moves with the field. */
+  k: number;
+  /** Pixels to push the strip below the horizon (default 0). */
+  dy?: number;
+  /** Flickering torches at the positions baked into this layer's strips: glow color, radius px, opacity. */
+  lights?: { color: number; r: number; a: number };
+  /** Lit windows at the window positions baked into the strips: window colors (picked per window), opacity, and the share (0..1) that are lit. */
+  windows?: { colors: readonly number[]; a: number; lit: number };
+}
+
+/** A band of drifting ground fog: wisps that slide slowly along the floor, drawn over it and under the characters. */
+export interface FogLayer {
+  /** Scroll factor against the camera (1 = fixed to the ground). */
+  k: number;
+  /** World px drifted per tick. */
+  drift: number;
+  count: number;
+  /** Screen y range the wisps sit in. */
+  y0: number;
+  y1: number;
+  /** Peak opacity, 0..1. */
+  alpha: number;
+  color: number;
+  /** Use the larger wisps (default: the small ones). */
+  big?: boolean;
+  /** Level progress by which this fog has burned off (it thins over the 0.25 before): morning mist. Default: never. */
+  until?: number;
+}
+
+/** Specks carried on the wind (petals, embers, dust): drawn over everything, sparse, in the foreground. */
+export interface AmbientDef {
+  colors: readonly number[];
+  count: number;
+  /** Each speck picks its own heading; this is its speed in world px per tick (varying 0.5x to 1.3x between specks). */
+  speed: number;
+  /** A gentle prevailing wind added to every speck's own motion, px per tick (right, down). */
+  bias: readonly [number, number];
+  /** Side-to-side meander, px. */
+  wobble: number;
+  /** Opacity, 0..1. */
+  alpha: number;
+  /** Size in px (a speck tumbles between w x h and h x w). */
+  w: number;
+  h: number;
+  /** Screen y range they float in. */
+  y0: number;
+  y1: number;
+  /** Parallax range against the camera: nearer specks (higher) cross the screen faster. */
+  k: readonly [number, number];
+}
+
+/** A band of drifting clouds. Clouds wrap every 768 px, so `count` sets the density. */
+export interface CloudLayer {
+  k: number;
+  /** Pixels drifted per tick. */
+  drift: number;
+  count: number;
+  y0: number;
+  y1: number;
+  /** Opacity, 0..1. */
+  alpha: number;
+  /** Extra tint on top of the time of day (default none), 0xRRGGBB: darker for storm clouds. */
+  tint?: number;
+}
+
+export interface DecorKind {
+  /** Key into `Sprites.decor`. */
+  sprite: string;
+  /** Relative weight. */
+  w: number;
+  /** May sit on the path (small stones yes, flowers no). */
+  onPath?: boolean;
+  /** Sways in the wind (the biome's `wind`), a pixel to either side. */
+  sway?: boolean;
+  /** A second frame, swapped with the first every few ticks (a flickering flame). */
+  alt?: string;
+  /** A soft glow around it (not dimmed by the time of day): color, radius in px, opacity. */
+  glow?: { color: number; r: number; a: number };
+}
+
+/**
+ * The floor surface. `tiles` repeats flat 16 px tiles (good for grass). `flagstones` is a paved floor: rows of irregular
+ * slabs, staggered like brickwork. Everything keeps one constant size, because in this game characters do not shrink
+ * with depth (as in Castle Crashers or Knights of the Round), so a floor that shrank toward the horizon would not match
+ * them; the rows are simply squashed to suggest looking down at the floor from the side.
+ */
+export type FloorDef =
+  | { kind: 'tiles'; set: string }
+  | {
+      kind: 'flagstones';
+      /** Slab colors, picked per slab. */
+      slabs: readonly number[];
+      /** The gaps between slabs. */
+      mortar: number;
+      /** The lit top edge of each slab. */
+      lit: number;
+      /** Row height, px. */
+      rowH: number;
+      /** Shortest and longest slab, px. */
+      slabW: readonly [number, number];
+    };
+
+/** The ground: a floor surface, an optional winding path, scattered patches, soft mottling, and small flat decals. */
+export interface GroundDef {
+  /** What the floor is made of. */
+  floor: FloorDef;
+  /** A worn road winding along the field, drawn as a continuous ribbon: mean half-width and colors (none: the floor itself is the way). */
+  path?: { half: number; fill: number; edge: number; lip: number; speck: number; speck2: number; /** Wheel ruts along the road. */ ruts?: number; /** Grass colors fraying the road's edge. */ fringe?: readonly number[] };
+  /** Patches (wildflowers, clover, blood, rubble, puddles...) scattered over a grid of `cell` px, one per cell with probability `chance`. */
+  patches: { sprites: readonly string[]; cell: number; chance: number };
+  /** Large stippled light and dark blotches over the floor; `alpha` is their opacity. */
+  mottle: { light: number; dark: number; alpha: number };
+  /** Decals: one candidate per `cellW` x `cellH` cell, kept with probability `density`. */
+  decor: { cellW: number; cellH: number; density: number; table: readonly DecorKind[] };
+}
+
+export interface BiomeDef {
+  name: string;
+  /** Sorted by `at`; the first is used before it and the last after it. */
+  timeline: readonly Mood[];
+  /** Far to near. */
+  layers: readonly ParallaxLayer[];
+  clouds: readonly CloudLayer[];
+  /** The moon's size as a multiple of its 20 px sprite (default 1). */
+  moonScale?: number;
+  /** Fog drifting along the ground (default none). */
+  fog?: readonly FogLayer[];
+  /** Specks on the wind (default none). */
+  ambient?: AmbientDef;
+  /** How far grass and decals sway in the wind, px (default none). */
+  wind?: number;
+  /** Where the party is headed; drawn at the `DESTINATION_LAYER` entry in `layers`. */
+  destination?: Destination;
+  /** Haze gathered at the horizon, in front of the far layers: its height in px and peak opacity (in the horizon sky's color). */
+  haze: { height: number; alpha: number };
+  ground: GroundDef;
+  /** Hill crest: body and highlight colors. */
+  crest: { fill: number; edge: number };
+  /** Foreground ridge along the bottom: body, highlight, shade. */
+  ridge: { fill: number; edge: number; shade: number };
+}
+
+const BASE_BIOMES: readonly BiomeDef[] = [
+  {
+    name: 'Meadow',
+    timeline: [
+      { at: 0, sky: [0x4a7fb5, 0x5a8fc2, 0x6c9fcc, 0x82b2d6, 0x9cc5df, 0xb4d6e8, 0xc9e3ee], tint: 0xffffff, sunY: 34, moonY: 170, stars: 0 },
+      { at: 0.55, sky: [0x4a7fb5, 0x5a8fc2, 0x6c9fcc, 0x82b2d6, 0x9cc5df, 0xb4d6e8, 0xc9e3ee], tint: 0xffffff, sunY: 52, moonY: 170, stars: 0 },
+      { at: 0.8, sky: [0x5a7fb0, 0x7a8fba, 0xa89cb0, 0xd8a890, 0xf0b878, 0xf8c880, 0xffd890], tint: 0xffe6c8, sunY: 96, moonY: 170, stars: 0 },
+      { at: 1, sky: [0x1c2048, 0x2e2e5e, 0x54427a, 0x8a5282, 0xc06482, 0xe48a7a, 0xf4a870], tint: 0xb0a0c8, sunY: 135, moonY: 40, stars: 0.7 },
+    ],
+    layers: [
+      { sprite: 'mountFar', k: 0.08 },
+      { sprite: 'mountNear', k: 0.2 },
+      { sprite: DESTINATION_LAYER, k: 0.03 },
+      { sprite: 'hills', k: 0.38, dy: 1 },
+      { sprite: 'treesFar', k: 0.5, dy: 1 },
+      { sprite: 'trees', k: 0.66, dy: 2 },
+    ],
+    // a morning mist that burns off over the first half of the level
+    fog: [
+      { k: 0.5, drift: 0.04, count: 4, y0: 106, y1: 150, alpha: 0.25, color: 0xf4f8fa, until: 0.6, big: true },
+      { k: 1, drift: 0.07, count: 5, y0: 130, y1: 300, alpha: 0.15, color: 0xeaf2f4, until: 0.5, big: true },
+    ],
+    // petals tumbling across the field, each on its own heading
+    ambient: { colors: [0xf8c8d8, 0xf8f0e0, 0xf4e060, 0xffffff, 0xf0a8c0], count: 30, speed: 0.4, bias: [0.12, 0.02], wobble: 3, alpha: 0.95, w: 3, h: 2, y0: 120, y1: 330, k: [0.9, 1.6] },
+    wind: 1,
+    destination: { landmark: 'keep', x0: 0.84, x1: 0.7, lift0: 30, lift1: 12, aura: 0x9a3a7a },
+    clouds: [
+      { k: 0.04, drift: 0.015, count: 4, y0: 8, y1: 44, alpha: 0.7 },
+      { k: 0.1, drift: 0.04, count: 3, y0: 26, y1: 66, alpha: 0.95 },
+    ],
+    haze: { height: 28, alpha: 0.45 },
+    ground: {
+      floor: { kind: 'tiles', set: 'grass' },
+      path: { half: 14, fill: 0x8c6c44, edge: 0x6a4e30, lip: 0xa07f54, speck: 0x7a5c38, speck2: 0x9c7c52, ruts: 0x765836, fringe: [0x4b8039, 0x5fa04a, 0x3f7a33] },
+      patches: { sprites: ['wildflowers', 'wildflowers2', 'clover'], cell: 190, chance: 0.5 },
+      mottle: { light: 0x8cc860, dark: 0x1e4a24, alpha: 0.2 },
+      decor: {
+        cellW: 20, cellH: 14, density: 0.4,
+        table: [
+          { sprite: 'tuft0', w: 6, sway: true }, { sprite: 'tuft1', w: 6, sway: true }, { sprite: 'tuft2', w: 4, sway: true },
+          { sprite: 'wheat', w: 3, sway: true }, { sprite: 'clover', w: 3 },
+          { sprite: 'flowerW', w: 1, sway: true }, { sprite: 'flowerY', w: 2, sway: true }, { sprite: 'flowerP', w: 1, sway: true }, { sprite: 'flowerB', w: 1, sway: true },
+          { sprite: 'daisies', w: 1.2, sway: true }, { sprite: 'twig', w: 1, onPath: true },
+          { sprite: 'pebble', w: 2, onPath: true }, { sprite: 'rock', w: 1, onPath: true }, { sprite: 'mossrock', w: 0.6 },
+          { sprite: 'mushroom', w: 0.5 }, { sprite: 'bush', w: 0.4 }, { sprite: 'stump', w: 0.25 },
+        ],
+      },
+    },
+    crest: { fill: 0x3f7a33, edge: 0x5fa04a },
+    ridge: { fill: 0x2a5526, edge: 0x5a9a44, shade: 0x3d7a32 },
+  },
+  {
+    name: 'Haunted Keep',
+    // dusk violet -> deep night -> a sickly pre-dawn
+    timeline: [
+      { at: 0, sky: [0x1a1838, 0x2a2050, 0x40285e, 0x5a3066, 0x7a3a68, 0x984a64, 0xb05a5c], tint: 0xc0b0d4, sunY: 190, moonY: 62, stars: 0.35 },
+      { at: 0.5, sky: [0x080a1c, 0x0e1230, 0x141a3e, 0x1c244e, 0x242e5a, 0x2c386a, 0x344276], tint: 0xaabae0, sunY: 190, moonY: 36, stars: 1 },
+      { at: 1, sky: [0x10141e, 0x1a2230, 0x24343a, 0x30463e, 0x405a44, 0x587050, 0x748a5c], tint: 0xb4c8b8, sunY: 190, moonY: 46, stars: 0.25 },
+    ],
+    layers: [
+      { sprite: 'spiresFar', k: 0.06 },
+      { sprite: 'cragsNear', k: 0.18 },
+      { sprite: 'ruins', k: 0.34, lights: { color: 0xff9640, r: 15, a: 0.2 }, windows: { colors: [0xffc860, 0xffc860, 0xffb040, 0x60e8d4], a: 0.95, lit: 0.7 } },
+      { sprite: 'deadFar', k: 0.5, dy: 1 },
+      { sprite: 'deadNear', k: 0.66, dy: 2 },
+    ],
+    moonScale: 2,
+    clouds: [
+      { k: 0.04, drift: 0.02, count: 4, y0: 6, y1: 40, alpha: 0.55, tint: 0x606880 },
+      { k: 0.1, drift: 0.05, count: 3, y0: 24, y1: 62, alpha: 0.7, tint: 0x505870 },
+    ],
+    haze: { height: 36, alpha: 0.5 },
+    fog: [
+      { k: 0.5, drift: 0.03, count: 6, y0: 112, y1: 158, alpha: 0.34, color: 0xb4b2dc },
+      { k: 1, drift: 0.06, count: 8, y0: 150, y1: 320, alpha: 0.2, color: 0xa8a6d0 },
+    ],
+    ground: {
+      floor: { kind: 'flagstones', slabs: [0x6a667e, 0x666278, 0x706c86], mortar: 0x44425a, lit: 0x86849e, rowH: 6, slabW: [14, 30] },
+      patches: { sprites: ['blood0', 'blood1', 'rubble', 'moss', 'puddle1'], cell: 190, chance: 0.42 },
+      mottle: { light: 0x8a88b8, dark: 0x0a0812, alpha: 0.16 },
+      decor: {
+        cellW: 22, cellH: 16, density: 0.44,
+        table: [
+          { sprite: 'bone0', w: 4 }, { sprite: 'bone1', w: 3 }, { sprite: 'skull', w: 1.5, onPath: true },
+          { sprite: 'rubble0', w: 5, onPath: true }, { sprite: 'rubble1', w: 3, onPath: true },
+          { sprite: 'weeds0', w: 4 }, { sprite: 'weeds1', w: 3 }, { sprite: 'moss0', w: 3 }, { sprite: 'crack0', w: 4, onPath: true },
+          { sprite: 'candle0', w: 0.6, alt: 'candle1', glow: { color: 0xffb050, r: 14, a: 0.1 } },
+          { sprite: 'glowcap', w: 1, glow: { color: 0x40e0c0, r: 12, a: 0.12 } },
+          { sprite: 'brazier0', w: 0.35, alt: 'brazier1', glow: { color: 0xff9040, r: 30, a: 0.12 } },
+        ],
+      },
+    },
+    crest: { fill: 0x2c2a3c, edge: 0x4a4660 },
+    ridge: { fill: 0x16141f, edge: 0x3a364a, shade: 0x24202e },
+  },
+];
+
+/** The Frozen Pass: the high country, snow and ice, with the northern lights at the end of the day. */
+export const FROZEN_PASS: BiomeDef = {
+  name: 'Frozen Pass',
+  // crisp morning -> bright midday -> a low rose-gold afternoon -> a deep blue night with the northern lights
+  timeline: [
+    { at: 0, sky: [0x7aa8d8, 0x8cb8e0, 0xa0c8e8, 0xb4d6ee, 0xc8e2f4, 0xdcecf8, 0xeef6fc], tint: 0xffffff, sunY: 70, moonY: 170, stars: 0 },
+    { at: 0.5, sky: [0x5a98d8, 0x70aae0, 0x88bce8, 0xa0cef0, 0xb8dcf6, 0xd0eafa, 0xe6f4fe], tint: 0xffffff, sunY: 52, moonY: 170, stars: 0 },
+    { at: 0.78, sky: [0x6a88c8, 0x8a98cc, 0xb0a4cc, 0xd8b0c0, 0xf0c0b0, 0xf8d0b0, 0xfce0c0], tint: 0xffe4e8, sunY: 100, moonY: 170, stars: 0 },
+    { at: 1, sky: [0x0a1030, 0x101a44, 0x182858, 0x20386c, 0x2c4a80, 0x3a5c92, 0x4c70a4], tint: 0x90a8d8, sunY: 140, moonY: 40, stars: 1, aurora: 0.9 },
+  ],
+  layers: [
+    { sprite: 'peaksFar', k: 0.06 },
+    { sprite: 'peaksNear', k: 0.18 },
+    { sprite: 'pinesFar', k: 0.42, dy: 1 },
+    { sprite: 'pinesNear', k: 0.64, dy: 2 },
+  ],
+  clouds: [
+    { k: 0.04, drift: 0.03, count: 5, y0: 8, y1: 46, alpha: 0.75 },
+    { k: 0.1, drift: 0.06, count: 4, y0: 24, y1: 68, alpha: 0.9 },
+  ],
+  haze: { height: 34, alpha: 0.5 },
+  // spindrift lying low over the snow
+  fog: [
+    { k: 0.5, drift: 0.07, count: 4, y0: 108, y1: 150, alpha: 0.3, color: 0xffffff, big: true },
+    { k: 1, drift: 0.12, count: 5, y0: 150, y1: 320, alpha: 0.16, color: 0xf2f8ff, big: true },
+  ],
+  // snow blowing across on a stiff wind from the right
+  ambient: { colors: [0xffffff, 0xffffff, 0xb4c6e2, 0x9db2d4], count: 70, speed: 0.12, bias: [-0.32, 0.3], wobble: 2, alpha: 0.9, w: 2, h: 2, y0: 112, y1: 340, k: [0.8, 1.8] },
+  wind: 1,
+  ground: {
+    floor: { kind: 'tiles', set: 'snow' },
+    // a trail trodden into the snow: grey slush with dirt in it, not a river
+    path: { half: 13, fill: 0xc9ccd6, edge: 0xa6abbb, lip: 0xe6e9f0, speck: 0xa89c98, speck2: 0xdadee8, ruts: 0xa8aebe, fringe: [0xffffff, 0xe8f0fa] },
+    patches: { sprites: ['snowshadow', 'snowshadow2', 'snowshadow', 'ice0', 'ice1'], cell: 170, chance: 0.6 },
+    mottle: { light: 0xffffff, dark: 0x7e96c0, alpha: 0.3 },
+    decor: {
+      cellW: 22, cellH: 15, density: 0.34,
+      table: [
+        { sprite: 'snowmound', w: 5 }, { sprite: 'iceshard0', w: 3 }, { sprite: 'iceshard1', w: 2 },
+        { sprite: 'snowrock', w: 2, onPath: true }, { sprite: 'twigsS', w: 0.6, onPath: true },
+        { sprite: 'sapling', w: 1.5 }, { sprite: 'tracks', w: 1.2, onPath: true }, { sprite: 'deadshrub', w: 0.8, sway: true },
+      ],
+    },
+  },
+  crest: { fill: 0xdce6f4, edge: 0xffffff },
+  ridge: { fill: 0xb4c4dc, edge: 0xffffff, shade: 0xd0dcec },
+};
+
+/** Every biome's scenery, in the order of `ROSTERS` in roster.ts (the biome index picks both). */
+export const BIOMES: readonly BiomeDef[] = [...BASE_BIOMES, FROZEN_PASS];
+
+/** Alias kept for tests and previews: all of the scenery. */
+export const ALL_SCENERY: readonly BiomeDef[] = BIOMES;
+
+/**
+ * The scenery for biome `index` (the sim's `state.biome`, an index into `BIOMES`). In dev builds `?scenery=frozen`
+ * previews a biome's scenery by name without changing the enemies (`?biome=N` changes both).
+ */
+export function sceneryFor(index: number): BiomeDef {
+  const want = typeof __DEV__ !== 'undefined' && __DEV__ ? (globalThis as { __scenery?: string }).__scenery : undefined;
+  if (want) {
+    const found = ALL_SCENERY.find((b) => b.name.toLowerCase().includes(want.toLowerCase()));
+    if (found) return found;
+  }
+  return BIOMES[index];
+}
+
+/** The biome for a level seed (the same index the sim uses to pick the enemies; see `biomeIndex`). */
+export function pickBiome(seed: number): BiomeDef {
+  return sceneryFor(biomeIndex(seed));
+}
+
+/** Scratch result of `moodAt`, reused so the draw path allocates nothing. */
+export interface BlendedMood {
+  sky: number[];
+  tint: number;
+  sunY: number;
+  moonY: number;
+  stars: number;
+  aurora: number;
+}
+
+export function makeBlendedMood(): BlendedMood {
+  return { sky: [], tint: 0xffffff, sunY: 0, moonY: 0, stars: 0, aurora: 0 };
+}
+
+/** Blends two 0xRRGGBB colors. */
+export function mix(a: number, b: number, t: number): number {
+  const r = Math.round(((a >> 16) & 255) + (((b >> 16) & 255) - ((a >> 16) & 255)) * t);
+  const g = Math.round(((a >> 8) & 255) + (((b >> 8) & 255) - ((a >> 8) & 255)) * t);
+  const bl = Math.round((a & 255) + ((b & 255) - (a & 255)) * t);
+  return (r << 16) | (g << 8) | bl;
+}
+
+/** The sky and light at `progress` (0..1 through the level), written into `out`. */
+export function moodAt(biome: BiomeDef, progress: number, out: BlendedMood): BlendedMood {
+  const tl = biome.timeline;
+  let i = 0;
+  while (i < tl.length - 1 && progress >= tl[i + 1].at) i++;
+  const a = tl[i], b = tl[Math.min(i + 1, tl.length - 1)];
+  const t = b.at > a.at ? Math.min(1, Math.max(0, (progress - a.at) / (b.at - a.at))) : 0;
+  out.sky.length = a.sky.length;
+  for (let k = 0; k < a.sky.length; k++) out.sky[k] = mix(a.sky[k], b.sky[k], t);
+  out.tint = mix(a.tint, b.tint, t);
+  out.sunY = a.sunY + (b.sunY - a.sunY) * t;
+  out.moonY = a.moonY + (b.moonY - a.moonY) * t;
+  out.stars = a.stars + (b.stars - a.stars) * t;
+  out.aurora = (a.aurora ?? 0) + ((b.aurora ?? 0) - (a.aurora ?? 0)) * t;
+  return out;
+}

@@ -2,15 +2,28 @@
 // Fed by the sim's event queue; never feeds back into the sim.
 import { EV_STRIDE, Ev, type EventBuf } from '../sim/events';
 import { hex } from '../platform/gl/batcher';
+import { isBossType } from '../data/mobs';
 
 /** Blood/gib colors per MobType. */
-const KILL_COLORS = [0x6fbf3f, 0xb04a30, 0x8a5fb0, 0x9aa5b1, 0xd8402e];
+const KILL_COLORS = [
+  0x6fbf3f, 0xb04a30, 0x8a5fb0, 0x9aa5b1, 0xd8402e, 0xb04a30, // goblin, orc, archer, shield, bomber, boss
+  0x8a7a68, 0x6fbf3f, 0x5a9a50, 0x6fbf3f, 0x6a8a58, // wolf, slinger, shaman, drummer, troll
+  0xd6cfc2, 0xd6cfc2, 0x6a8a68, 0x9ab0e0, 0xd6cfc2, 0xd6cfc2, // skeleton, bone archer, ghoul, wraith, skull, bone brute
+  0x9a5ac0, 0xb8c8f0, 0x9ab040, 0xc0a0ff, 0x6a6080, // necromancer, banshee, plague zombie, lich, dread knight
+  0xb04a30, 0x7fc4f4, 0xb04a30, 0x7494b4, 0xb04a30, 0xb4e8ff, // trapper, snow sprite, harpooner, frost wolf, ram, ice husk
+  0x7684b0, 0x5ac8f4, 0x6aaee4, 0x86bce0, 0x587090, // yeti, frost shaman, blizzard witch, whiteout spirit, tundra guard
+  0x5a78b8, // rime king
+  0x7a4cc0, // dread regent
+];
 const MAX_P = 4000;
 const MAX_CORPSES = 20000; // corpses stay on the field for the whole run
 const MAX_RINGS = 8;
 const MAX_BODIES = 700;
 const MAX_SLASHES = 8;
 export const SLASH_TICKS = 8;
+/** Teleport: the wizard dissolves upward at the origin and re-forms at the destination over this many ticks. */
+export const BLINK_TICKS = 16;
+const MAX_BLINKS = 4;
 
 export class Fx {
   // particles (ground-plane x,y plus height z)
@@ -30,6 +43,7 @@ export class Fx {
   cy = new Float32Array(MAX_CORPSES);
   ctype = new Uint8Array(MAX_CORPSES);
   cflip = new Uint8Array(MAX_CORPSES);
+  crot = new Float32Array(MAX_CORPSES);
   cHead = 0;
   cCount = 0;
 
@@ -72,6 +86,14 @@ export class Fx {
   slSlot = new Int8Array(MAX_SLASHES).fill(-1);
   private swingFlip = 1;
 
+  // teleport blinks: origin ghost dissolving, destination re-forming
+  blx0 = new Float32Array(MAX_BLINKS);
+  bly0 = new Float32Array(MAX_BLINKS);
+  blx1 = new Float32Array(MAX_BLINKS);
+  bly1 = new Float32Array(MAX_BLINKS);
+  blt = new Float32Array(MAX_BLINKS).fill(-1);
+  private blHead = 0;
+
   trauma = 0;
   /** Camera kick in the swing direction (px), decays quickly. */
   kx = 0;
@@ -104,10 +126,16 @@ export class Fx {
           this.addSlash(x, y, a, b, c, false, f);
           break;
         case Ev.Hit:
-          if (this.trauma < 0.6) this.trauma = Math.min(0.6, this.trauma + 0.018); // more enemies hit = bigger shake
+          if (this.trauma < 0.35) this.trauma = Math.min(0.35, this.trauma + 0.01); // more enemies hit = bigger shake
           this.spawn(x, y, 5, (this.rand() - 0.5) * 2, (this.rand() - 0.5) * 1, 1 + this.rand(), 12, hex(0xfff2a0));
           break;
         case Ev.Kill: {
+          if (isBossType(a)) {
+            // the boss does not tumble away: it goes down where it stands
+            this.addCorpse(x, y, a);
+            this.trauma = 1;
+            break;
+          }
           const speed = Math.sqrt(c * c + f * f);
           if (speed > 1.2 && this.nb < MAX_BODIES) {
             const q = this.nb++;
@@ -141,6 +169,46 @@ export class Fx {
         case Ev.PlayerDown:
           this.trauma = Math.min(1, this.trauma + 0.4);
           break;
+        case Ev.Pulse:
+          this.addRing(x, y, a, hex(b ? 0xffffff : 0xfff6d0), b ? 3 : 2);
+          this.trauma = Math.min(1, this.trauma + (b ? 0.3 : 0.12));
+          for (let j = 0; j < (b ? 22 : 12); j++) {
+            const ang = (j / (b ? 22 : 12)) * Math.PI * 2;
+            this.spawn(x, y, 1, Math.cos(ang) * 1.6, Math.sin(ang) * 1.6, 0.3, 14, hex(0xffe9a8, 0.9), 1);
+          }
+          break;
+        case Ev.Teleport: {
+          const k2 = this.blHead++ % MAX_BLINKS;
+          this.blx0[k2] = x; this.bly0[k2] = y; this.blx1[k2] = a; this.bly1[k2] = b; this.blt[k2] = 0;
+          this.addRing(x, y, 22, hex(0xb78cff), 0);
+          this.addRing(a, b, 30, hex(0xd8c4ff), 0);
+          for (let j = 0; j < 10; j++) this.spawn(x + (this.rand() - 0.5) * 8, y, 1 + this.rand() * 10, 0, 0, 0.9 + this.rand() * 0.8, 20, hex(0xd8c4ff, 0.9), 1);
+          for (let j = 0; j < 12; j++) {
+            const ang = (j / 12) * Math.PI * 2;
+            this.spawn(a, b, 8, Math.cos(ang) * 1.8, Math.sin(ang) * 1.0, 0.2, 14, hex(0xb78cff, 0.9), 1);
+          }
+          for (let j = 0; j < 8; j++) this.spawn(x, y, 1, (this.rand() - 0.5) * 1.2, -this.rand() * 0.8, 0, 22, hex(0xb78cff, 0.9), 1);
+          for (let j = 0; j < 8; j++) this.spawn(a, b, 1, (this.rand() - 0.5) * 1.2, -this.rand() * 0.8, 0, 22, hex(0xd8c4ff, 0.9), 1);
+          break;
+        }
+        case Ev.Heal: {
+          // A holy halo on the ground, a second green ring racing out behind it, and a fountain of motes and crosses rising from the whole disc.
+          this.addRing(x, y, a, hex(0xfff0b0), 2);
+          this.addRing(x, y, a * 0.7, hex(0x7dffa0), 0);
+          this.trauma = Math.min(1, this.trauma + 0.12);
+          for (let j = 0; j < 44; j++) {
+            const t = this.rand() * 6.283, r = a * Math.sqrt(this.rand());
+            const green = this.rand() < 0.65;
+            this.spawn(x + Math.cos(t) * r, y + Math.sin(t) * r * 0.6, 1 + this.rand() * 4, 0, -0.1, 0.7 + this.rand() * 1.1, 30 + this.rand() * 22, hex(green ? 0x7dffa0 : 0xfff6c8, 0.95), this.rand() < 0.3 ? 1 : 0);
+          }
+          for (let j = 0; j < 16; j++) {
+            const t = (j / 16) * 6.283;
+            this.spawn(x, y, 2, Math.cos(t) * 3, Math.sin(t) * 1.8, 0.4, 12, hex(0xffffff, 0.9), 1);
+          }
+          // light column over the caster
+          for (let j = 0; j < 14; j++) this.spawn(x + (this.rand() - 0.5) * 6, y, 2 + j * 2, 0, 0, 0.5 + this.rand() * 0.6, 24, hex(0xd8ffe4, 0.85), 1);
+          break;
+        }
         case Ev.Dash:
           for (let j = 0; j < 4; j++) this.spawn(x, y, 1, -a * (0.5 + this.rand()), -b * (0.5 + this.rand()), 0.4, 14, hex(0xd8d0b0, 0.8), 1);
           break;
@@ -177,6 +245,89 @@ export class Fx {
         case Ev.Arrow:
           for (let j = 0; j < 4; j++) this.spawn(x, y, 6, (this.rand() - 0.5) * 2, (this.rand() - 0.5) * 2, 0.5 + this.rand(), 10, hex(0xe8e0c8));
           break;
+        case Ev.Charge:
+          this.trauma = Math.min(1, this.trauma + 0.25);
+          for (let j = 0; j < 10; j++) this.spawn(x, y, 1, -a * (1 + this.rand() * 2) + (this.rand() - 0.5), -b * (1 + this.rand() * 2) + (this.rand() - 0.5), 0.4 + this.rand() * 0.8, 16, hex(0xb8a070, 0.8), 1);
+          break;
+        case Ev.Dust:
+          for (let j = 0; j < 2; j++) this.spawn(x - a * 3, y - b * 3, 1, -a * 0.6 + (this.rand() - 0.5) * 0.8, -b * 0.6 + (this.rand() - 0.5) * 0.5, 0.3 + this.rand() * 0.5, 14, hex(0xc8b488, 0.75), 1);
+          break;
+        case Ev.Winded:
+          // sweat flying off a hero who has run out of breath
+          for (let j = 0; j < 8; j++) this.spawn(x + (this.rand() - 0.5) * 6, y, 10 + this.rand() * 4, (this.rand() - 0.5) * 2, (this.rand() - 0.5) * 0.8, 0.8 + this.rand() * 1.2, 20, hex(0x9ad8ff), 0);
+          break;
+        case Ev.Slam: {
+          const frost = b === 1; // a frost giant's slam throws up ice, not dust
+          this.addRing(x, y, a, hex(frost ? 0x3a9af0 : 0xff6a3a), 1);
+          this.trauma = Math.min(1, this.trauma + 0.7);
+          for (let j = 0; j < (frost ? 56 : 40); j++) {
+            const ang = (j / (frost ? 56 : 40)) * Math.PI * 2;
+            const sp = 1.5 + this.rand() * 3;
+            this.spawn(x, y, 1, Math.cos(ang) * sp, Math.sin(ang) * sp * 0.7, 0.4 + this.rand() * 1.2, 22, hex(frost ? (j & 1 ? 0x7ad0ff : 0x3a9af0) : 0xc8b488, 0.85), 1);
+          }
+          break;
+        }
+        case Ev.Burst: {
+          // a = radius, b = style: 0 rock, 1 stomp, 2 scream, 3 bones, 4 poison, 5 frost
+          const style = b;
+          const ring = style === 5 ? 0x3a9af0 : style === 2 ? 0xc8a8ff : style === 4 ? 0x9ad048 : style === 3 ? 0xefe9da : 0xff9a4a;
+          this.addRing(x, y, a, hex(ring), style === 1 ? 1 : 0);
+          this.trauma = Math.min(1, this.trauma + (style === 1 ? 0.4 : style === 0 ? 0.25 : 0.1));
+          const dust = style === 5 ? 0x7ad0ff : style === 2 ? 0xe0d0ff : style === 4 ? 0x9ad048 : style === 3 ? 0xefe9da : 0xc8b488;
+          const n = style === 3 ? 10 : style === 5 ? 30 : 22;
+          for (let j = 0; j < n; j++) {
+            const ang = (j / n) * Math.PI * 2;
+            const sp = (style === 3 ? 1.2 : 1.5) + this.rand() * 2;
+            this.spawn(x, y, 1, Math.cos(ang) * sp, Math.sin(ang) * sp * 0.7, 0.4 + this.rand() * 1.1, 20, hex(dust, 0.85), 1);
+          }
+          break;
+        }
+        case Ev.Summon:
+          for (let j = 0; j < 8; j++) this.spawn(x + (this.rand() - 0.5) * 6, y, 1, (this.rand() - 0.5) * 0.8, (this.rand() - 0.5) * 0.4, 0.6 + this.rand() * 1.2, 24, hex(this.rand() < 0.5 ? 0x8cff9c : 0xb890ff, 0.9), 1);
+          break;
+        case Ev.HealMob:
+          this.addRing(x, y, a, hex(0x7dffa0), 0);
+          for (let j = 0; j < 16; j++) {
+            const t = this.rand() * 6.283, r = a * (0.2 + this.rand() * 0.8);
+            this.spawn(x + Math.cos(t) * r, y + Math.sin(t) * r * 0.6, 1, 0, -0.5 - this.rand() * 0.5, 0, 28, hex(0x9affb0, 0.9), 1);
+          }
+          break;
+        case Ev.Rally:
+          this.addRing(x, y, a, hex(0xffc060), 0);
+          for (let j = 0; j < 14; j++) {
+            const t = this.rand() * 6.283, r = a * (0.2 + this.rand() * 0.8);
+            this.spawn(x + Math.cos(t) * r, y + Math.sin(t) * r * 0.6, 1, 0, -0.4 - this.rand() * 0.4, 0, 22, hex(0xff8a40, 0.9), 1);
+          }
+          break;
+        case Ev.Blink:
+          for (let j = 0; j < 8; j++) this.spawn(x, y, 3, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.3 + this.rand() * 0.6, 20, hex(0xb78cff, 0.85), 1);
+          for (let j = 0; j < 8; j++) this.spawn(a, b, 3, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.3 + this.rand() * 0.6, 20, hex(0xd8c4ff, 0.9), 1);
+          break;
+        case Ev.Beam: {
+          // a,b = direction * length, c = width: a hot line of motes the length of the ray
+          const len = Math.sqrt(a * a + b * b) || 1;
+          const dx = a / len, dy = b / len;
+          this.trauma = Math.min(1, this.trauma + 0.35);
+          for (let d = 4; d < len; d += 3) {
+            const lat = (this.rand() - 0.5) * c * 1.4;
+            this.spawn(x + dx * d - dy * lat, y + dy * d + dx * lat, 7 + this.rand() * 2, 0, 0, 0, 9 + this.rand() * 5, hex(this.rand() < 0.4 ? 0xffffff : 0xc070ff), 1);
+          }
+          break;
+        }
+        case Ev.Roar:
+          this.addRing(x, y, 90, hex(0xffe27a), 1);
+          this.trauma = Math.min(1, this.trauma + 0.45);
+          for (let j = 0; j < 20; j++) this.spawn(x + (this.rand() - 0.5) * 30, y, 6 + this.rand() * 20, (this.rand() - 0.5) * 3, (this.rand() - 0.5) * 1.5, 0.5 + this.rand(), 26, hex(0xffe27a), 1);
+          break;
+        case Ev.BossDown:
+          this.trauma = 1;
+          this.addRing(x, y, 140, hex(0xffffff), 1);
+          for (let j = 0; j < 90; j++) {
+            const ang = this.rand() * Math.PI * 2;
+            const sp = 1 + this.rand() * 4.5;
+            this.spawn(x + (this.rand() - 0.5) * 30, y, 4 + this.rand() * 30, Math.cos(ang) * sp, Math.sin(ang) * sp * 0.6, 0.5 + this.rand() * 2.5, 36 + this.rand() * 20, hex(this.rand() < 0.5 ? 0xff8a30 : 0xffd35a), 1);
+          }
+          break;
         case Ev.Coin:
           this.goldPop = 1;
           for (let j = 0; j < 2; j++) this.spawn(x, y, 5, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.8 + this.rand(), 12, hex(0xffe27a), 0);
@@ -194,6 +345,7 @@ export class Fx {
     const slot = this.cCount < MAX_CORPSES ? i : this.cHead;
     if (this.cCount < MAX_CORPSES) this.cCount++; else this.cHead = (this.cHead + 1) % MAX_CORPSES;
     this.cx[slot] = x; this.cy[slot] = y; this.ctype[slot] = type; this.cflip[slot] = this.rand() < 0.5 ? 1 : 0;
+    this.crot[slot] = (this.rand() - 0.5) * 0.7; // +-20 degrees so a pile of corpses doesn't look stamped
   }
 
   private addSlash(x: number, y: number, a: number, b: number, dot: number, heavy: boolean, slot: number): void {
@@ -264,10 +416,13 @@ export class Fx {
     for (let i = 0; i < MAX_RINGS; i++) {
       if (this.rt[i] >= 0) { this.rt[i] += dt; if (this.rt[i] > 18) this.rt[i] = -1; }
     }
+    for (let i = 0; i < MAX_BLINKS; i++) {
+      if (this.blt[i] >= 0) { this.blt[i] += dt; if (this.blt[i] > BLINK_TICKS) this.blt[i] = -1; }
+    }
     for (let i = 0; i < MAX_SLASHES; i++) {
       if (this.slt[i] >= 0) { this.slt[i] += dt; if (this.slt[i] > SLASH_TICKS + 5) this.slt[i] = -1; }
     }
-    this.trauma = Math.max(0, this.trauma - 0.025 * dt);
+    this.trauma = Math.max(0, this.trauma - 0.04 * dt);
     const kd = Math.pow(0.78, dt);
     this.kx *= kd;
     this.ky *= kd;
@@ -277,7 +432,7 @@ export class Fx {
   }
 
   shake(): [number, number] {
-    const m = this.trauma * this.trauma * 6;
+    const m = this.trauma * this.trauma * 2.5;
     return [Math.round((this.rand() * 2 - 1) * m + this.kx), Math.round((this.rand() * 2 - 1) * m + this.ky)];
   }
 }

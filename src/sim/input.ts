@@ -6,6 +6,9 @@ export const Btn = {
   Join: 8,
   Interact: 16,
   Swap: 32,
+  Ability2: 64,
+  /** Opens or closes the level-up panel. */
+  Level: 128,
 } as const;
 
 export interface InputFrame {

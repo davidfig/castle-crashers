@@ -6,6 +6,7 @@ import { Btn, createInputFrame, type InputFrame } from './input';
 import { createSim, Phase } from './state';
 import { step } from './step';
 import { hashState } from './hash';
+import { spawnAllClumps } from './gen/level';
 import { Kind } from './entities';
 
 function script(tick: number): InputFrame[] {
@@ -46,6 +47,7 @@ test('different seed => different state', () => {
 
 test('level spawns a horde', () => {
   const s = createSim(7);
+  spawnAllClumps(s, 1);
   let mobs = 0;
   for (let i = 0; i < s.ents.highWater; i++) if (s.ents.kind[i] === Kind.Mob) mobs++;
   assert.ok(mobs > 800, `expected a big horde, got ${mobs}`);
@@ -53,6 +55,7 @@ test('level spawns a horde', () => {
 
 test('nova kills nearby goblins', () => {
   const s = createSim(9);
+  spawnAllClumps(s, 1);
   // Drop a pack of goblins around the player.
   const p = s.ents;
   const px = p.x[s.players[0].ent], py = p.y[s.players[0].ent];
@@ -69,6 +72,7 @@ test('nova kills nearby goblins', () => {
 
 test('unattended player eventually loses', () => {
   const s = createSim(3);
+  spawnAllClumps(s, 1);
   const f = [0, 1, 2, 3].map(createInputFrame);
   // Pull every mob next to the player and aggro them.
   const e = s.ents;
@@ -76,4 +80,18 @@ test('unattended player eventually loses', () => {
   for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Mob) { e.x[i] = px + 30; e.y[i] = py; e.flags[i] = 1; }
   for (let t = 0; t < 3000 && s.phase === Phase.Playing; t++) step(s, f);
   assert.equal(s.phase, Phase.Lost);
+});
+
+test('after a wipe the surviving mobs all walk off screen, even at the edge of the world', () => {
+  const s = createSim(3);
+  spawnAllClumps(s, 1);
+  const e = s.ents;
+  s.phase = Phase.Lost;
+  // one mob pinned against each world edge, the rest wherever they spawned
+  let n = 0;
+  for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Mob) { n++; if (n === 1) e.x[i] = 0; if (n === 2) e.x[i] = 4800; }
+  assert.ok(n > 2);
+  const f = [0, 1, 2, 3].map(createInputFrame);
+  for (let t = 0; t < 2000; t++) step(s, f);
+  for (let i = 0; i < e.highWater; i++) assert.notEqual(e.kind[i], Kind.Mob);
 });

@@ -1,7 +1,7 @@
 // Seeded PRNG (sfc32). State is a plain Uint32Array so it serializes and hashes trivially.
 export type Rng = Uint32Array;
 
-export const Stream = { level: 1, spawn: 2, combat: 3, loot: 4 } as const;
+export const Stream = { level: 1, spawn: 2, combat: 3, loot: 4, story: 5, campaign: 6, offer: 7 } as const;
 
 function splitmix32(state: Uint32Array): number {
   state[0] = (state[0] + 0x9e3779b9) >>> 0;

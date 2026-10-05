@@ -1,4 +1,4 @@
-// Instanced sprite batcher: one draw call per flush, 40 bytes per sprite.
+// Instanced sprite batcher: one draw call per flush, 44 bytes per sprite.
 import { createProgram } from './gl';
 
 export interface Frame {
@@ -12,12 +12,16 @@ layout(location=1) in vec4 a_rect;   // x, y, w, h in view pixels
 layout(location=2) in vec4 a_uv;     // u0, v0, u1, v1
 layout(location=3) in vec4 a_tint;
 layout(location=4) in float a_flash;
+layout(location=5) in float a_rot;   // radians, about the sprite centre
 uniform vec2 u_view;
 out vec2 v_uv;
 out vec4 v_tint;
 out float v_flash;
 void main() {
-  vec2 p = a_rect.xy + a_corner * a_rect.zw;
+  vec2 h = a_rect.zw * 0.5;
+  vec2 q = (a_corner - 0.5) * a_rect.zw;
+  float c = cos(a_rot), s = sin(a_rot);
+  vec2 p = a_rect.xy + h + vec2(q.x * c - q.y * s, q.x * s + q.y * c);
   gl_Position = vec4(p.x / u_view.x * 2.0 - 1.0, 1.0 - p.y / u_view.y * 2.0, 0.0, 1.0);
   v_uv = mix(a_uv.xy, a_uv.zw, a_corner);
   v_tint = a_tint;
@@ -39,7 +43,7 @@ void main() {
   o = c;
 }`;
 
-const FLOATS = 10;
+const FLOATS = 11;
 const MAX_SPRITES = 16384;
 
 export class Batcher {
@@ -84,6 +88,9 @@ export class Batcher {
     gl.enableVertexAttribArray(4);
     gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 36);
     gl.vertexAttribDivisor(4, 1);
+    gl.enableVertexAttribArray(5);
+    gl.vertexAttribPointer(5, 1, gl.FLOAT, false, stride, 40);
+    gl.vertexAttribDivisor(5, 1);
     gl.bindVertexArray(null);
   }
 
@@ -95,7 +102,7 @@ export class Batcher {
   }
 
   /** Draw a frame with its top-left at integer view pixel (x, y). tint is 0xAABBGGRR. */
-  draw(f: Frame, x: number, y: number, flip = false, tint = 0xffffffff, flash = 0): void {
+  draw(f: Frame, x: number, y: number, flip = false, tint = 0xffffffff, flash = 0, rot = 0): void {
     if (this.n === MAX_SPRITES) this.flush();
     const o = this.n * FLOATS;
     const d = this.data;
@@ -109,11 +116,12 @@ export class Batcher {
     d[o + 7] = f.v1;
     this.u32[o + 8] = tint;
     d[o + 9] = flash;
+    d[o + 10] = rot;
     this.n++;
   }
 
   /** Draw a frame stretched to w x h (used for solid rects via the 1x1 white pixel). */
-  drawScaled(f: Frame, x: number, y: number, w: number, h: number, tint = 0xffffffff): void {
+  drawScaled(f: Frame, x: number, y: number, w: number, h: number, tint = 0xffffffff, flip = false, flash = 0, rot = 0): void {
     if (this.n === MAX_SPRITES) this.flush();
     const o = this.n * FLOATS;
     const d = this.data;
@@ -121,13 +129,32 @@ export class Batcher {
     d[o + 1] = Math.round(y);
     d[o + 2] = w;
     d[o + 3] = h;
-    d[o + 4] = f.u0;
+    d[o + 4] = flip ? f.u1 : f.u0;
     d[o + 5] = f.v0;
-    d[o + 6] = f.u1;
+    d[o + 6] = flip ? f.u0 : f.u1;
     d[o + 7] = f.v1;
     this.u32[o + 8] = tint;
-    d[o + 9] = 0;
+    d[o + 9] = flash;
+    d[o + 10] = rot;
     this.n++;
+  }
+
+  /**
+   * Clip everything drawn until clearClip() to the view-space rectangle [x0,x1) x [y0,y1).
+   * Used to make enemies rise over the horizon or from behind a foreground ridge: the sprite is simply
+   * cut off at the line. Flushes the pending batch first, so clip passes should be kept few.
+   */
+  setClip(x0: number, y0: number, x1: number, y1: number): void {
+    this.flush();
+    const gl = this.gl;
+    gl.enable(gl.SCISSOR_TEST);
+    // framebuffer coordinates start at the bottom-left; view coordinates start at the top-left
+    gl.scissor(Math.max(0, x0), Math.max(0, this.viewH - y1), Math.max(0, x1 - x0), Math.max(0, y1 - y0));
+  }
+
+  clearClip(): void {
+    this.flush();
+    this.gl.disable(this.gl.SCISSOR_TEST);
   }
 
   flush(): void {

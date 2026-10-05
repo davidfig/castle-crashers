@@ -4,20 +4,54 @@
 import type { Frame } from '../platform/gl/batcher';
 import goblinMeta from '../../art/out/goblin.json';
 import orcMeta from '../../art/out/orc.json';
-import archerMeta from '../../art/out/mobarcher.json';
-import shieldMeta from '../../art/out/shieldbearer.json';
+import mobarcherMeta from '../../art/out/mobarcher.json';
+import shieldbearerMeta from '../../art/out/shieldbearer.json';
 import bomberMeta from '../../art/out/bomber.json';
+import bossMeta from '../../art/out/boss.json';
+import wolfMeta from '../../art/out/wolf.json';
+import slingerMeta from '../../art/out/slinger.json';
+import shamanMeta from '../../art/out/shaman.json';
+import drummerMeta from '../../art/out/drummer.json';
+import trollMeta from '../../art/out/troll.json';
+import skeletonMeta from '../../art/out/skeleton.json';
+import bonearcherMeta from '../../art/out/bonearcher.json';
+import ghoulMeta from '../../art/out/ghoul.json';
+import wraithMeta from '../../art/out/wraith.json';
+import skullMeta from '../../art/out/skull.json';
+import bonebruteMeta from '../../art/out/bonebrute.json';
+import necromancerMeta from '../../art/out/necromancer.json';
+import bansheeMeta from '../../art/out/banshee.json';
+import plaguezombieMeta from '../../art/out/plaguezombie.json';
+import lichMeta from '../../art/out/lich.json';
+import dreadknightMeta from '../../art/out/dreadknight.json';
+import trapperMeta from '../../art/out/trapper.json';
+import snowspriteMeta from '../../art/out/snowsprite.json';
+import harpoonerMeta from '../../art/out/harpooner.json';
+import frostwolfMeta from '../../art/out/frostwolf.json';
+import ramMeta from '../../art/out/ram.json';
+import icehuskMeta from '../../art/out/icehusk.json';
+import yetiMeta from '../../art/out/yeti.json';
+import frostshamanMeta from '../../art/out/frostshaman.json';
+import blizzardwitchMeta from '../../art/out/blizzardwitch.json';
+import whiteoutspiritMeta from '../../art/out/whiteoutspirit.json';
+import tundraguardMeta from '../../art/out/tundraguard.json';
+import rimekingMeta from '../../art/out/rimeking.json';
+import dreadregentMeta from '../../art/out/dreadregent.json';
 
 interface Rect { x: number; y: number; w: number; h: number }
 interface SheetMeta { frames: Record<string, Rect>; anims: Record<string, { frames: string[] }> }
-const MOB_METAS = [goblinMeta, orcMeta, archerMeta, shieldMeta, bomberMeta] as unknown as SheetMeta[];
+const MOB_METAS = [
+  goblinMeta, orcMeta, mobarcherMeta, shieldbearerMeta, bomberMeta, bossMeta, wolfMeta, slingerMeta, shamanMeta, drummerMeta, trollMeta, skeletonMeta, bonearcherMeta, ghoulMeta, wraithMeta, skullMeta, bonebruteMeta, necromancerMeta, bansheeMeta, plaguezombieMeta, lichMeta, dreadknightMeta,
+  trapperMeta, snowspriteMeta, harpoonerMeta, frostwolfMeta, ramMeta, icehuskMeta, yetiMeta, frostshamanMeta, blizzardwitchMeta, whiteoutspiritMeta, tundraguardMeta, rimekingMeta, dreadregentMeta,
+] as unknown as SheetMeta[];
 
 export interface MobArt {
   /** Indexed by MobType: the walk cycle. */
   walk: Frame[][];
   /**
    * Indexed by MobType: every authored animation by name (idle, windup, strike, hurt, ...). Which exist varies by enemy:
-   * archers have aim/release, orcs have paw/charge/dazed, bombers have lit.
+   * archers have aim/release, orcs have paw/charge/dazed, bombers have lit,
+   * the boss adds slam/roar/smash.
    */
   anims: Record<string, Frame[]>[];
 }
@@ -48,6 +82,14 @@ export interface MobPoseState {
   chargeWind: boolean;
   charging: boolean;
   dazed: boolean;
+  /** The boss's own wind-ups (it has authored poses for them); ignored by enemies without those animations. */
+  special?: 'slam' | 'roar' | 'smash';
+  /** Winding up an ordinary enemy's special move (a snare, a ward, a storm...): uses its `cast` pose when it has one. */
+  cast?: boolean;
+  /** Clinging to a hero (a snow sprite): uses its `cling` animation. */
+  cling?: boolean;
+  /** Getting back up after a first death (the dread knight): uses `rise`, else `dazed`. */
+  rising?: boolean;
   moving: boolean;
   hurt: boolean;
   tick: number;
@@ -58,16 +100,23 @@ export interface MobPoseState {
 const at = (frames: Frame[], n: number): Frame => frames[((n % frames.length) + frames.length) % frames.length];
 
 /**
- * Picks the body frame for an enemy. Priority: dazed > charging > hurt > charge wind-up > windup > strike > idle > walk.
+ * Picks the body frame for an enemy. Priority: rising > cling > dazed > charging > hurt > charge wind-up > windup > strike > idle > walk.
  * Missing animations fall through, so an enemy only needs the poses that make sense for it.
  */
 export function mobPose(art: MobArt, type: number, s: MobPoseState): Frame {
   const A = art.anims[type];
+  if (s.rising && (A.rise ?? A.dazed)) return at(A.rise ?? A.dazed, s.tick >> 3);
+  if (s.cling && A.cling) return at(A.cling, s.tick >> 2);
   if (s.dazed && A.dazed) return at(A.dazed, s.tick >> 3);
   if (s.charging && A.charge) return at(A.charge, s.tick >> 1);
   if (s.hurt && A.hurt) return A.hurt[0];
   if (s.chargeWind && A.paw) return at(A.paw, s.tick >> 2);
+  if (s.winding && s.special && A[s.special]) {
+    const fr = A[s.special];
+    return s.special === 'roar' ? at(fr, s.tick >> 2) : fr[s.windP < 0.55 ? 0 : fr.length - 1];
+  }
   if (s.winding) {
+    if (s.cast && A.cast) return A.cast[s.windP < 0.55 ? 0 : A.cast.length - 1];
     if (A.lit) return at(A.lit, s.tick >> 1);
     if (A.aim) return A.aim[0];
     if (A.windup) return A.windup[s.windP < 0.55 ? 0 : A.windup.length - 1];

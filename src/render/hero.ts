@@ -93,6 +93,23 @@ export function heroFrame(set: HeroSet, s: GameState, fx: Fx, slot: number, movi
     return A.down.frames[elapsed < 10 ? 0 : elapsed < 20 ? 1 : 2];
   }
 
+  // Ranged classes (the archer) have no swing: the shot animation runs off the fire cooldown. Each shot plays release -> follow ->
+  // nock -> draw -> full draw over the ticks until the next one, so holding fire reads as a steady draw-and-loose.
+  if (cls.shot && p.cdAttack > 0) {
+    const fan = cls.specialShot && p.cdSpecial > cls.specialCooldown - cls.specialShot.cooldown;
+    if (fan) return A.finisher.frames[p.cdSpecial > cls.specialCooldown - 4 ? 4 : 5];
+    const since = Math.max(0, cls.shot.cooldown - p.cdAttack);
+    if (A.shoot) return A.shoot.frames[Math.min(A.shoot.frames.length - 1, Math.floor((since * A.shoot.frames.length) / cls.shot.cooldown))];   // mage: a cast, not a swing
+    const order = [3, 4, 0, 1, 2];                       // indices into the sweep frames
+    return A.sweep.frames[order[Math.min(order.length - 1, Math.floor((since * order.length) / cls.shot.cooldown))]];
+  }
+  // Point-blank pulses (the cleric) play the cast pose across the burst's cooldown instead of a sweep.
+  if (cls.combo[0].aoe) {
+    if (cls.special.aoe && p.cdSpecial > cls.specialCooldown - cls.special.cooldown) {
+      return byProgress(A.finisher, (cls.special.cooldown - (p.cdSpecial - (cls.specialCooldown - cls.special.cooldown))) / cls.special.cooldown);
+    }
+    if (p.cdAttack > 0) return byProgress(A.cast, (cls.combo[0].cooldown - p.cdAttack) / cls.combo[0].cooldown);
+  }
   const k = activeSlash(fx, slot);
   if (k >= 0 && fx.slt[k] <= SLASH_TICKS) {
     const heavy = fx.slHeavy[k] === 1;

@@ -65,7 +65,7 @@ test('a light swing sweeps the blade through the sweep frames over the slash-arc
   assert.ok(A.recover.frames.includes(heroFrame(set, s, fx, 0, false)));
 });
 
-test('consecutive light swings alternate direction; the third is the finisher using the wide frames', () => {
+test('consecutive light swings alternate direction; the special (ability 2) uses the wide finisher frames', () => {
   const { s, fx } = arena();
   const A = set.anims[0];
   const first = (): unknown => { tick(s, fx, press(Btn.Attack)); return heroFrame(set, s, fx, 0, false); };
@@ -75,8 +75,9 @@ test('consecutive light swings alternate direction; the third is the finisher us
   const b = first();
   assert.notEqual(a, b, 'second swing starts at the opposite end of the sweep');
   wait(CLASSES[0].combo[1].cooldown);
-  const c = first();
-  assert.ok(A.finisher.frames.includes(c as (typeof A.finisher.frames)[number]), 'third hit is the finisher');
+  tick(s, fx, press(Btn.Ability2));
+  const c = heroFrame(set, s, fx, 0, false);
+  assert.ok(A.finisher.frames.includes(c as (typeof A.finisher.frames)[number]), 'the special is the wide finisher');
 });
 
 test('idle, walk, downed and the revive timer pick sensible frames', () => {

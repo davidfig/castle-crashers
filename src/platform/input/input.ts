@@ -5,17 +5,22 @@ import { EV_STRIDE, Ev, type EventBuf } from '../../sim/events';
 
 interface KeyScheme {
   up: string; down: string; left: string; right: string;
-  attack: string; ability1: string; dodge: string;
+  attack: string; ability1: string; ability2: string; dodge: string; standDown: string; level: string;
 }
 
 const SCHEMES: KeyScheme[] = [
-  { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', attack: 'KeyJ', ability1: 'KeyK', dodge: 'KeyL' },
-  { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', attack: 'Comma', ability1: 'Period', dodge: 'Slash' },
+  { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', attack: 'KeyJ', ability1: 'KeyK', ability2: 'KeyI', dodge: 'KeyL', standDown: 'KeyU', level: 'KeyO' },
+  { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', attack: 'Comma', ability1: 'Period', ability2: 'Semicolon', dodge: 'Slash', standDown: 'Quote', level: 'BracketLeft' },
 ];
+
+const RUMBLE_KEY = 'cc.rumble';
 
 const PAD_ATTACK = [7]; // right trigger
 const PAD_ABILITY1 = [0]; // A
-const PAD_DODGE = [1, 5];
+const PAD_ABILITY2 = [2]; // X
+const PAD_DODGE = [6, 5]; // left trigger, right bumper
+const PAD_STAND_DOWN = [1, 3]; // B, Y
+const PAD_LEVEL = [4]; // left bumper
 
 interface Source {
   id: string;
@@ -39,11 +44,21 @@ export class InputManager {
   private gamepadIds = new Set<number>();
   /** Set when "restart" is requested (R key or Start on a pad). */
   restartRequested = false;
+  /** Controller rumble setting (V toggles). Off by default; persisted so it survives reloads. */
+  rumbleEnabled = false;
+  /** Menu presses since the last consumeMenu(): the menus read devices directly, so nobody has to claim a player slot to navigate. */
+  private menuLeft = false;
+  private menuRight = false;
+  private menuOk = false;
+  private padMenuPrev = new Map<number, number>();
 
   constructor() {
+    try { this.rumbleEnabled = localStorage.getItem(RUMBLE_KEY) === '1'; } catch { /* blocked site data: stay off */ }
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
+      if (e.code === 'KeyV') { this.setRumble(!this.rumbleEnabled); return; }
       this.keys.add(e.code);
+      this.noteMenuKey(e.code);
       SCHEMES.forEach((sc, i) => {
         const bit = this.bitFor(sc, e.code);
         if (bit) this.edges.set(`kb${i}`, (this.edges.get(`kb${i}`) ?? 0) | bit);
@@ -56,10 +71,42 @@ export class InputManager {
     SCHEMES.forEach((sc, i) => this.sources.push(this.keyboardSource(`kb${i}`, sc)));
   }
 
+  setRumble(on: boolean): void {
+    this.rumbleEnabled = on;
+    try { localStorage.setItem(RUMBLE_KEY, on ? '1' : '0'); } catch { /* unsaved */ }
+  }
+
+  private noteMenuKey(code: string): void {
+    if (code === 'KeyA' || code === 'ArrowLeft') this.menuLeft = true;
+    else if (code === 'KeyD' || code === 'ArrowRight') this.menuRight = true;
+    else if (code !== 'KeyR' && !/^(Shift|Control|Alt|Meta|Caps|Escape|F\d|Tab|Arrow(Up|Down))/.test(code) && code !== 'KeyW' && code !== 'KeyS') this.menuOk = true; // any other key confirms
+  }
+
+  /** Left/right (-1, 0, 1) and confirm pressed since the last call, from any keyboard or pad. Clears them. */
+  consumeMenu(): { dx: number; ok: boolean } {
+    for (const p of navigator.getGamepads()) {
+      if (!p) continue;
+      const down = (i: number) => !!p.buttons[i]?.pressed;
+      const x = p.axes[0] ?? 0;
+      const mask = (down(14) || x < -0.6 ? 1 : 0) | (down(15) || x > 0.6 ? 2 : 0) | (p.buttons.some((bt, i) => i < 12 && i !== 9 && bt.pressed) ? 4 : 0);
+      const fresh = mask & ~(this.padMenuPrev.get(p.index) ?? 0);
+      this.padMenuPrev.set(p.index, mask);
+      if (fresh & 1) this.menuLeft = true;
+      if (fresh & 2) this.menuRight = true;
+      if (fresh & 4) this.menuOk = true;
+    }
+    const out = { dx: (this.menuRight ? 1 : 0) - (this.menuLeft ? 1 : 0), ok: this.menuOk };
+    this.menuLeft = this.menuRight = this.menuOk = false;
+    return out;
+  }
+
   private bitFor(sc: KeyScheme, code: string): number {
     if (code === sc.attack) return Btn.Attack;
     if (code === sc.ability1) return Btn.Ability1;
+    if (code === sc.ability2) return Btn.Ability2;
     if (code === sc.dodge) return Btn.Dodge;
+    if (code === sc.standDown) return Btn.Interact;
+    if (code === sc.level) return Btn.Level;
     return 0;
   }
 
@@ -75,7 +122,10 @@ export class InputManager {
         let b = 0;
         if (k.has(sc.attack)) b |= Btn.Attack;
         if (k.has(sc.ability1)) b |= Btn.Ability1;
+        if (k.has(sc.ability2)) b |= Btn.Ability2;
         if (k.has(sc.dodge)) b |= Btn.Dodge;
+        if (k.has(sc.standDown)) b |= Btn.Interact;
+        if (k.has(sc.level)) b |= Btn.Level;
         b |= this.edges.get(id) ?? 0;
         this.edges.set(id, 0);
         out.buttons = b;
@@ -113,7 +163,10 @@ export class InputManager {
         let b = 0;
         if (PAD_ATTACK.some(down)) b |= Btn.Attack;
         if (PAD_ABILITY1.some(down)) b |= Btn.Ability1;
+        if (PAD_ABILITY2.some(down)) b |= Btn.Ability2;
         if (PAD_DODGE.some(down)) b |= Btn.Dodge;
+        if (PAD_STAND_DOWN.some(down)) b |= Btn.Interact;
+        if (PAD_LEVEL.some(down)) b |= Btn.Level;
         const any = p.buttons.some((bt) => bt.pressed);
         if (down(9) && !(prev & 0x100)) this.restartRequested = true;
         prev = down(9) ? 0x100 : 0;
@@ -158,6 +211,7 @@ export class InputManager {
 
   /** Rumble the pad claimed by `slot`, if any. No-op for keyboards or browsers without haptics. */
   rumble(slot: number, strong: number, weak: number, ms: number): void {
+    if (!this.rumbleEnabled) return;
     const id = this.slots[slot];
     if (!id?.startsWith('pad')) return;
     const pad = navigator.getGamepads()[Number(id.slice(3))] as (Gamepad & { vibrationActuator?: GamepadHapticActuator }) | null;

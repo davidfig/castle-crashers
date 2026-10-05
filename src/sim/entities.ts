@@ -1,10 +1,23 @@
 // Struct-of-arrays entity storage. Horde-scale: thousands of entities, zero per-entity allocation.
 import { MAX_ENTS } from './constants';
 
-export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4 } as const;
+/** A Zone is a patch of ground that something is about to happen to (a lobbed rock) or that stays dangerous (a poison pool). */
+export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5 } as const;
+
+/** Zone looks (the `sub` of a Kind.Zone entity). */
+export const ZoneKind = { Rock: 0, Poison: 1, Frost: 2, Trap: 3, Storm: 4 } as const;
+
+/** Mob flag: a bystander stands by its fire and never attacks or chases (docs/12-story.md, R1). Other bits: 1 aggro, 2 entering, 4 enraged, 8 retreating, 32 specials initialised (abilities.ts), 128 berserk. */
+export const BYSTANDER = 16;
+/** Mob flag: it has laid down its arms. It kneels (`rem` ticks, -1 until the staged beat plays), then runs off; any damage kills it like any mob. */
+export const SURRENDERED = 64;
+/** Mob flag: it has gone berserk (below its `berserk` health): frenzied, harder-hitting, never staggered. */
+export const BERSERK = 128;
 
 export interface Entities {
   capacity: number;
+  /** Slot of the boss while one is alive, else -1. */
+  boss: number;
   /** One past the highest slot ever used; iterate 0..highWater. */
   highWater: number;
   count: number;
@@ -30,7 +43,19 @@ export interface Entities {
   atk: Uint8Array;
   /** Telegraph/fuse ticks remaining before an attack lands. */
   wind: Uint8Array;
-  /** Locked aim direction while winding up (ranged). */
+  /** 0 normal, 1 charge windup, 2 charging, handled per mob type. */
+  mode: Uint8Array;
+  /** Ticks until the next special move (charge) is allowed. */
+  cool: Uint16Array;
+  /** A second timer for mobs with several special moves (the boss's move scheduler). */
+  cool2: Uint16Array;
+  /** Mobs: ticks of frenzy left (a drummer's rally). Zones: ticks of slow it inflicts. */
+  buff: Uint16Array;
+  /** Full health, so a health bar can show a fraction. */
+  maxhp: Float64Array;
+  /** Distance left to cover in a charge. */
+  rem: Float64Array;
+  /** Locked aim direction while winding up (ranged) or charging. */
   ax: Float64Array;
   ay: Float64Array;
   /** -1 or +1: which way the sprite faces. */
@@ -50,6 +75,7 @@ export function createEntities(capacity = MAX_ENTS): Entities {
     capacity,
     highWater: 0,
     count: 0,
+    boss: -1,
     alive: new Uint8Array(capacity),
     kind: new Uint8Array(capacity),
     sub: new Uint8Array(capacity),
@@ -66,6 +92,12 @@ export function createEntities(capacity = MAX_ENTS): Entities {
     stun: new Uint8Array(capacity),
     atk: new Uint8Array(capacity),
     wind: new Uint8Array(capacity),
+    mode: new Uint8Array(capacity),
+    cool: new Uint16Array(capacity),
+    cool2: new Uint16Array(capacity),
+    buff: new Uint16Array(capacity),
+    maxhp: new Float64Array(capacity),
+    rem: new Float64Array(capacity),
     ax: new Float64Array(capacity),
     ay: new Float64Array(capacity),
     face: new Int8Array(capacity).fill(1),
@@ -86,7 +118,9 @@ export function allocEntity(e: Entities, kind: number, sub: number, x: number, y
   e.x[i] = x; e.y[i] = y; e.px[i] = x; e.py[i] = y;
   e.vx[i] = 0; e.vy[i] = 0; e.z[i] = 0; e.vz[i] = 0;
   e.hp[i] = hp;
-  e.hurt[i] = 0; e.stun[i] = 0; e.atk[i] = 0; e.wind[i] = 0; e.ax[i] = 0; e.ay[i] = 0;
+  e.maxhp[i] = hp;
+  e.cool2[i] = 0;
+  e.hurt[i] = 0; e.stun[i] = 0; e.atk[i] = 0; e.wind[i] = 0; e.mode[i] = 0; e.cool[i] = 0; e.buff[i] = 0; e.rem[i] = 0; e.ax[i] = 0; e.ay[i] = 0;
   e.face[i] = 1;
   e.flags[i] = 0;
   e.by[i] = -1;
