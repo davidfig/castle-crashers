@@ -15,12 +15,15 @@ const head = rows(`
   .WWWW
   ..WW.
 `);
+// a proper wizard hat: a tall soft cone whose tip droops back, a gold-starred band, and a brim only a pixel wider than the head
 const hat = rows(`
-  ....bb...
-  ...bbbb..
-  ..bbbYbb.
-  .bbbbbbbb
-  aaaaaaaaa
+  bb.....
+  .bb....
+  ..bbb..
+  ..bbb..
+  .bbYbb.
+  .bbbbb.
+  aaaaaaa
 `);
 const robe = rows(`
   .rrRRRr.
@@ -53,7 +56,7 @@ const staff = (ang) => weapon({
 
 const rig = robedRig({
   OX: 10, OY: 14, parts, shoe,
-  layout: { robe: [7, 8], head: [8, 4], hat: [5, 0], legB: [8, 14], legF: [10, 14], hand: [14, 11], sleeve: [-1, -1] },
+  layout: { robe: [7, 8], head: [8, 4], hat: [7, -2], legB: [8, 14], legF: [10, 14], hand: [14, 11], sleeve: [-1, -1] },
   prop(o, h, { add, T }) { const k = add('st' + o.ang, () => staff(o.ang)); return [[k, ...T(...h)]]; },
 });
 const { pose, frames, T } = rig;
@@ -106,6 +109,12 @@ pose('fin3', { ang: -10, bob: 1, lean: 1, hx: 1, rb: 1, lf: 2, lb: -2, hand: [16
 pose('fin4', { ang: 25, bob: 1, lean: 2, hx: 2, rb: 1, lf: 3, lb: -3, hand: [17, 12] });
 pose('fin5', { ang: 55, bob: 2, lean: 2, hx: 2, rb: 0, lf: 3, lb: -3, hand: [16, 13] });
 
+// ---- fireball cast (the mage's attack: no swing). Staff drawn back, raised, thrust forward as the fireball leaves, then settles.
+pose('sh0', { ang: -125, bob: 1, lean: -1, hx: -1, rb: 2, lf: -1, lb: 1, hand: [13, 10] });
+pose('sh1', { ang: -100, bob: 0, lean: -1, rb: 2, hand: [14, 8] });
+pose('sh2', { ang: -12, bob: 1, lean: 1, hx: 1, rb: 1, lf: 2, lb: -2, hand: [16, 10] });
+pose('sh3', { ang: -35, bob: 1, lean: 1, rb: 0, hand: [15, 10] });
+
 pose('hurt0', { ang: -40, bob: 1, lean: -2, hx: -1, hy: 1, rb: 2, lf: -1, lb: 1, hand: [13, 12] });
 
 // down: slumps; the hat is knocked off beside her/him and the orb dims on the ground
@@ -128,7 +137,7 @@ parts.hatFallen = rows(`
 `);
 parts.staffLying = weapon({ angle: 0, len: 13, half: 1, grip: 4, holdU: 0, mat: (u, v, L) => (u >= -4 && u < L ? (Math.abs(v) <= 0.6 ? 'g' : null) : (Math.hypot(u - L - 1.6, v) < 2.3 ? (Math.hypot(u - L - 1.6, v) < 1.2 ? 'w' : 'b') : null)) });
 parts['st-90'] = staff(-90);
-frames.down0 = [['robe1', ...T(7, 10)], ['head', ...T(8, 7)], ['hat', ...T(5, 3)], ['sleeve', ...T(13, 12)], ['st-90', ...T(15, 12)]];
+frames.down0 = [['robe1', ...T(7, 10)], ['head', ...T(8, 7)], ['hat', ...T(7, 1)], ['sleeve', ...T(13, 12)], ['st-90', ...T(15, 12)]];
 frames.down1 = [['puddle', ...T(6, 12)], ['head', ...T(3, 9)], ['hatFallen', ...T(-4, 12)], ['staffLying', ...T(9, 17)]];
 frames.down2 = [['puddleLow', ...T(6, 14)], ['head', ...T(3, 11)], ['hatFallen', ...T(-4, 14)], ['staffLying', ...T(9, 18)]];
 
@@ -143,6 +152,7 @@ export default {
     sweep: { loop: false, frames: ['sw0', 'sw1', 'sw2', 'sw3', 'sw4'], ms: [30, 30, 30, 30, 30] },        // spans the 8-tick slash arc
     finisher: { loop: false, frames: ['fin0', 'fin1', 'fin2', 'fin3', 'fin4', 'fin5'], ms: [30, 30, 30, 30, 30, 30] },
     recover: { loop: false, frames: ['rec0', 'rec1'], ms: [100, 120] },
+    shoot: { loop: false, frames: ['sh0', 'sh1', 'sh2', 'sh3'], ms: [60, 60, 60, 60] },   // paced by the fire rate in the game
     cast: { loop: false, frames: ['cast0', 'cast1', 'cast2', 'cast3', 'cast4'], ms: [170, 120, 110, 140, 200] },
     hurt: { fps: 6, loop: false, frames: ['hurt0'] },
     down: { fps: 5, loop: false, frames: ['down0', 'down1', 'down2'] },
