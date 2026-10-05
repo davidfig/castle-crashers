@@ -83,7 +83,12 @@
 const $ = (id) => document.getElementById(id);
 const DPR = window.devicePixelRatio || 1;
 let index = [], meta = null, img = null, imgs = {};
-let animName = null, frameIdx = 0, last = 0, paused = false, flip = false, showGrid = true;
+// Every control is remembered between visits (localStorage, 'wb.*'); reads/writes never throw.
+const mem = {
+  get(k, d) { try { const v = localStorage.getItem('wb.' + k); return v === null ? d : v; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('wb.' + k, String(v)); } catch { /* private mode etc. */ } },
+};
+let animName = mem.get('anim', null), frameIdx = 0, last = 0, paused = mem.get('paused', '0') === '1', flip = mem.get('flip', '0') === '1', showGrid = mem.get('grid', '1') === '1';
 let horde = [];
 
 /** Size a canvas so one art pixel is exactly `k` device pixels (crisp at any devicePixelRatio). */
@@ -109,6 +114,7 @@ async function loadSheet() {
   $('variant').innerHTML = '';
   meta.variants.forEach((v) => { const o = document.createElement('option'); o.value = v.file; o.textContent = v.label; $('variant').appendChild(o); });
   if ([...$('variant').options].some((o) => o.value === vcur)) $('variant').value = vcur;
+  else { const vi = Math.min(Number(mem.get('variantIdx', 0)), $('variant').options.length - 1); $('variant').selectedIndex = Math.max(0, vi); }
   await loadImage();
   if (!animName || !meta.anims[animName]) animName = Object.keys(meta.anims)[0];
   buildAnimButtons(); setAnim(animName, true);
@@ -131,7 +137,7 @@ function buildAnimButtons() {
   for (const a of Object.keys(meta.anims)) { const b = document.createElement('button'); b.textContent = a; b.className = a === animName ? 'on' : ''; b.onclick = () => setAnim(a); box.appendChild(b); }
 }
 function setAnim(a, keep) {
-  animName = a; if (!keep) frameIdx = 0;
+  animName = a; mem.set('anim', a); if (!keep) frameIdx = 0;
   [...$('animBtns').children].forEach((b) => b.classList.toggle('on', b.textContent === a));
 }
 function drawFrame(g, k, fname, x, y, fl) {
@@ -236,11 +242,11 @@ function drawRef(g, kk) {
   g.fillText('= game placeholders today', (x + 2) * kk, (y0 + 8) * kk);
 }
 // ---- compare view
-const cmp = { sel: new Set(JSON.parse(localStorage.getItem('wb.cmpSel') || '[]')), anim: localStorage.getItem('wb.cmpAnim') || 'idle', cells: [], flip: false };
+const cmp = { sel: new Set(JSON.parse(mem.get('cmpSel', '[]'))), anim: mem.get('cmpAnim', 'idle'), cells: [], flip: false };
 function buildCompare() {
   const pick = $('cmpPick'); pick.innerHTML = '';
   const names = Object.keys(imgs);
-  if (!cmp.sel.size) names.filter((n) => /^cleric/.test(n)).forEach((n) => cmp.sel.add(n));
+  if (mem.get('cmpSel', null) === null) names.filter((n) => /^cleric/.test(n)).forEach((n) => cmp.sel.add(n));   // first visit only
   for (const n of names) {
     const l = document.createElement('label'); const c = document.createElement('input'); c.type = 'checkbox'; c.checked = cmp.sel.has(n);
     c.onchange = () => { c.checked ? cmp.sel.add(n) : cmp.sel.delete(n); localStorage.setItem('wb.cmpSel', JSON.stringify([...cmp.sel])); rebuildCells(); };
@@ -272,28 +278,33 @@ async function drawCompare() {
   cmpBusy = true;
   try { await drawCompareInner(); } finally { cmpBusy = false; }
 }
+// Every box is the same large size with the ground line at the same height, so each sprite sits with space all around.
+const BOX_W = 72, BOX_H = 60, BOX_BASE = 42;   // art pixels; base = the ground line inside the box
 async function drawCompareInner() {
   const k = Number($('cmpZoom').value), vi = Number($('cmpVar').value), bg = $('cmpBg').value, flip = cmp.flip;
   const now = performance.now();
-  // shared canvas height so ground lines line up: use the tallest above-ground and below-ground extents
   for (const c of cmp.cells) {
     if (!imgs[c.n]) continue;
     const { meta } = imgs[c.n]; const im = await loadVariantImg(c.n, vi);
-    const a = meta.anims[cmp.anim]; const [cw, ch] = meta.cell;
-    const H = Math.min(ch, meta.pivot[1] + 6); // crop below the ground line so every cell's ground sits at the same baseline
-    const { g, k: kk } = fit(c.cv, cw, H, k);
-    g.fillStyle = bg; g.fillRect(0, 0, cw * kk, H * kk);
-    drawShadow(g, kk, meta.pivot[0], meta.pivot[1], meta.shadow ?? [9, 5]);
-    g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(0, (meta.pivot[1] + 1) * kk, cw * kk, 1);
+    const a = meta.anims[cmp.anim] ?? (cmp.anim === 'idle' ? meta.anims.walk : undefined);   // enemies have no idle: show their walk
+    const { g, k: kk } = fit(c.cv, BOX_W, BOX_H, k);
+    g.fillStyle = bg; g.fillRect(0, 0, BOX_W * kk, BOX_H * kk);
+    // faint 8px grid + centre line so the margins are easy to judge
+    g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1;
+    for (let x = 0; x <= BOX_W; x += 8) { g.beginPath(); g.moveTo(x * kk + .5, 0); g.lineTo(x * kk + .5, BOX_H * kk); g.stroke(); }
+    for (let y = 0; y <= BOX_H; y += 8) { g.beginPath(); g.moveTo(0, y * kk + .5); g.lineTo(BOX_W * kk, y * kk + .5); g.stroke(); }
+    const ox = Math.round(BOX_W / 2 - meta.pivot[0]), oy = BOX_BASE - meta.pivot[1];   // where the cell's origin lands in the box
+    drawShadow(g, kk, BOX_W / 2, BOX_BASE, meta.shadow ?? [9, 5]);
+    g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(0, (BOX_BASE + 1) * kk, BOX_W * kk, 1);
     if ($('cmpRef').classList.contains('on')) {
-      let rx = 2; for (const [nm, w, h] of REF_SIZES) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.strokeRect(rx * kk + .5, (meta.pivot[1] + 1 - h) * kk + .5, w * kk - 1, h * kk - 1); g.fillStyle = 'rgba(255,255,255,.8)'; g.font = '10px monospace'; g.fillText(nm + ' ' + w + '×' + h, rx * kk + 2, (meta.pivot[1] + 1 - h) * kk - 3); rx += w + 2; }
+      let rx = 3; for (const [nm, w, h] of REF_SIZES) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.strokeRect(rx * kk + .5, (BOX_BASE + 1 - h) * kk + .5, w * kk - 1, h * kk - 1); g.fillStyle = 'rgba(255,255,255,.8)'; g.font = '10px monospace'; g.fillText(nm + ' ' + w + '×' + h, rx * kk + 2, (BOX_BASE + 1 - h) * kk - 3); rx += w + 3; }
     }
     if (!a) { g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText('(no ' + cmp.anim + ')', 6, 16); continue; }
     const total = a.ms.reduce((x, y) => x + y, 0); let tt = now % (total + (a.loop === false ? 500 : 0)), fi = a.frames.length - 1;
     if (tt < total) { fi = 0; while (tt >= a.ms[fi]) { tt -= a.ms[fi]; fi++; } }
     const f = meta.frames[a.frames[fi]];
-    if (flip) { g.save(); g.translate(cw * kk, 0); g.scale(-1, 1); g.drawImage(im, f.x, f.y, f.w, H, 0, 0, f.w * kk, H * kk); g.restore(); }
-    else g.drawImage(im, f.x, f.y, f.w, H, 0, 0, f.w * kk, H * kk);
+    if (flip) { g.save(); g.translate(BOX_W * kk, 0); g.scale(-1, 1); g.drawImage(im, f.x, f.y, f.w, f.h, ox * kk, oy * kk, f.w * kk, f.h * kk); g.restore(); }
+    else g.drawImage(im, f.x, f.y, f.w, f.h, ox * kk, oy * kk, f.w * kk, f.h * kk);
   }
 }
 function tick(ts) {
@@ -305,26 +316,36 @@ function tick(ts) {
 }
 
 [1,2,3,4,6,8,10,12,16].forEach((z) => { for (const id of ['zoom', 'cmpZoom']) { const o = document.createElement('option'); o.value = z; o.textContent = z + '×'; $(id).appendChild(o); } });
-$('cmpZoom').value = localStorage.getItem('wb.cmpZoom') || 6;
+$('cmpZoom').value = localStorage.getItem('wb.cmpZoom') || 4;
 $('cmpZoom').onchange = () => localStorage.setItem('wb.cmpZoom', $('cmpZoom').value);
-$('cmpRef').onclick = () => $('cmpRef').classList.toggle('on');
-$('cmpFlip').onclick = () => { cmp.flip = !cmp.flip; $('cmpFlip').classList.toggle('on', cmp.flip); };
+$('cmpRef').onclick = () => { $('cmpRef').classList.toggle('on'); mem.set('cmpRef', $('cmpRef').classList.contains('on') ? 1 : 0); };
+$('cmpFlip').onclick = () => { cmp.flip = !cmp.flip; mem.set('cmpFlip', cmp.flip ? 1 : 0); $('cmpFlip').classList.toggle('on', cmp.flip); };
+$('cmpVar').onchange = () => mem.set('cmpVar', $('cmpVar').value);
+$('cmpBg').onchange = () => mem.set('cmpBg', $('cmpBg').value);
 $('zoom').value = localStorage.getItem('wb.zoom') || 8;
 [1,2,3].forEach((z) => { const o = document.createElement('option'); o.value = z; o.textContent = z + '×'; $('gzoom').appendChild(o); });
 $('gzoom').value = localStorage.getItem('wb.gzoom') || 1;
 $('bg').value = localStorage.getItem('wb.bg') || '#5a5f6a';
 $('sheet').onchange = async () => { await loadSheet(); };
-$('variant').onchange = async () => { await loadImage(); drawSheet(); };
+$('variant').onchange = async () => { mem.set('variantIdx', $('variant').selectedIndex); await loadImage(); drawSheet(); };
 $('zoom').onchange = () => localStorage.setItem('wb.zoom', $('zoom').value);
 $('gzoom').onchange = () => localStorage.setItem('wb.gzoom', $('gzoom').value);
 $('bg').onchange = () => { localStorage.setItem('wb.bg', $('bg').value); drawSheet(); };
-$('fps').oninput = () => { $('fpsv').textContent = $('fps').value + '%'; };
-$('flip').onclick = () => { flip = !flip; $('flip').classList.toggle('on', flip); };
-$('grid').onclick = () => { showGrid = !showGrid; $('grid').classList.toggle('on', showGrid); };
-$('pause').onclick = () => { paused = !paused; $('pause').classList.toggle('on', paused); };
+$('fps').oninput = () => { $('fpsv').textContent = $('fps').value + '%'; mem.set('speed', $('fps').value); };
+$('flip').onclick = () => { flip = !flip; mem.set('flip', flip ? 1 : 0); $('flip').classList.toggle('on', flip); };
+$('grid').onclick = () => { showGrid = !showGrid; mem.set('grid', showGrid ? 1 : 0); $('grid').classList.toggle('on', showGrid); };
+$('pause').onclick = () => { paused = !paused; mem.set('paused', paused ? 1 : 0); $('pause').classList.toggle('on', paused); };
 $('regen').onclick = reshuffle;
-$('ref').onclick = () => $('ref').classList.toggle('on');
+$('ref').onclick = () => { $('ref').classList.toggle('on'); mem.set('ref', $('ref').classList.contains('on') ? 1 : 0); };
 window.addEventListener('keydown', (e) => { if (e.key === ' ') { e.preventDefault(); $('pause').click(); } if (e.key === 'ArrowRight' && paused) frameIdx++; if (e.key === 'ArrowLeft' && paused) frameIdx = Math.max(0, frameIdx - 1); });
+
+// restore remembered control state (before the first load so sheets/anims open as you left them)
+$('fps').value = mem.get('speed', 100); $('fpsv').textContent = $('fps').value + '%';
+$('cmpVar').value = mem.get('cmpVar', '0'); $('cmpBg').value = mem.get('cmpBg', '#4b8039');
+cmp.flip = mem.get('cmpFlip', '0') === '1';
+$('flip').classList.toggle('on', flip); $('grid').classList.toggle('on', showGrid); $('pause').classList.toggle('on', paused);
+$('ref').classList.toggle('on', mem.get('ref', '1') === '1'); $('cmpRef').classList.toggle('on', mem.get('cmpRef', '1') === '1');
+$('cmpFlip').classList.toggle('on', cmp.flip);
 
 reshuffle();
 (async () => { await loadIndex(); await loadAllSheets(); buildCompare(); drawGame(); requestAnimationFrame(tick); })();

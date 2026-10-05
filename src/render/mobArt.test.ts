@@ -15,7 +15,7 @@ test('every enemy has a walk cycle with tight bottom-anchored cells', () => {
 });
 
 test('every enemy has the common poses; specials exist where the behaviour needs them', () => {
-  for (let t = 0; t < 5; t++) for (const n of ['walk', 'idle', 'hurt']) assert.ok(art.anims[t][n]?.length > 0, `enemy ${t} lacks ${n}`);
+  for (let t = 0; t < 5; t++) for (const n of ['walk', 'idle', 'hurt', 'dead']) assert.ok(art.anims[t][n]?.length > 0, `enemy ${t} lacks ${n}`);
   for (const t of [0, 1, 3]) for (const n of ['windup', 'strike']) assert.ok(art.anims[t][n]?.length > 0, `enemy ${t} lacks ${n}`);
   for (const n of ['paw', 'charge', 'dazed']) assert.ok(art.anims[1][n]?.length > 0, `orc lacks ${n}`);
   for (const n of ['aim', 'release']) assert.ok(art.anims[2][n]?.length > 0, `archer lacks ${n}`);

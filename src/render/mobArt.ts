@@ -36,12 +36,6 @@ const uv = (r: Rect, pl: { x: number; y: number }, W: number, H: number): Frame 
   u0: (pl.x + r.x) / W, v0: (pl.y + r.y) / H, u1: (pl.x + r.x + r.w) / W, v1: (pl.y + r.y + r.h) / H, w: r.w, h: r.h,
 });
 
-/** Pixel rect of a mob's first walk frame in its sheet (used to derive its corpse). */
-export function mobCorpseSource(type: number): Rect {
-  const m = MOB_METAS[type];
-  return m.frames[m.anims.walk.frames[0]];
-}
-
 /** places: one atlas placement per sheet, in loadMobImages() order. */
 export function buildMobArt(places: { x: number; y: number }[], W: number, H: number): MobArt {
   const anims = MOB_METAS.map((m, t) => {

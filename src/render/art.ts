@@ -2,7 +2,7 @@
 // at startup. Swap for real PNG atlases (tools/pack-atlas) once there is art.
 import type { Frame } from '../platform/gl/batcher';
 import { buildHeroSet, type HeroSet } from './hero';
-import { buildMobArt, mobCorpseSource, type MobArt } from './mobArt';
+import { buildMobArt, type MobArt } from './mobArt';
 
 export const PLAYER_COLORS = [0xe0443a, 0x3a7be0, 0xe8c43a, 0xa04ae0];
 
@@ -290,17 +290,6 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     return [add(bitmap(PLAYER_A, pal, `player${slot}A`)), add(bitmap(PLAYER_B, pal, `player${slot}B`))];
   });
 
-  // Enemy walk cycles come from the art workbench (placed in the atlas below); their corpses are derived from the
-  // first walk frame, lying on its side like the old procedural ones.
-  const corpse = mobImages.slice(0, 5).map((img, t) => {
-    const r = mobCorpseSource(t);
-    const cv = document.createElement('canvas');
-    cv.width = r.w; cv.height = r.h;
-    const c2 = cv.getContext('2d')!;
-    c2.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
-    const d = c2.getImageData(0, 0, r.w, r.h);
-    return add(corpseOf({ w: r.w, h: r.h, rgba: new Uint8ClampedArray(d.data) }, 11 + t, false));
-  });
   const playerDown = PLAYER_COLORS.map((col, slot) => {
     const pal = { h: 0xb8c2cc, H: 0x7d8a99, s: 0xf2c9a0, e: 0x1b1b2b, P: col, p: darken(col, 0.62), b: 0x5a3a22, w: 0xeef3f7, g: 0xe0b43a };
     return add(corpseOf(bitmap(PLAYER_A, pal, `down${slot}`), 40 + slot, false));
@@ -359,6 +348,8 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   const hero = buildHeroSet(heroPlaces, W, H);
   const mobArt = buildMobArt(mobPlaces, W, H);
   const mob = mobArt.walk;
+  // Corpses are the authored `dead` frame of each enemy sheet (the first walk frame laid on its side, built by tools/art.mjs).
+  const corpse = mobArt.anims.slice(0, 5).map((a) => a.dead[0]);
 
   return { atlas: canvas, px, player, mob, shadow, corpse, coin, playerDown, hero, mobArt, ground, mountFar, mountNear, glyph };
 }

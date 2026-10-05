@@ -44,7 +44,9 @@ function buildSheet(def, pal, quiet) {
   const [cw, ch] = def.cell;
   const animNames = Object.keys(def.anims);
   const cols = Math.max(...animNames.map((a) => def.anims[a].frames.length));
-  const W = cols * cw, H = animNames.length * ch;
+  // `derived` anims are generated from another frame (e.g. a corpse lying on its side) and get their own rows at the bottom
+  const derivedNames = Object.keys(def.derived ?? {});
+  const W = cols * cw, H = (animNames.length + derivedNames.length) * ch;
   const rgba = new Uint8ClampedArray(W * H * 4);
   const frames = {}, anims = {};
   const parts = {};
@@ -115,6 +117,29 @@ function buildSheet(def, pal, quiet) {
       frames[`${an}_${ci}`] = { x: ox, y: oy, w: cw, h: ch };
       anims[an].frames.push(`${an}_${ci}`);
     });
+  });
+  // derived: 'lie' = rotate the source frame's figure 90 degrees clockwise (head to the right), lay it on the ground line, darken it
+  // and spatter it with blood. Deterministic, so the sheet is stable between builds.
+  derivedNames.forEach((dn, di) => {
+    const d = def.derived[dn];
+    const src = frames[d.from];
+    if (!src) throw new Error(`${def.name}: derived ${dn} references missing frame ${d.from}`);
+    let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+    for (let y = 0; y < src.h; y++) for (let x = 0; x < src.w; x++) if (rgba[((src.y + y) * W + src.x + x) * 4 + 3]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;                       // figure bbox; lying it is bh wide and bw tall
+    const oy = (animNames.length + di) * ch;
+    const left = Math.round(cw / 2 - bh / 2), bottom = oy + ch - 1; // bottom row of the cell = the ground ink row, like the standing frames
+    const hash = (a, b) => { let h = Math.imul(a, 374761393) + Math.imul(b, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) >>> 0; };
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+      const so = ((src.y + y0 + y) * W + src.x + x0 + x) * 4;
+      if (!rgba[so + 3]) continue;
+      const nx = left + (bh - 1 - y), ny = bottom - (bw - 1) + x;    // clockwise rotation
+      const o = (ny * W + nx) * 4;
+      const blood = hash(x + 7 * di, y) % 9 === 0;
+      rgba[o] = blood ? 120 : rgba[so] * 0.86; rgba[o + 1] = blood ? 24 : rgba[so + 1] * 0.82; rgba[o + 2] = blood ? 24 : rgba[so + 2] * 0.82; rgba[o + 3] = 255;
+    }
+    frames[`${dn}_0`] = { x: 0, y: oy, w: cw, h: ch };
+    anims[dn] = { fps: 1, loop: false, ms: [1000], frames: [`${dn}_0`] };
   });
   if (clipped.size && !quiet) console.warn(`  ! ${def.name}: clipped by cell: ${[...clipped].join(', ')}`);
   return { W, H, rgba, frames, anims, feet };
