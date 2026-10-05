@@ -40,7 +40,7 @@ const SHARD_TTL = 36;
 /** How often a poison pool bites, in ticks. */
 const POOL_PULSE = 20;
 
-function onScreen(s: GameState, x: number): boolean {
+export function onScreen(s: GameState, x: number): boolean {
   return x > s.camX + 6 && x < s.camX + VIEW_W - 6;
 }
 
@@ -198,7 +198,8 @@ function scatter(s: GameState, spread: number): [number, number] {
 export function fireSpecialOf(s: GameState, i: number, sp: Special, target: number): void {
   const e = s.ents;
   e.mode[i] = 0;
-  e.cool2[i] = sp.cooldown;
+  // a trapper's snares come at irregular intervals, so there is always another to dodge instead of one volley
+  e.cool2[i] = sp.kind === 'trap' ? Math.round(sp.cooldown * (0.4 + 1.4 * rngFloat(s.rngSpawn))) : sp.cooldown;
   const x = e.x[i], y = e.y[i];
   switch (sp.kind) {
     case 'lob': {
@@ -214,7 +215,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
     }
     case 'trap': {
       for (let k = 0; k < (sp.count ?? 1); k++) {
-        const [ox, oy] = k === 0 ? [0, 0] : scatter(s, sp.spread ?? 0);
+        const [ox, oy] = k === 0 && (sp.count ?? 1) > 1 ? [0, 0] : scatter(s, sp.spread ?? 0); // a lone trap is off-centre too: it only catches a hero who stays put
         const z = allocEntity(e, Kind.Zone, ZoneKind.Trap, clamp(e.ax[i] + ox, 0, WORLD_W), clamp(e.ay[i] + oy, 6, WORLD_H - 6), 1);
         if (z < 0) break;
         e.wind[z] = sp.arm;
@@ -462,6 +463,7 @@ export function updateZones(s: GameState): void {
   const e = s.ents;
   for (let i = 0; i < e.highWater; i++) {
     if (e.kind[i] !== Kind.Zone) continue;
+    if (e.sub[i] === ZoneKind.Rain) continue; // the archer's rain runs in step.ts
     if (e.x[i] < s.camX - 60) { freeEntity(e, i); continue; }
     const r = e.rem[i];
     if (e.sub[i] === ZoneKind.Trap) { trapStep(s, i); continue; }

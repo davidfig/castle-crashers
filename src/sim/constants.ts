@@ -6,10 +6,10 @@ export const VIEW_H = 360;
 
 /** Battlefield: x runs left->right, y is depth across the field. */
 export const WORLD_W = 2800;
-export const WORLD_H = 222;
+export const WORLD_H = 244;
 
 /** Enemies coming over the top edge count as still entering until this far into the field (their descent of the near slope). */
-export const TOP_ENTRY_DEPTH = 22;
+export const TOP_ENTRY_DEPTH = 4;
 
 export const MAX_ENTS = 4096;
 export const MAX_PLAYERS = 4;

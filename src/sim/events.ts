@@ -14,6 +14,8 @@ export const Ev = {
   Blast: 10,      // a = radius
   Block: 11,      // shield absorbed a hit
   Fire: 12,       // archer released an arrow; a,b = direction
+  Quake: 33,      // warrior shockwave; a,b = direction * length, c = half-width, d = 1 for the big one
+  ArrowSpent: 32, // a player's arrow reached the end of its range and drops to the ground; a,b = direction
   Arrow: 13,      // arrow destroyed by a player
   Pulse: 24,      // cleric point-blank burst; a = radius, b = 1 for the heavy one
   Teleport: 22,   // mage blink; a,b = destination
@@ -35,6 +37,7 @@ export const Ev = {
   Beat: 22,       // the party reached a staged story beat
   Surrender: 23,  // a mob lays down its arms; a = mob type
   LevelUp: 24,    // a hero gained a level; a = slot
+  Potion: 31,     // a hero drank a potion; a = slot
   Pick: 25,       // a hero chose an upgrade; a = slot, b = upgrade index
 } as const;
 

@@ -450,7 +450,7 @@ startLoop({
     stats.record(rawDt * 1000);
     if (mode !== 'run') {
       renderer.begin();
-      drawScreen(renderer.batcher, sprites, screen, frameTick);
+      drawScreen(renderer.batcher, sprites, screen, frameTick + alpha);
       renderer.end();
       return;
     }

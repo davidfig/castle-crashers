@@ -77,8 +77,6 @@ export interface PlayerState {
   pullT: number;
   pullX: number;
   pullY: number;
-  /** Kill-heal that can still be paid out right now (refills over time; see ClassDef.healPerSecond). */
-  healBudget: number;
 }
 
 export interface GameState {
@@ -116,6 +114,9 @@ export interface GameState {
   gold: number;
   /** Live coin pickups on the field (capped). */
   coinCount: number;
+  /** Live potion pickups on the field (capped), and how many more may still drop (refills over time; see `POTION_*` in step.ts). */
+  potionCount: number;
+  potionBudget: number;
   /** Global freeze ticks remaining (impact weight). */
   hitStop: number;
   /** Px of forward camera progress until the next reinforcement pack (trigger points, not a clock). */
@@ -140,7 +141,7 @@ function createPlayer(): PlayerState {
     active: false, ent: -1, classId: 0, downed: false, downTimer: 0, invuln: 0,
     dashT: 0, vanishT: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
     bufAbility1: 0, bufDodge: 0, prevButtons: 0, faceX: 1, faceY: 0, kills: 0, coins: 0,
-    fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, ranks: new Uint8Array(UPGRADES.length), healBudget: 3, stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
+    fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, ranks: new Uint8Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
     rootT: 0, silenceT: 0, confuseT: 0, pullT: 0, pullX: 0, pullY: 0,
   };
 }
@@ -189,6 +190,8 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     spared: new Int32Array(MOBS.length),
     gold: 0,
     coinCount: 0,
+    potionCount: 0,
+    potionBudget: 1,
     hitStop: 0,
     spawnTimer: 300,
     trigCamX: 0,

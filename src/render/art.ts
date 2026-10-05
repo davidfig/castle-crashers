@@ -97,6 +97,8 @@ export interface Sprites {
   corpse: Frame[];
   /** Coins: [small, big] x [face-on, edge-on]. */
   coin: Frame[][];
+  /** The red health potion mobs drop. */
+  potion: Frame;
   /** Player sprites from the art workbench: one set per class (CLASSES order), each with a sheet per player slot (see hero.ts). */
   heroes: HeroSet[];
   /** Enemy art from the art workbench: walk cycles, the raised-bow archer, rotated weapons (see mobArt.ts). */
@@ -150,6 +152,8 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     [add(bitmap(['.yy.', 'yYWy', 'yYYy', '.yy.'], cpal, 'coinS')), add(bitmap(['yY', 'yY', 'yY', 'yY'], cpal, 'coinSe'))],
     [add(bitmap(['.yyyy.', 'yYYYYy', 'yYWWYy', 'yYYYYy', 'yYYYYy', '.yyyy.'], cpal, 'coinB')), add(bitmap(['yY', 'yY', 'yY', 'yY', 'yY', 'yY'], cpal, 'coinBe'))],
   ];
+  // a corked flask of red: dark glass rim, bright liquid, a glint
+  const potion = add(bitmap(['..kk..', '..cc..', '.gwwg.', 'gRRRRg', 'gRWRRg', 'gRRRRg', '.gggg.'], { k: 0x6b4a2a, c: 0xc9a46a, g: 0x5a1020, w: 0xe8f0f0, R: 0xe02848, W: 0xffb0c0 }, 'potion'));
 
   const groundSets = {
     grass: [0, 1, 2, 3, 4, 5].map((v) => add(makeGround(v))),
@@ -331,5 +335,5 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   // Corpses (the boss's too) are the authored `dead` frame of each enemy sheet (the first walk frame laid on its side, built by tools/art.mjs).
   const corpse = mobArt.anims.map((a) => a.dead[0]);
 
-  return { atlas: canvas, px, mob, shadow, corpse, coin, heroes, mobArt, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, heroes, mobArt, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
 }

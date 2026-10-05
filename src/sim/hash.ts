@@ -40,6 +40,8 @@ export function hashState(s: GameState): number {
   h = mixNum(h, e0(s));
   h = mixNum(h, s.gold);
   h = mixNum(h, s.coinCount);
+  h = mixNum(h, s.potionCount);
+  h = mixNum(h, s.potionBudget);
   h = mix(h, new Uint8Array(s.rngLoot.buffer));
   h = mix(h, new Uint8Array(s.rngCombat.buffer));
   h = mix(h, new Uint8Array(s.rngSpawn.buffer));
@@ -96,7 +98,6 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.winded ? 1 : 0);
     h = mixNum(h, p.cdSpecial);
     h = mixNum(h, p.bufAbility2);
-    h = mixNum(h, p.healBudget);
     h = mixNum(h, p.slowT);
     h = mixNum(h, p.rootT);
     h = mixNum(h, p.silenceT);

@@ -6,8 +6,8 @@ import { hex, rgba } from '../platform/gl/batcher';
 import { VIEW_H, VIEW_W } from '../sim/constants';
 import type { Sprites } from './art';
 
-/** Screen y of world y=0 and of the horizon. */
-export const FIELD_Y0 = 134;
+/** Screen y of world y=0 (feet at the very top of the field stand on the crest line) and of the horizon. */
+export const FIELD_Y0 = 112;
 export const GROUND_TOP = 112;
 /** Where the foreground ridge along the bottom begins. */
 export const RIDGE_TOP = 351;
@@ -280,7 +280,7 @@ function swayAt(wx: number, tick: number, wind: number): number {
 
 /** The path's center (screen y) at world x: a lazy S-curve across the field. */
 function pathY(wx: number): number {
-  return FIELD_Y0 + 100 + 38 * Math.sin(wx * 0.0042) + 14 * Math.sin(wx * 0.0113 + 1.3);
+  return FIELD_Y0 + 122 + 38 * Math.sin(wx * 0.0042) + 14 * Math.sin(wx * 0.0113 + 1.3);
 }
 
 /** Ground art tinted for its depth: lit by the mood and darker (and a touch cooler) toward the horizon. */

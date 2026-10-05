@@ -29,9 +29,26 @@ export interface ArrowDef {
   ttl: number;
   cooldown: number;
   splash?: number;
+  /** How close (px) the projectile must be to a mob to strike it (default 5); a big fireball is wider. */
+  radius?: number;
   /** Fraction of `damage` the blast deals to things it did not hit directly (default 0.55). */
   splashDamage?: number;
   pierce?: boolean;
+}
+
+/** The archer's ability 1: a volley loosed into the air that rains down on a spot `reach` px ahead (see sim/rain.ts). */
+export interface RainDef {
+  arrows: number;
+  /** Arrows when cast with a full fury bar. */
+  bigArrows: number;
+  radius: number;
+  bigRadius: number;
+  damage: number;
+  knock: number;
+  /** Each arrow hurts mobs within this many px of where it lands. */
+  hitRadius: number;
+  /** How far ahead of the archer the centre lands. */
+  reach: number;
 }
 
 export interface ClassDef {
@@ -62,10 +79,6 @@ export interface ClassDef {
   furyPerHit: number;
   furyPerSwingCap: number;
   furyPerKill: number;
-  healPerKill: number;
-  /** Kill-heal is rate limited so that bigger hordes cannot out-heal the damage: HP per second the budget refills, and its cap. */
-  healPerSecond: number;
-  healBudgetMax: number;
   // ability 1: radial nova, powered by fury
   novaCost: number;
   novaRadius: number;
@@ -79,6 +92,10 @@ export interface ClassDef {
   shot?: ArrowDef;
   /** Ranged classes: the special is a fan of projectiles instead of a big sweep (`special` is then unused). */
   specialShot?: ArrowDef & { count: number; spread: number };
+  /** Replaces the radial nova with a rain of arrows (the archer). */
+  rain?: RainDef;
+  /** Replaces the radial nova with a ground-splitting shockwave straight down the field (the warrior): px long and px to either side. */
+  quake?: { length: number; width: number; bigLength: number; bigWidth: number };
   /** Healing the nova gives every player inside it (the cleric); 0 or absent = none. */
   novaHeal?: number;
   /** Same, for the full-fury nova. */
@@ -123,9 +140,6 @@ export const CLASSES: ClassDef[] = [
     furyPerHit: 1.2,
     furyPerSwingCap: 6,
     furyPerKill: 0.8,
-    healPerKill: 0.5,
-    healPerSecond: 4.5,
-    healBudgetMax: 10,
     novaCost: 50,
     novaRadius: 70,
     novaDamage: 9,
@@ -157,8 +171,9 @@ CLASSES.push(
     // No swing: the basic attack is a fireball that explodes on impact. (`combo` and `special` are required by the type but unused.)
     combo: [swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 24 })],
     special: swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 24 }),
-    shot: { damage: 6, knock: 3, speed: 2.8, ttl: 90, cooldown: 22, splash: 22 },
-    specialShot: { count: 3, spread: 0.07, damage: 8, knock: 4, speed: 3, ttl: 90, cooldown: 22, splash: 26 },
+    shot: { damage: 6, knock: 3, speed: 2.8, ttl: 60, cooldown: 22, splash: 22 },
+    // ability 2: one huge, slow fireball that bursts on the first enemy it meets or at the end of its range
+    specialShot: { count: 1, spread: 0, damage: 14, knock: 6, speed: 1.3, ttl: 130, cooldown: 30, splash: 52, splashDamage: 0.7, radius: 10 },
     attackCost: 2,
     specialCost: 40, specialCooldown: 170,
     novaCost: 40, novaRadius: 85, novaDamage: 11, novaBigRadius: 125, novaBigDamage: 16,
@@ -171,7 +186,6 @@ CLASSES.push(
     special: swing({ range: 62, dot: -1, damage: 7, knock: 9, cooldown: 28, hitStop: 2, pierce: true, aoe: true }),
     specialCost: 30, specialCooldown: 140,
     novaCost: 45, novaRadius: 58, novaDamage: 6, novaBigRadius: 85, novaBigDamage: 10, novaHeal: 25, novaBigHeal: 45,
-    healPerKill: 0.8,
     dashKind: 'heal', dashPower: 14, dashRadius: 70, dashSpeed: 3, dashTicks: 8, dashCost: 24, dashCooldown: 70, dashDamage: 0,
   },
   {
@@ -192,8 +206,14 @@ CLASSES.push(
     attackCost: 1,
     specialCost: 35, specialCooldown: 150,
     novaRadius: 60, novaDamage: 7, novaBigRadius: 95, novaBigDamage: 12,
+    // Ability 1: a rain of arrows that lands about halfway out along his arrows' range (4.2 px/tick x 70 ticks / 2).
+    rain: { arrows: 24, bigArrows: 38, radius: 36, bigRadius: 50, damage: 4, knock: 1.5, hitRadius: 9, reach: 147 },
   },
 );
+
+// The warrior's ability 1 drives his sword into the ground and sends a shockwave straight down the field (set here, after the
+// others spread the warrior's fields, so only he has it).
+WARRIOR.quake = { length: 190, width: 24, bigLength: 270, bigWidth: 36 };
 
 /**
  * Which class a bot-controlled player slot takes, so a bot party always covers different classes. Slot 0 stays the warrior; the

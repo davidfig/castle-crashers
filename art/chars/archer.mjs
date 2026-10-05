@@ -49,14 +49,15 @@ parts.quiver0 = quiver;
 // bow + string + arrow drawn straight into the frame; pull = how far the string is drawn back (0 = relaxed)
 function bow({ gx, gy, pull = 0, arrow = false, glow = false, R = 6, aim = false }) {
   if (!aim) {
-    // carried horizontally across the front of the body, centred on the sprite (idle / walk / hurt): belly up, string below
+    // carried slanted across the front of the body (low at the left, high at the right), belly up, string straight below it
     return (put) => {
       for (let dx = -R; dx <= R; dx++) {
         const t = dx / R;
+        const slope = -Math.round(dx / 2);
         const bulge = Math.round(2.4 * (1 - t * t));
-        put(gx + dx, gy - bulge, Math.abs(t) > 0.7 ? 'G' : 'g');
+        put(gx + dx, gy + slope - bulge, Math.abs(t) > 0.7 ? 'G' : 'g');
+        put(gx + dx, gy + slope, 'w');
       }
-      for (let x = gx - R; x <= gx + R; x++) put(x, gy, 'w');
     };
   }
   return (put) => {
@@ -89,7 +90,7 @@ const rig = robedRig({
   },
 });
 const { frames, T } = rig;
-// when the bow is carried (not aimed) it is held at the centre of the body, so the grip sits on the sprite's centre line, low at the waist so it reads as a bow in hand rather than a chest bar
+// when the bow is carried (not aimed) it is held at the side of the body, so the grip sits on the sprite's centre line, low at the waist
 const pose = (name, o = {}) => rig.pose(name, o.aim ? o : { ...o, hand: [10, (o.hand ? o.hand[1] : 9) + 2] });
 const Q = { back: 'quiver0' };
 

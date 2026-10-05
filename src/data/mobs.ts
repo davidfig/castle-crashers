@@ -74,12 +74,12 @@ export interface BlinkSpecial extends SpecialBase { kind: 'blink'; minRange: num
 export interface NovaSpecial extends SpecialBase { kind: 'nova'; radius: number; damage: number; slow: number; style: number }
 /** A locked straight ray: after the windup everything within `width` of the line, out to `range`, is hit. */
 export interface BeamSpecial extends SpecialBase { kind: 'beam'; range: number; width: number; damage: number }
-/** Set a snare at the hero's feet (a little ahead of them): it arms after `arm` ticks, then roots whoever steps on it (a dodge breaks the hold). */
+/** Set a snare near the hero (aimed a little ahead of them, then thrown off by `spread`): it arms after `arm` ticks, then roots whoever steps on it (a dodge breaks the hold). */
 export interface TrapSpecial extends SpecialBase {
   kind: 'trap'; minRange: number; maxRange: number; radius: number; damage: number;
   /** Ticks to arm, ticks of root, ticks before it rusts away, and how many snares one mob may keep out (scaled by party size). */
   arm: number; root: number; linger: number; cap: number;
-  /** A field of snares: `count` in all, the first at the aim point and the rest scattered within `spread` px of it (default one). */
+  /** `spread`: px a snare may land from the aim point, at random (none = dead on it). A field of snares (`count` > 1) keeps its first at the aim point and scatters the rest. */
   count?: number; spread?: number;
 }
 /** Leap onto a hero and cling: it chews at them (`damage` every `pulse` ticks, slowing) until it is killed or they dodge-roll it off. */
@@ -283,7 +283,7 @@ export const MOBS: MobDef[] = [
   { name: 'dreadknight', behavior: Behavior.Melee, hp: 58, speed: 0.36, radius: 6, damage: 14, atkCooldown: 85, reach: 14, windup: 22, knockResist: 0.3, shield: false, coinChance: 1, coinMin: 6, coinMax: 10, revive: 0.4 },
   // ---- Frozen Pass
   { name: 'trapper', behavior: Behavior.Melee, hp: 7, speed: 0.5, radius: 3.5, damage: 5, atkCooldown: 52, reach: 9, windup: 12, knockResist: 0.9, shield: false, coinChance: 0.5, coinMin: 1, coinMax: 1,
-    special: { kind: 'trap', windup: 26, cooldown: 280, minRange: 30, maxRange: 170, radius: 9, damage: 4, arm: 50, root: 60, linger: 900, cap: 2 } },
+    special: { kind: 'trap', windup: 26, cooldown: 280, minRange: 30, maxRange: 170, radius: 9, damage: 4, arm: 50, root: 60, linger: 900, cap: 2, spread: 22 } },
   { name: 'snowsprite', behavior: Behavior.Melee, hp: 3, speed: 0.85, radius: 3, damage: 3, atkCooldown: 40, reach: 7, windup: 8, knockResist: 1, shield: false, coinChance: 0.2, coinMin: 1, coinMax: 1,
     special: { kind: 'cling', windup: 10, cooldown: 200, range: 26, damage: 1, pulse: 30, slow: 40, cap: 3 } },
   { name: 'harpooner', behavior: Behavior.Ranged, hp: 6, speed: 0.42, radius: 3.5, damage: 8, atkCooldown: 140, reach: 120, windup: 34, knockResist: 1, shield: false, coinChance: 0.7, coinMin: 1, coinMax: 3,

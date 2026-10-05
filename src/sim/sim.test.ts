@@ -70,6 +70,54 @@ test('nova kills nearby goblins', () => {
   assert.ok(s.kills - before > 10, `nova should kill many goblins, killed ${s.kills - before}`);
 });
 
+test("archer's rain of arrows lands ahead of him, hurting mobs there and not those beside him", () => {
+  const s = createSim(9);
+  spawnAllClumps(s, 1);
+  const e = s.ents, pl = s.players[0];
+  pl.classId = 4;
+  pl.fury = 100;
+  pl.faceX = 1; pl.faceY = 0;
+  const px = e.x[pl.ent], py = e.y[pl.ent];
+  for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Mob) { e.x[i] = px - 400; e.y[i] = py; e.flags[i] = 0; }
+  const near: number[] = [], far: number[] = [];
+  for (let i = 0; i < e.highWater && (near.length < 30 || far.length < 5); i++) {
+    if (e.kind[i] !== Kind.Mob) continue;
+    const isNear = near.length < 30;
+    const arr = isNear ? near : far;
+    if (isNear) { e.x[i] = px + 147 + ((near.length % 10) - 5) * 5; e.y[i] = py + (Math.floor(near.length / 10) - 1) * 6; } else { e.x[i] = px + 10; e.y[i] = py; }
+    e.sub[i] = 0; e.hp[i] = 50; e.maxhp[i] = 50; e.stun[i] = 255; arr.push(i);
+  }
+  const f = [0, 1, 2, 3].map(createInputFrame);
+  f[0].buttons = Btn.Ability1;
+  step(s, f);
+  f[0].buttons = 0;
+  for (let t = 0; t < 90; t++) step(s, f);
+  const hurt = near.filter((i) => e.hp[i] < 50).length;
+  assert.ok(hurt >= 10, `the rain should hurt the mobs under it, hurt ${hurt}`);
+  assert.ok(far.every((i) => e.hp[i] === 50), 'mobs next to the archer are not under the rain');
+});
+
+test("warrior's shockwave hurts a lane in front of him, not what is behind or beside it", () => {
+  const s = createSim(9);
+  spawnAllClumps(s, 1);
+  const e = s.ents, pl = s.players[0];
+  pl.fury = 100; pl.faceX = 1; pl.faceY = 0;
+  const px = e.x[pl.ent], py = e.y[pl.ent];
+  const spots: [number, number, boolean][] = [[100, 0, true], [160, 8, true], [-60, 0, false], [60, 70, false], [300, 0, false]];
+  const ids: number[] = [];
+  for (let i = 0; i < e.highWater && ids.length < spots.length; i++) {
+    if (e.kind[i] !== Kind.Mob) continue;
+    const [dx, dy] = spots[ids.length];
+    e.x[i] = px + dx; e.y[i] = py + dy; e.flags[i] = 0; e.sub[i] = 0; e.hp[i] = 500; e.maxhp[i] = 500; e.stun[i] = 255;
+    ids.push(i);
+  }
+  for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Mob && !ids.includes(i)) e.x[i] = px - 900;
+  const f = [0, 1, 2, 3].map(createInputFrame);
+  f[0].buttons = Btn.Ability1;
+  step(s, f);
+  ids.forEach((id, k) => assert.equal(e.hp[id] < 500, spots[k][2], `mob ${k} at ${spots[k]}`));
+});
+
 test('unattended player eventually loses', () => {
   const s = createSim(3);
   spawnAllClumps(s, 1);

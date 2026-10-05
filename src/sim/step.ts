@@ -1,16 +1,17 @@
 // One fixed simulation tick. Pure function of (state, inputs); no platform access.
-import { CLASSES, type ArrowDef, type ClassDef, type Swing } from '../data/classes';
+import { CLASSES, type ArrowDef, type ClassDef, type RainDef, type Swing } from '../data/classes';
 import { ARROW_DAMAGE, ARROW_SPEED, ARROW_TTL, BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, ProjStyle, MOBS, MobType, isBossType, type BossDef, type ChargeDef, type MobDef } from '../data/mobs';
 import { clamp, cosTurns, sinTurns } from '../engine/math';
 import { rngFloat, rngInt, rngRange } from '../engine/rng';
 import { Btn, type InputFrame } from './input';
 import { TOP_ENTRY_DEPTH, VIEW_W, WORLD_H, WORLD_W } from './constants';
-import { allocEntity, BERSERK, BYSTANDER, freeEntity, Kind, SURRENDERED } from './entities';
+import { allocEntity, BERSERK, BYSTANDER, freeEntity, Kind, SURRENDERED, ZoneKind } from './entities';
+import { rainLandTick, rainOffset } from './rain';
 import { damageMul, goldMul, MAX_LEVEL, offerFor, speedMul, takenMul, UPGRADE_INDEX, UPGRADES, xpToNext } from '../data/upgrades';
 import { STAND_RADIUS, STAND_SLOW, STAND_TICKS, SURRENDER_FLEE, SURRENDER_HOLD, surrenderChance } from '../data/surrender';
 import { Ev, emit } from './events';
 import { pickMobType, pickSupport } from './gen/mix';
-import { BOSS_SPECIAL, BurstStyle, clingStep, fireSpecial, fireSpecialOf, hasSpecial, isWarded, onMobDeath, RALLY_SPEED, shovePlayer, SP_CLING, SP_INIT, SP_WIND, startSpecial, startSpecialOf, updateZones } from './abilities';
+import { BOSS_SPECIAL, BurstStyle, clingStep, fireSpecial, fireSpecialOf, hasSpecial, isWarded, onMobDeath, RALLY_SPEED, shovePlayer, SP_CLING, SP_INIT, SP_WIND, onScreen, startSpecial, startSpecialOf, updateZones } from './abilities';
 import { cellX, cellY, gatherCircle, rebuildGrid } from './grid';
 import { activatePlayer, BLAST_CAP, Phase, type GameState, type PlayerState } from './state';
 import { activePlayers, hasBoss, partyScale, streamLevel } from './gen/level';
@@ -35,6 +36,14 @@ const LEFT_BEHIND = 360;
 const COIN_CAP = 500;
 const COIN_MAGNET = 80;
 const COIN_PICKUP = 12;
+/** Potions: dropped by kills, walked over to drink (no magnet, and only a hurt hero can drink one). */
+const POTION_CAP = 12;
+const POTION_PICKUP = 12;
+/** A potion heals this fraction of the drinker's full health. */
+const POTION_HEAL = 0.3;
+/** Drops are rate limited: a bigger horde must not mean more healing. Budget per second per hero, and its cap. */
+const POTION_PER_SECOND = 0.1;
+const POTION_BUDGET_MAX = 2;
 /** A mob sliding faster than this (px/tick) bowls into whatever it touches. */
 const BOWL_SPEED2 = 2.6;
 const BOWL_DAMAGE = 3;
@@ -69,8 +78,10 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   flushBlasts(s);
   updateProjectiles(s);
   updateZones(s);
+  updateRain(s);
   updateMobs(s);
   updateCoins(s);
+  updatePotions(s);
   flushBlasts(s);
   const advance = Math.max(0, s.camX - s.trigCamX);
   s.trigCamX = Math.max(s.trigCamX, s.camX);
@@ -208,7 +219,6 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   if (p.bufAbility2 > 0) p.bufAbility2--;
   if (p.bufDodge > 0) p.bufDodge--;
   if (p.comboTimer > 0) p.comboTimer--;
-  p.healBudget = Math.min(cls.healBudgetMax, p.healBudget + cls.healPerSecond / 60);
   // Stamina comes back once the regen delay (since the last spend) has passed; a winded hero is back on their
   // feet once enough has recovered.
   if (p.staminaDelay > 0) p.staminaDelay--;
@@ -320,7 +330,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
       p.cdSpecial = cls.specialCooldown;
       p.bufAbility2 = 0;
       if (cls.specialShot) {
-        fireArrows(s, slot, cls.specialShot, cls.specialShot.count, cls.specialShot.spread, !!cls.specialShot.pierce);
+        fireArrows(s, slot, cls.specialShot, cls.specialShot.count, cls.specialShot.spread, !!cls.specialShot.pierce, true);
         p.cdAttack = cls.specialShot.cooldown;
       } else swing(s, slot, cls, cls.special, true);
     } else if (inp.buttons & Btn.Attack && !cls.auraDrain && p.cdAttack === 0 && !p.winded && p.stamina >= cls.attackCost) {
@@ -380,7 +390,7 @@ function spendStamina(s: GameState, slot: number, cost: number): void {
  * Ranged classes: fire `count` arrows from the player along the facing, fanned over `spread` turns. A player's arrow is a Proj
  * with sub = 1 + slot (enemy arrows are sub 0); flag bit 1 marks one that pierces.
  */
-function fireArrows(s: GameState, slot: number, a: ArrowDef, count: number, spread: number, pierce: boolean): void {
+function fireArrows(s: GameState, slot: number, a: ArrowDef, count: number, spread: number, pierce: boolean, special = false): void {
   const p = s.players[slot];
   const e = s.ents;
   for (let k = 0; k < count; k++) {
@@ -391,17 +401,17 @@ function fireArrows(s: GameState, slot: number, a: ArrowDef, count: number, spre
     if (q < 0) break;
     e.vx[q] = dx * a.speed;
     e.vy[q] = dy * a.speed;
-    e.flags[q] = pierce ? 2 : 0;
+    e.flags[q] = (pierce ? 2 : 0) | (special ? 4 : 0);
   }
   emit(s.events, Ev.Fire, e.x[p.ent], e.y[p.ent], p.faceX, p.faceY);
 }
 
 /** A fireball landing: everything within `a.splash` px (except the mob it struck, already hurt) takes damage and is shoved outward. */
-function explodeShot(s: GameState, owner: number, a: ArrowDef, x: number, y: number, struck: number): void {
+function explodeShot(s: GameState, owner: number, a: ArrowDef, x: number, y: number, struck: number, scale = 1): void {
   const e = s.ents;
   const pl = s.players[owner];
   const cls = CLASSES[pl.classId];
-  const radius = a.splash ?? 0;
+  const radius = (a.splash ?? 0) * scale;
   emit(s.events, Ev.Blast, x, y, radius);
   const n = gatherCircle(s.grid, e, x, y, radius, s.scratch);
   for (let k = 0; k < n; k++) {
@@ -410,7 +420,7 @@ function explodeShot(s: GameState, owner: number, a: ArrowDef, x: number, y: num
     const dx = e.x[m] - x, dy = e.y[m] - y;
     const d = Math.sqrt(dx * dx + dy * dy);
     // the blast's edge is weaker than a direct hit
-    const r = damageMob(s, m, a.damage * (a.splashDamage ?? 0.55), d > 0.001 ? dx / d : 1, d > 0.001 ? dy / d : 0, a.knock * 0.7, owner, 0);
+    const r = damageMob(s, m, a.damage * (a.splashDamage ?? 0.55) * scale, d > 0.001 ? dx / d : 1, d > 0.001 ? dy / d : 0, a.knock * 0.7, owner, 0);
     if (r === 1) pl.fury = Math.min(cls.furyMax, pl.fury + cls.furyPerHit);
   }
 }
@@ -476,6 +486,8 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
 function nova(s: GameState, slot: number, cls: ClassDef): void {
   const p = s.players[slot];
   const e = s.ents;
+  if (cls.rain) { castRain(s, slot, cls, cls.rain); return; }
+  if (cls.quake) { castQuake(s, slot, cls, cls.quake); return; }
   const cx = e.x[p.ent], cy = e.y[p.ent];
   const big = p.fury >= cls.furyMax;
   const radius = big ? cls.novaBigRadius : cls.novaRadius;
@@ -505,6 +517,91 @@ function nova(s: GameState, slot: number, cls: ClassDef): void {
     }
   }
   stop(s, 4 + Math.min(4, Math.floor((s.kills - killsBefore) / 6)));
+}
+
+/** The warrior's shockwave: everything in a long, narrow lane in front of him is hurt and thrown down the lane. */
+function castQuake(s: GameState, slot: number, cls: ClassDef, q: NonNullable<ClassDef['quake']>): void {
+  const p = s.players[slot];
+  const e = s.ents;
+  const cx = e.x[p.ent], cy = e.y[p.ent];
+  const big = p.fury >= cls.furyMax;
+  const length = big ? q.bigLength : q.length, width = big ? q.bigWidth : q.width;
+  const damage = big ? cls.novaBigDamage : cls.novaDamage;
+  p.fury = big ? 0 : p.fury - cls.novaCost;
+  p.cdAbility1 = cls.novaCooldown;
+  emit(s.events, Ev.Quake, cx, cy, p.faceX * length, p.faceY * length, width, big ? 1 : 0);
+  const killsBefore = s.kills;
+  const n = gatherCircle(s.grid, e, cx, cy, length + width, s.scratch);
+  for (let k = 0; k < n; k++) {
+    const m = s.scratch[k];
+    if (!isLiveMob(e, m)) continue;
+    const dx = e.x[m] - cx, dy = e.y[m] - cy;
+    const along = dx * p.faceX + dy * p.faceY;
+    const lateral = dx * -p.faceY + dy * p.faceX;
+    if (along < -6 || along > length || Math.abs(lateral) > width) continue;
+    // shoved down the lane (and a little to the side it is already on), harder the nearer it is
+    const push = 1 - 0.4 * (along / length);
+    damageMob(s, m, damage, p.faceX + (lateral / width) * 0.25 * -p.faceY, p.faceY + (lateral / width) * 0.25 * p.faceX, cls.novaKnock * (big ? 1.4 : 1) * push, slot, PIERCE);
+  }
+  for (let t = 0; t <= 4; t++) destroyArrows(s, cx + p.faceX * length * t / 4, cy + p.faceY * length * t / 4, width + 8, 0, 0, -2);
+  stop(s, 4 + Math.min(4, Math.floor((s.kills - killsBefore) / 6)));
+}
+
+/**
+ * The archer's rain: a zone (ZoneKind.Rain) centred `reach` px ahead of him. `ax,ay` remember where he stood (the arrows rise from
+ * there), `rem` is the radius, `mode` the arrow count, `vx` the landing seed, `hp` the damage, `buff` 1 + the owner's slot and
+ * `atk` the ticks since the cast.
+ */
+function castRain(s: GameState, slot: number, cls: ClassDef, r: RainDef): void {
+  const p = s.players[slot];
+  const e = s.ents;
+  const big = p.fury >= cls.furyMax;
+  p.fury = big ? 0 : p.fury - cls.novaCost;
+  p.cdAbility1 = cls.novaCooldown;
+  const x = e.x[p.ent], y = e.y[p.ent];
+  const tx = clamp(x + p.faceX * r.reach, s.camX + 10, s.camX + VIEW_W - 10);
+  const ty = clamp(y + p.faceY * r.reach, 6, WORLD_H - 6);
+  const z = allocEntity(e, Kind.Zone, ZoneKind.Rain, tx, ty, 1);
+  if (z < 0) return;
+  e.ax[z] = x; e.ay[z] = y;
+  e.rem[z] = big ? r.bigRadius : r.radius;
+  e.mode[z] = big ? r.bigArrows : r.arrows;
+  e.vx[z] = (s.tick * 2654435761 + slot * 40503) >>> 0;
+  e.hp[z] = r.damage;
+  e.buff[z] = 1 + slot;
+  e.atk[z] = 0;
+  emit(s.events, Ev.Fire, x, y, p.faceX, p.faceY);
+}
+
+/** Each arrow of a rain lands on its tick: it hurts the mobs around the spot, then lies in the ground. */
+function updateRain(s: GameState): void {
+  const e = s.ents;
+  const off: [number, number] = [0, 0];
+  for (let i = 0; i < e.highWater; i++) {
+    if (e.kind[i] !== Kind.Zone || e.sub[i] !== ZoneKind.Rain) continue;
+    const owner = e.buff[i] - 1, count = e.mode[i], t = e.atk[i]++;
+    const r = CLASSES[s.players[owner].classId].rain;
+    if (!r) { freeEntity(e, i); continue; }
+    for (let n = 0; n < count; n++) {
+      if (rainLandTick(n, count) !== t) continue;
+      rainOffset(e.vx[i], n, e.rem[i], off);
+      const ax = e.x[i] + off[0], ay = clamp(e.y[i] + off[1], 2, WORLD_H - 2);
+      emit(s.events, Ev.ArrowSpent, ax, ay, 0, 1);
+      const m = gatherCircle(s.grid, e, ax, ay, r.hitRadius, s.scratch);
+      for (let k = 0; k < m; k++) {
+        const q = s.scratch[k];
+        if (!isLiveMob(e, q)) continue;
+        const dx = e.x[q] - ax, dy = e.y[q] - ay;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        const res = damageMob(s, q, e.hp[i], d > 0.001 ? dx / d : 0, d > 0.001 ? dy / d : 1, r.knock, owner, 0);
+        if (res === 1) {
+          const pl = s.players[owner], cl = CLASSES[pl.classId];
+          pl.fury = Math.min(cl.furyMax, pl.fury + cl.furyPerHit);
+        }
+      }
+    }
+    if (t > rainLandTick(count - 1, count)) freeEntity(e, i);
+  }
 }
 
 /** Restores `amount` hp to every standing player within `radius`. */
@@ -615,14 +712,10 @@ function damageMob(s: GameState, m: number, dmg: number, dirX: number, dirY: num
       grantXp(s, def.behavior === Behavior.Boss ? XP_BOSS : 1, e.x[m], e.y[m]);
       p.kills++;
       p.fury = Math.min(cls.furyMax, p.fury + cls.furyPerKill);
-      if (!p.downed) {
-        const heal = Math.min(cls.healPerKill, p.healBudget, cls.hp - e.hp[p.ent]);
-        if (heal > 0) { e.hp[p.ent] += heal; p.healBudget -= heal; }
-      }
     }
     if (def.onDeath) onMobDeath(s, m, def.onDeath, dirX, dirY);
     if (def.behavior === Behavior.Boss) bossDeath(s, m);
-    else dropLoot(s, m, dirX, dirY);
+    else { dropLoot(s, m, dirX, dirY); dropPotion(s, m, dirX, dirY); }
     freeEntity(e, m);
   } else {
     emit(s.events, Ev.Hit, e.x[m], e.y[m], dmg);
@@ -696,6 +789,9 @@ function flushBlasts(s: GameState): void {
 // ---------------------------------------------------------------------------------------------
 // Projectiles
 
+/** A fireball that runs out of range splashes at this fraction of its normal blast radius and damage. */
+const SPLASH_FIZZLE = 0.6;
+
 function updateProjectiles(s: GameState): void {
   const e = s.ents;
   for (let i = 0; i < e.highWater; i++) {
@@ -703,6 +799,20 @@ function updateProjectiles(s: GameState): void {
     e.x[i] += e.vx[i];
     e.y[i] += e.vy[i];
     e.hp[i] -= 1;
+    if (e.hp[i] <= 0 && e.sub[i] > 0) {
+      // A player's fireball reaching the end of its range fizzles into a small splash.
+      const owner = e.sub[i] - 1;
+      const pl = s.players[owner];
+      const a = (e.flags[i] & 4) ? CLASSES[pl.classId].specialShot : CLASSES[pl.classId].shot;
+      const x = e.x[i], y = e.y[i], special = (e.flags[i] & 4) !== 0;
+      freeEntity(e, i);
+      if (a && a.splash) explodeShot(s, owner, a, x, y, -1, special ? 1 : SPLASH_FIZZLE); // a special runs out of range with its full blast
+      else if (a) {
+        const vl = Math.sqrt(e.vx[i] * e.vx[i] + e.vy[i] * e.vy[i]) || 1;
+        emit(s.events, Ev.ArrowSpent, x, y, e.vx[i] / vl, e.vy[i] / vl);
+      }
+      continue;
+    }
     if (e.hp[i] <= 0 || e.x[i] < 0 || e.x[i] > WORLD_W || e.y[i] < -4 || e.y[i] > WORLD_H + 4) {
       freeEntity(e, i);
       continue;
@@ -712,10 +822,10 @@ function updateProjectiles(s: GameState): void {
       const owner = e.sub[i] - 1;
       const pl = s.players[owner];
       const ocls = CLASSES[pl.classId];
-      const a = (e.flags[i] & 2) ? ocls.specialShot : ocls.shot;
+      const a = (e.flags[i] & 4) ? ocls.specialShot : ocls.shot;
       if (!a) { freeEntity(e, i); continue; }
       const pierce = (e.flags[i] & 2) !== 0;
-      const n = gatherCircle(s.grid, e, e.x[i], e.y[i], 5, s.scratch);
+      const n = gatherCircle(s.grid, e, e.x[i], e.y[i], a.radius ?? 5, s.scratch);
       let primary = -1;
       let spent = false;
       for (let k = 0; k < n && !spent; k++) {
@@ -789,6 +899,8 @@ function bossDeath(s: GameState, m: number): void {
   s.bossDeadTick = s.tick;
   emit(s.events, Ev.BossDown, x, y);
   stop(s, 12);
+  // Two potions, flung out with the coins: the boss fight is where you earn the way into the next stretch.
+  for (let k = 0; k < 2; k++) spawnPotion(s, x, y, (k ? 1 : -1) * rngRange(s.rngLoot, 0.8, 1.6), rngRange(s.rngLoot, -0.5, 0.5));
   // A burst of coins, flung out in every direction.
   for (let k = 0; k < b.lootCoins; k++) {
     const i = s.coinCount >= COIN_CAP ? -1 : allocEntity(e, Kind.Coin, b.lootValue, x, y, 1);
@@ -1189,9 +1301,12 @@ function updateMobs(s: GameState): void {
       if (!(e.flags[i] & SP_INIT)) {
         // first tick alive: stagger the first use so a crowd of casters does not all act at once
         e.flags[i] |= SP_INIT;
-        e.cool2[i] = 30 + ((Math.imul(i, 2654435761) >>> 20) % Math.max(1, def.special!.cooldown >> 1));
+        // (a trapper's is spread over one and a half cooldowns and only runs down once a hero is in its range, see below)
+        const span = def.special!.kind === 'trap' ? def.special!.cooldown * 1.5 : def.special!.cooldown >> 1;
+        e.cool2[i] = 30 + ((Math.imul(i, 2654435761) >>> 20) % Math.max(1, span));
       }
-      if (e.cool2[i] > 0) e.cool2[i]--;
+      // (a trapper's waits for a hero in range: otherwise a group arrives with its cooldowns long spent and sets every trap in one volley)
+      if (e.cool2[i] > 0 && def.special!.kind !== 'trap') e.cool2[i]--;
     }
 
     if (e.flags[i] & BYSTANDER) {
@@ -1326,6 +1441,8 @@ function updateMobs(s: GameState): void {
     let mvX = 0, mvY = 0;
     let detonated = false;
 
+    if (def.special && def.special.kind === 'trap' && e.cool2[i] > 0 && target >= 0 && dist <= def.special.maxRange && onScreen(s, e.x[i])) e.cool2[i]--;
+
     if (e.stun[i] > 0) {
       e.stun[i]--;
     } else if (e.mode[i] === SP_WIND) {
@@ -1457,6 +1574,67 @@ function dropLoot(s: GameState, m: number, dirX: number, dirY: number): void {
   e.z[i] = 3;
   e.vz[i] = rngRange(s.rngLoot, 1.5, 2.9);
   s.coinCount++;
+}
+
+/** Tougher mobs are likelier to carry a potion; the budget then decides whether the drop actually happens. */
+function dropPotion(s: GameState, m: number, dirX: number, dirY: number): void {
+  const e = s.ents;
+  if (s.potionBudget < 1 || s.potionCount >= POTION_CAP) return;
+  if (rngFloat(s.rngLoot) >= Math.min(0.35, 0.03 + 0.012 * MOBS[e.sub[m]].hp)) return;
+  s.potionBudget--;
+  spawnPotion(s, e.x[m], e.y[m], dirX * 0.6 + rngRange(s.rngLoot, -1.1, 1.1), dirY * 0.4 + rngRange(s.rngLoot, -0.8, 0.8));
+}
+
+function spawnPotion(s: GameState, x: number, y: number, vx: number, vy: number): void {
+  const e = s.ents;
+  const i = allocEntity(e, Kind.Potion, 0, x, y, 1);
+  if (i < 0) return;
+  e.vx[i] = vx;
+  e.vy[i] = vy;
+  e.z[i] = 3;
+  e.vz[i] = rngRange(s.rngLoot, 1.5, 2.9);
+  s.potionCount++;
+}
+
+function freePotion(s: GameState, i: number): void {
+  freeEntity(s.ents, i);
+  s.potionCount--;
+}
+
+function updatePotions(s: GameState): void {
+  const e = s.ents;
+  let heroes = 0;
+  for (const p of s.players) if (p.active) heroes++;
+  s.potionBudget = Math.min(POTION_BUDGET_MAX, s.potionBudget + (POTION_PER_SECOND * heroes) / 60);
+  if (s.potionCount === 0) return;
+  for (let i = 0; i < e.highWater; i++) {
+    if (e.kind[i] !== Kind.Potion) continue;
+    if (e.x[i] < s.camX - 40) { freePotion(s, i); continue; } // lost once it falls behind the screen, like coins
+    if (e.atk[i] < 255) e.atk[i]++; // age
+    e.x[i] = clamp(e.x[i] + e.vx[i], 0, WORLD_W);
+    e.y[i] = clamp(e.y[i] + e.vy[i], 0, WORLD_H);
+    e.z[i] += e.vz[i];
+    e.vz[i] -= 0.14;
+    if (e.z[i] <= 0) {
+      e.z[i] = 0;
+      e.vz[i] = e.vz[i] < -0.9 ? -e.vz[i] * 0.45 : 0;
+      e.vx[i] *= 0.7;
+      e.vy[i] *= 0.7;
+    }
+    if (e.atk[i] < 10) continue;
+    for (let k = 0; k < s.players.length; k++) {
+      const p = s.players[k];
+      if (!p.active || p.downed) continue;
+      const hpMax = CLASSES[p.classId].hp;
+      if (e.hp[p.ent] >= hpMax) continue; // a hero at full health walks past it, saving it for later
+      const dx = e.x[p.ent] - e.x[i], dy = e.y[p.ent] - e.y[i];
+      if (dx * dx + dy * dy >= POTION_PICKUP * POTION_PICKUP) continue;
+      e.hp[p.ent] = Math.min(hpMax, e.hp[p.ent] + hpMax * POTION_HEAL);
+      emit(s.events, Ev.Potion, e.x[i], e.y[i], k);
+      freePotion(s, i);
+      break;
+    }
+  }
 }
 
 function freeCoin(s: GameState, i: number): void {

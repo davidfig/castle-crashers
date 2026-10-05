@@ -3,6 +3,7 @@ import { CLASSES } from '../data/classes';
 import { lerp } from '../engine/math';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
+import { RAIN_FLIGHT, RAIN_HEIGHT, RAIN_SPREAD, rainLaunchTick, rainOffset } from '../sim/rain';
 import { TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
 import { Kind, ZoneKind } from '../sim/entities';
 import { BOSS_SPECIAL, isWarded, SP_CLING, SP_WIND } from '../sim/abilities';
@@ -88,13 +89,14 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   const camX = Math.floor(camXf) + shx;
   const oy = shy;
   const e = s.ents;
+  const ft = s.tick + alpha; // fractional tick: the drifting scenery moves every frame, not once per sim tick
 
   // --- sky + parallax layers (the light changes with how far the party has advanced)
   const biome = sceneryFor(s.biome);
   const progress = Math.min(1, Math.max(0, camXf / (WORLD_W - VIEW_W)));
   moodAt(biome, progress, mood);
-  drawSky(b, S, biome, mood, camXf, s.tick, -shx, oy);
-  drawParallax(b, S, biome, mood, camXf, progress, -shx, oy, s.tick);
+  drawSky(b, S, biome, mood, camXf, ft, -shx, oy);
+  drawParallax(b, S, biome, mood, camXf, progress, -shx, oy, ft);
   drawHaze(b, S, biome, mood, oy);
 
   // --- enemies coming over the top: they climb up from behind the hill (head first, the hill hiding their
@@ -113,9 +115,9 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   }
 
   // --- ground, then the hill's crest in front of the climbers
-  drawGround(b, S, biome, mood, camX, oy, s.tick);
+  drawGround(b, S, biome, mood, camX, oy, ft);
   drawCrest(b, S, biome, mood, camX, oy);
-  drawFog(b, S, biome, mood, camX, oy, s.tick, progress);
+  drawFog(b, S, biome, mood, camX, oy, ft, progress);
   // start / goal markers
   b.drawScaled(S.px, 40 - camX, FIELD_Y0 + oy - 6, 2, WORLD_H + 12, hex(0xf0e6b0, 0.35));
   b.drawScaled(S.px, WORLD_W - 70 - camX, FIELD_Y0 + oy - 6, 3, WORLD_H + 12, hex(0xffd35a, 0.7));
@@ -138,6 +140,16 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     b.draw(f, sx - f.w / 2, FIELD_Y0 + fx.cy[i] - f.h + oy, fx.cflip[i] === 1, cTint, 0, fx.crot[i]);
   }
 
+  // --- spent arrows lying where they fell
+  for (let k = 0; k < fx.aCount; k++) {
+    const i = (fx.aHead + k) % fx.ax.length;
+    const sx = fx.ax[i] - camX;
+    if (sx < -10 || sx > VIEW_W + 10) continue;
+    const sy = FIELD_Y0 + fx.ay[i] + oy;
+    const dx = fx.adx[i], dy = fx.ady[i] * 0.5; // the ground is foreshortened
+    for (let t = -3; t <= 3; t++) b.drawScaled(S.px, Math.round(sx + dx * t), Math.round(sy + dy * t), 1, 1, hex(t === 3 ? 0xd8d0b8 : t < -1 ? 0xe8e0c8 : 0x9a7a40, 0.92));
+  }
+
   // --- ground zones: lobbed rocks about to land, poison pools
   for (let i = 0; i < e.highWater; i++) {
     if (!e.alive[i] || e.kind[i] !== Kind.Zone) continue;
@@ -154,7 +166,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const ix = lerp(e.px[i], e.x[i], alpha);
     const sx = ix - camX;
     if (sx < -20 || sx > VIEW_W + 20) continue;
-    if (e.kind[i] === Kind.Coin || e.kind[i] === Kind.Zone) continue; // coins and ground zones are drawn in their own passes
+    if (e.kind[i] === Kind.Coin || e.kind[i] === Kind.Potion || e.kind[i] === Kind.Zone) continue; // pickups and ground zones are drawn in their own passes
     if (e.kind[i] === Kind.Mob && (e.flags[i] & 2) && e.y[i] < 0) continue; // climbing the far side of the hill: drawn earlier
     const yb = Math.min(WORLD_H, Math.max(0, Math.floor(e.y[i]))) + 1;
     bucket[yb]++;
@@ -196,6 +208,20 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     }
   }
 
+  // --- potions: a flask that bobs where it landed, with a green glint so a heal stands out in the melee
+  for (let i = 0; i < e.highWater; i++) {
+    if (e.kind[i] !== Kind.Potion) continue;
+    const sx = lerp(e.px[i], e.x[i], alpha) - camX;
+    if (sx < -8 || sx > VIEW_W + 8) continue;
+    const f = S.potion;
+    const sy = FIELD_Y0 + lerp(e.py[i], e.y[i], alpha) + oy;
+    const bob = e.z[i] > 0 ? 0 : Math.round(Math.sin((s.tick + i * 7) * 0.12) + 1);
+    b.drawScaled(S.px, sx - 2, sy - 0.5, 5, 1, hex(0x000000, 0.3));
+    b.draw(f, sx - f.w / 2, sy - e.z[i] - f.h - bob, false);
+    const ph = (s.tick + i * 13) % 40;
+    if (ph < 6) b.drawScaled(S.px, sx + 2, sy - e.z[i] - f.h - bob - 1 - (ph >> 1), 1, 1, hex(0x7dffa0, 0.9));
+  }
+
   const shadowTint = hex(0x000000, 0.32);
   for (let k = 0; k < n; k++) {
     const i = sorted[k];
@@ -225,8 +251,21 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       const dx = e.vx[i] / vl, dy = e.vy[i] / vl;
       // A player's projectile (sub = 1 + slot) is drawn by its class's shot: a fireball for splash shots, a golden arrow otherwise.
       const owner = e.sub[i] > 0 ? s.players[e.sub[i] - 1] : null;
-      const shot = owner ? ((e.flags[i] & 2) ? CLASSES[owner.classId].specialShot : CLASSES[owner.classId].shot) : null;
-      if (shot && shot.splash) {
+      const shot = owner ? ((e.flags[i] & 4) ? CLASSES[owner.classId].specialShot : CLASSES[owner.classId].shot) : null;
+      if (shot && shot.splash && (e.flags[i] & 4)) {
+        // the mage's great fireball: a big, slow, flickering orb with a smoky ember trail
+        const flick = ((s.tick >> 1) + i) & 1;
+        const cy = sy - 12;
+        for (let t = 6; t >= 1; t--) {
+          const w = 12 - t;
+          b.drawScaled(S.px, Math.round(sx - dx * t * 5 - w / 2), Math.round(cy - dy * t * 5 - w / 2), w, w, hex(t > 3 ? 0xa02a1e : 0xd8402e, 0.5 - t * 0.06));
+        }
+        b.drawScaled(S.px, Math.round(sx - 9), Math.round(cy - 9), 18, 18, hex(0xd8402e, 0.4 + flick * 0.1));
+        b.drawScaled(S.px, Math.round(sx - 7), Math.round(cy - 7), 14, 14, hex(0xff8a30, 0.85));
+        b.drawScaled(S.px, Math.round(sx - 5), Math.round(cy - 5), 10, 10, hex(0xffb340));
+        b.drawScaled(S.px, Math.round(sx - 3), Math.round(cy - 3), 6, 6, hex(0xffe890));
+        b.drawScaled(S.px, Math.round(sx - 1 - flick), Math.round(cy - 1 - flick), 3, 3, hex(0xffffff));
+      } else if (shot && shot.splash) {
         const flick = (s.tick + i) & 2 ? 1 : 0;
         for (let t = 4; t >= 1; t--) b.drawScaled(S.px, sx - dx * t * 3 - 1, sy - 7 - dy * t * 3 - 1, 3 - (t >> 1), 3 - (t >> 1), hex(t > 2 ? 0xd8402e : 0xff8a30, 0.8 - t * 0.14));
         b.drawScaled(S.px, sx - 3, sy - 10, 6, 6, hex(0xff8a30, 0.45 + flick * 0.15));
@@ -405,8 +444,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   }
 
   // --- foreground ridge along the bottom of the field
-  drawRidge(b, S, biome, mood, camX, oy, s.tick);
-  drawAmbient(b, S, biome, mood, camX, oy, s.tick);
+  drawRidge(b, S, biome, mood, camX, oy, ft);
+  drawAmbient(b, S, biome, mood, camX, oy, ft);
 
   // --- launched bodies: tumbling mobs knocked out of the pack
   for (let i = 0; i < fx.nb; i++) {
@@ -715,9 +754,39 @@ export function drawSpecialTelegraph(b: Batcher, S: Sprites, e: GameState['ents'
   }
 }
 
+/** The archer's rain: arrows streak up from where he stood, then fall onto the target spot, each landing where the sim says it hits. */
+const rainOff: [number, number] = [0, 0];
+function drawRain(b: Batcher, S: Sprites, e: GameState['ents'], i: number, sx: number, sy: number): void {
+  const count = e.mode[i], t = e.atk[i], seed = e.vx[i];
+  const ox = Math.round(sx + (e.ax[i] - e.x[i])), oy = Math.round(sy + (e.ay[i] - e.y[i]));
+  // a faint ring on the ground shows where it will come down
+  if (t < RAIN_SPREAD + RAIN_FLIGHT) groundRing(b, S, sx, sy, e.rem[i], 22, hex(0xffd35a, 0.18 + 0.12 * ((t >> 2) & 1)));
+  for (let n = 0; n < count; n++) {
+    const age = t - rainLaunchTick(n, count);
+    if (age < 0 || age >= RAIN_FLIGHT) continue;
+    rainOffset(seed, n, e.rem[i], rainOff);
+    const lx = sx + rainOff[0], ly = sy + rainOff[1];
+    // the arrow's whole arc: forward from the bow to the landing spot, up and over (a parabola in height)
+    const at = (u: number, out: number[]): void => {
+      out[0] = ox + (lx - ox) * u;
+      out[1] = oy - 10 + (ly - (oy - 10)) * u - RAIN_HEIGHT * 4 * u * (1 - u);
+    };
+    const u = (age + 1) / RAIN_FLIGHT;
+    at(u, rainP);
+    at(Math.max(0, u - 0.05), rainQ);
+    const tx = rainP[0] - rainQ[0], ty = rainP[1] - rainQ[1], tl = Math.sqrt(tx * tx + ty * ty) || 1;
+    // a short shaft along the direction of flight, bright at the head
+    for (let k = 0; k < 5; k++) {
+      b.drawScaled(S.px, Math.round(rainP[0] - (tx / tl) * k), Math.round(rainP[1] - (ty / tl) * k), 1, 1, hex(k === 0 ? 0xffffff : k < 3 ? 0xe8e0c8 : 0xb8a070, 0.95 - k * 0.1));
+    }
+  }
+}
+const rainP = [0, 0], rainQ = [0, 0];
+
 /** A ground zone: a rock about to land (a red target ring and a falling stone) or a lingering poison pool. */
 export function drawZone(b: Batcher, S: Sprites, e: GameState['ents'], i: number, sx: number, sy: number, tick: number): void {
   const r = e.rem[i];
+  if (e.sub[i] === ZoneKind.Rain) { drawRain(b, S, e, i, sx, sy); return; }
   if (e.sub[i] === ZoneKind.Trap) {
     if (e.mode[i] !== 2) {
       // still being set: a faint ring that firms up as it arms

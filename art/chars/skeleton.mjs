@@ -1,4 +1,5 @@
 // SKELETON — Haunted Keep warrior. ~11px of bone: dark sockets, ribs, a rusty short sword, a scrap of rag at the hip.
+// While walking or idling the sword is carried nearly upright: a blade slanting out front mirrors across the body when he turns, and two skeletons turning toward the same hero looked like crossing swords.
 // windup = sword raised, strike = chop. Basic swarm unit.
 import { GLASS as G } from '../palette.mjs';
 import { rows, weapon, outline, line } from '../lib.mjs';
@@ -61,12 +62,12 @@ const rig = robedRig({
 });
 const { pose } = rig;
 pose('bare', { noweapon: true });
-pose('walk0', { bob: 1, lf: 2, lb: -2 });
-pose('walk1', { bob: 0 });
-pose('walk2', { bob: 1, lf: -2, lb: 2 });
-pose('walk3', { bob: 0, hy: 0, hx: 1 });
-pose('idle0', { bob: 0 });
-pose('idle1', { bob: 1, hy: 0 });
+pose('walk0', { ang: -82, bob: 1, lf: 2, lb: -2 });
+pose('walk1', { ang: -82, bob: 0 });
+pose('walk2', { ang: -82, bob: 1, lf: -2, lb: 2 });
+pose('walk3', { ang: -82, bob: 0, hy: 0, hx: 1 });
+pose('idle0', { ang: -82, bob: 0 });
+pose('idle1', { ang: -82, bob: 1, hy: 0 });
 pose('windup0', { ang: -60, lean: -1, bob: 0, hx: -1, lf: -1, lb: 1, headPart: 'headOpen' });
 pose('windup1', { ang: -125, lean: -1, bob: 0, hx: -1, hy: -1, lf: -1, lb: 1, headPart: 'headOpen' });
 pose('strike0', { ang: -5, lean: 2, hx: 1, lf: 2, lb: -2, headPart: 'headOpen' });

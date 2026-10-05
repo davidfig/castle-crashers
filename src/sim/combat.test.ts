@@ -342,6 +342,51 @@ test('kills drop coins that arc out and are vacuumed up into shared gold', () =>
   assert.equal(s.coinCount, 0);
 });
 
+test('kills no longer heal; a kill that drops a potion leaves one on the field', () => {
+  const s = arena();
+  const hp = CLASSES[s.players[0].classId].hp;
+  s.ents.hp[s.players[0].ent] = hp / 2;
+  s.potionBudget = 2;
+  let drops = 0;
+  for (let n = 0; n < 40; n++) {
+    const orc = mob(s, MobType.Orc, 118, 100, -1);
+    s.ents.hp[orc] = 1;
+    step(s, press(Btn.Attack));
+    s.ents.hp[s.players[0].ent] = hp / 2;
+    if (s.potionCount > drops) { drops = s.potionCount; s.potionBudget = 2; }
+    if (drops) break;
+  }
+  assert.ok(drops > 0, 'an orc eventually drops a potion');
+  assert.equal(s.ents.hp[s.players[0].ent], hp / 2, 'the kill itself healed nothing');
+});
+
+test('drops are rate limited by the potion budget', () => {
+  const s = arena();
+  s.potionBudget = 0;
+  for (let n = 0; n < 30; n++) {
+    const orc = mob(s, MobType.Orc, 118, 100, -1);
+    s.ents.hp[orc] = 1;
+    step(s, press(Btn.Attack));
+  }
+  assert.equal(s.potionCount, 0);
+});
+
+test('a hurt hero drinks a potion on touch; a full-health hero walks past it', () => {
+  const s = arena();
+  const p = s.players[0];
+  const hp = CLASSES[p.classId].hp;
+  s.ents.x[p.ent] = 100;
+  s.ents.y[p.ent] = 100;
+  const i = allocEntity(s.ents, Kind.Potion, 0, 102, 100, 1);
+  s.potionCount = 1;
+  for (let t = 0; t < 30; t++) { s.camX = 0; step(s, idle()); }
+  assert.ok(s.ents.alive[i] && s.potionCount === 1, 'left alone at full health');
+  s.ents.hp[p.ent] = 10;
+  step(s, idle());
+  assert.equal(s.potionCount, 0);
+  assert.ok(Math.abs(s.ents.hp[p.ent] - (10 + hp * 0.3)) < 1e-9, `healed 30%, hp ${s.ents.hp[p.ent]}`);
+});
+
 test('with too many coins on the field, further drops go straight into the purse', () => {
   const s = arena();
   s.coinCount = 500;

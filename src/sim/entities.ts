@@ -2,10 +2,10 @@
 import { MAX_ENTS } from './constants';
 
 /** A Zone is a patch of ground that something is about to happen to (a lobbed rock) or that stays dangerous (a poison pool). */
-export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5 } as const;
+export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5, Potion: 6 } as const;
 
 /** Zone looks (the `sub` of a Kind.Zone entity). */
-export const ZoneKind = { Rock: 0, Poison: 1, Frost: 2, Trap: 3, Storm: 4 } as const;
+export const ZoneKind = { Rock: 0, Poison: 1, Frost: 2, Trap: 3, Storm: 4, Rain: 5 } as const;
 
 /** Mob flag: a bystander stands by its fire and never attacks or chases (docs/12-story.md, R1). Other bits: 1 aggro, 2 entering, 4 enraged, 8 retreating, 32 specials initialised (abilities.ts), 128 berserk. */
 export const BYSTANDER = 16;

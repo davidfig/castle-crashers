@@ -16,6 +16,7 @@ const KILL_COLORS = [
   0x7a4cc0, // dread regent
 ];
 const MAX_P = 4000;
+const MAX_SPENT = 4000; // spent arrows lie where they fell, like corpses
 const MAX_CORPSES = 20000; // corpses stay on the field for the whole run
 const MAX_RINGS = 8;
 const MAX_BODIES = 700;
@@ -37,6 +38,14 @@ export class Fx {
   life = new Float32Array(MAX_P);
   col = new Uint32Array(MAX_P);
   big = new Uint8Array(MAX_P);
+
+  // spent arrow decals (ring buffer): x, y, direction
+  ax = new Float32Array(MAX_SPENT);
+  ay = new Float32Array(MAX_SPENT);
+  adx = new Float32Array(MAX_SPENT);
+  ady = new Float32Array(MAX_SPENT);
+  aHead = 0;
+  aCount = 0;
 
   // corpse decals (ring buffer)
   cx = new Float32Array(MAX_CORPSES);
@@ -227,6 +236,21 @@ export class Fx {
           }
           break;
         }
+        case Ev.Quake: {
+          // a crack races down the lane throwing up dirt and stones; the screen shakes
+          const len = Math.sqrt(a * a + b * b) || 1;
+          const dx = a / len, dy = b / len, width = c, big = f === 1;
+          this.trauma = Math.min(1, this.trauma + 0.6 + (big ? 0.25 : 0));
+          const n = Math.round(len / 3);
+          for (let j = 0; j < n; j++) {
+            const u = j / n, along = len * u;
+            const lat = (this.rand() - 0.5) * width * 1.4;
+            const delay = u; // farther debris flies later: it reads as a travelling wave
+            this.spawn(x + dx * along - dy * lat, y + dy * along + dx * lat, 0, (this.rand() - 0.5) * 0.8, (this.rand() - 0.5) * 0.4, 1.4 + this.rand() * 1.8, 18 + delay * 12 + this.rand() * 8, hex(this.rand() < 0.5 ? 0x8a6a40 : 0xc8b488), 1);
+            if (j % 3 === 0) this.spawn(x + dx * along, y + dy * along, 2, dx * 3, dy * 3, 0.4, 8, hex(0xfff4c0), 1);
+          }
+          break;
+        }
         case Ev.Blast:
           this.addRing(x, y, a, hex(0xffa040), 0);
           this.trauma = Math.min(1, this.trauma + 0.45);
@@ -242,6 +266,15 @@ export class Fx {
         case Ev.Fire:
           for (let j = 0; j < 3; j++) this.spawn(x + a * 4, y + b * 4, 8, a * 0.6, b * 0.6, 0.2, 8, hex(0xffffff, 0.8));
           break;
+        case Ev.ArrowSpent: {
+          const slot = this.aCount < MAX_SPENT ? (this.aHead + this.aCount) % MAX_SPENT : this.aHead;
+          if (this.aCount < MAX_SPENT) this.aCount++; else this.aHead = (this.aHead + 1) % MAX_SPENT;
+          // fall to the ground with a little scatter in the angle
+          const ang = Math.atan2(b, a) + (this.rand() - 0.5) * 0.5;
+          this.ax[slot] = x; this.ay[slot] = y; this.adx[slot] = Math.cos(ang); this.ady[slot] = Math.sin(ang);
+          for (let j = 0; j < 3; j++) this.spawn(x, y, 3, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.3 + this.rand() * 0.5, 10, hex(0xb8a070, 0.7), 1);
+          break;
+        }
         case Ev.Arrow:
           for (let j = 0; j < 4; j++) this.spawn(x, y, 6, (this.rand() - 0.5) * 2, (this.rand() - 0.5) * 2, 0.5 + this.rand(), 10, hex(0xe8e0c8));
           break;
@@ -331,6 +364,10 @@ export class Fx {
         case Ev.Coin:
           this.goldPop = 1;
           for (let j = 0; j < 2; j++) this.spawn(x, y, 5, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.8 + this.rand(), 12, hex(0xffe27a), 0);
+          break;
+        case Ev.Potion:
+          for (let j = 0; j < 14; j++) this.spawn(x + (this.rand() - 0.5) * 8, y, 2 + this.rand() * 8, (this.rand() - 0.5) * 0.8, -0.1, 0.6 + this.rand() * 0.9, 26 + this.rand() * 14, hex(this.rand() < 0.7 ? 0x7dffa0 : 0xfff6c8, 0.95), this.rand() < 0.3 ? 1 : 0);
+          this.addRing(x, y, 14, hex(0x7dffa0), 0);
           break;
         case Ev.Revive:
           for (let j = 0; j < 12; j++) this.spawn(x, y, 2, (this.rand() - 0.5) * 2, (this.rand() - 0.5) * 1, 1 + this.rand() * 2, 30, hex(0x7dff9a), 1);
