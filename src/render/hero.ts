@@ -6,6 +6,21 @@ import { REVIVE_TICKS } from '../sim/step';
 import type { GameState } from '../sim/state';
 import { SLASH_TICKS, type Fx } from './fx';
 import warriorMeta from '../../art/out/warrior.json';
+import mageMeta from '../../art/out/mage.json';
+import clericMeta from '../../art/out/cleric.json';
+import rogueMeta from '../../art/out/rogue.json';
+import archerMeta from '../../art/out/archer.json';
+
+/** Art for each class, in CLASSES order (see data/classes.ts). A class's art lives in art/chars/<name>.mjs. */
+export const HERO_CLASSES = ['warrior', 'mage', 'cleric', 'rogue', 'archer'] as const;
+const HERO_METAS = [warriorMeta, mageMeta, clericMeta, rogueMeta, archerMeta] as unknown as HeroMeta[];
+/** Player colours per class sheet (one sheet per slot). */
+export const HERO_SLOTS = 4;
+
+interface HeroMeta {
+  pivot: number[]; top: number; frames: Record<string, { x: number; y: number; w: number; h: number }>;
+  anims: Record<string, { frames: string[]; ms: number[] }>;
+}
 
 export interface HeroAnim { frames: Frame[]; ms: number[] }
 export interface HeroSet {
@@ -18,26 +33,25 @@ export interface HeroSet {
   anims: Record<string, HeroAnim>[];
 }
 
-/** Turns each sheet's placement in the atlas into UV frames for every animation. */
-export function buildHeroSet(places: { x: number; y: number }[], atlasW: number, atlasH: number): HeroSet {
-  const meta = warriorMeta as unknown as {
-    pivot: number[]; top: number; frames: Record<string, { x: number; y: number; w: number; h: number }>;
-    anims: Record<string, { frames: string[]; ms: number[] }>;
-  };
-  const anims = places.map((pl) => {
-    const out: Record<string, HeroAnim> = {};
-    for (const [name, a] of Object.entries(meta.anims)) {
-      out[name] = {
-        ms: a.ms,
-        frames: a.frames.map((fn) => {
-          const r = meta.frames[fn];
-          return { u0: (pl.x + r.x) / atlasW, v0: (pl.y + r.y) / atlasH, u1: (pl.x + r.x + r.w) / atlasW, v1: (pl.y + r.y + r.h) / atlasH, w: r.w, h: r.h };
-        }),
-      };
-    }
-    return out;
+/** places: one atlas placement per sheet, class-major then slot (HERO_CLASSES x HERO_SLOTS). Returns one set per class. */
+export function buildHeroSets(places: { x: number; y: number }[], atlasW: number, atlasH: number): HeroSet[] {
+  return HERO_METAS.map((meta, c) => {
+    const anims = Array.from({ length: HERO_SLOTS }, (_, slot) => {
+      const pl = places[c * HERO_SLOTS + slot];
+      const out: Record<string, HeroAnim> = {};
+      for (const [name, a] of Object.entries(meta.anims)) {
+        out[name] = {
+          ms: a.ms,
+          frames: a.frames.map((fn) => {
+            const r = meta.frames[fn];
+            return { u0: (pl.x + r.x) / atlasW, v0: (pl.y + r.y) / atlasH, u1: (pl.x + r.x + r.w) / atlasW, v1: (pl.y + r.y + r.h) / atlasH, w: r.w, h: r.h };
+          }),
+        };
+      }
+      return out;
+    });
+    return { pivotX: meta.pivot[0], pivotY: meta.pivot[1], top: meta.top, anims };
   });
-  return { pivotX: meta.pivot[0], pivotY: meta.pivot[1], top: meta.top, anims };
 }
 
 /** Picks the frame at fraction t (0..1) of an animation, weighting frames by their authored durations. */

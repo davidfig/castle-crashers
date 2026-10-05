@@ -178,7 +178,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       const p = s.players[slot];
       // Hero art comes from the art workbench (hero.ts). Frames are cells with the feet-centre at (pivotX, pivotY),
       // so mirror the pivot column when facing left.
-      const H = S.hero;
+      const H = S.heroes[p.classId] ?? S.heroes[0];
       const place = (f: { w: number }) => sx - (flip ? f.w - 1 - H.pivotX : H.pivotX);
       if (p.downed) {
         const df = heroFrame(H, s, fx, slot, false);

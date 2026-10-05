@@ -6,10 +6,11 @@ import { createSim } from '../sim/state';
 import { step } from '../sim/step';
 import { Kind } from '../sim/entities';
 import { Fx, SLASH_TICKS } from './fx';
-import { buildHeroSet, heroFrame, type HeroSet } from './hero';
+import { buildHeroSets, heroFrame, HERO_CLASSES, HERO_SLOTS, type HeroSet } from './hero';
 
 // Fake atlas placement: four sheets stacked 320px apart. Frames only need to be distinguishable by identity.
-const set: HeroSet = buildHeroSet([0, 1, 2, 3].map((k) => ({ x: 0, y: k * 321 })), 512, 2048);
+const sets: HeroSet[] = buildHeroSets(Array.from({ length: HERO_CLASSES.length * HERO_SLOTS }, (_, k) => ({ x: 0, y: k * 321 })), 2048, 8192);
+const set: HeroSet = sets[0]; // the warrior, the class the game's player 1 uses
 const idle = () => [0, 1, 2, 3].map(createInputFrame);
 const press = (buttons: number): InputFrame[] => { const f = idle(); f[0].buttons = buttons; return f; };
 
@@ -30,15 +31,18 @@ function tick(s: ReturnType<typeof arena>['s'], fx: Fx, input: InputFrame[]) {
   fx.update(1);
 }
 
-test('hero atlas frames: every animation exists with a duration per frame', () => {
-  for (const slot of [0, 1, 2, 3]) {
-    for (const name of ['idle', 'walk', 'sweep', 'finisher', 'recover', 'cast', 'hurt', 'down']) {
-      const a = set.anims[slot][name];
-      assert.ok(a && a.frames.length > 0, `${name} missing for slot ${slot}`);
-      assert.equal(a.ms.length, a.frames.length);
+test('every class has every animation the game drives, for every player colour, with a duration per frame', () => {
+  assert.equal(sets.length, HERO_CLASSES.length);
+  sets.forEach((cs, c) => {
+    for (let slot = 0; slot < HERO_SLOTS; slot++) {
+      for (const name of ['idle', 'walk', 'sweep', 'finisher', 'recover', 'cast', 'hurt', 'down']) {
+        const a = cs.anims[slot][name];
+        assert.ok(a && a.frames.length > 0, `${HERO_CLASSES[c]} lacks ${name} for slot ${slot}`);
+        assert.equal(a.ms.length, a.frames.length);
+      }
     }
-  }
-  assert.ok(set.pivotY > 0 && set.top > 0);
+    assert.ok(cs.pivotY > 0 && cs.top > 0, `${HERO_CLASSES[c]} pivot/top`);
+  });
 });
 
 test('a light swing sweeps the blade through the sweep frames over the slash-arc duration, then recovers', () => {

@@ -1,7 +1,7 @@
 // Procedural placeholder art: sprites are defined as tiny text bitmaps and packed into one atlas
 // at startup. Swap for real PNG atlases (tools/pack-atlas) once there is art.
 import type { Frame } from '../platform/gl/batcher';
-import { buildHeroSet, type HeroSet } from './hero';
+import { buildHeroSets, type HeroSet } from './hero';
 import { buildMobArt, type MobArt } from './mobArt';
 
 export const PLAYER_COLORS = [0xe0443a, 0x3a7be0, 0xe8c43a, 0xa04ae0];
@@ -132,6 +132,9 @@ function makeEllipse(w: number, h: number): { w: number; h: number; rgba: Uint8C
   return { w, h, rgba };
 }
 
+/** Atlas texture width. Wide enough for the player sheets to pack four or five across. */
+const ATLAS_W = 2048;
+
 export interface Sprites {
   atlas: HTMLCanvasElement;
   px: Frame;
@@ -142,8 +145,8 @@ export interface Sprites {
   corpse: Frame[];
   /** Coins: [small, big] x [face-on, edge-on]. */
   coin: Frame[][];
-  /** Warrior sprites from the art workbench, per player slot (see hero.ts). */
-  hero: HeroSet;
+  /** Player sprites from the art workbench: one set per class (CLASSES order), each with a sheet per player slot (see hero.ts). */
+  heroes: HeroSet[];
   /** Enemy art from the art workbench: walk cycles, the raised-bow archer, rotated weapons (see mobArt.ts). */
   mobArt: MobArt;
   ground: Frame[];
@@ -183,7 +186,7 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     glyph[ch] = add({ w: 3, h: 5, rgba });
   }
 
-  // Shelf-pack into a 512-wide atlas with 1px padding.
+  // Shelf-pack the procedural sprites into a 512-wide strip with 1px padding (the atlas itself is ATLAS_W wide).
   const W = 512;
   const order = [...items].sort((a, b) => b.h - a.h);
   let x = 0, y = 0, rowH = 0;
@@ -194,31 +197,52 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     x += it.w + 1;
     if (it.h > rowH) rowH = it.h;
   }
-  // Hero sheets from the art workbench are stacked under the procedural sprites.
+  // The atlas is wider than the procedural shelf: enemy sheets stack under the procedural sprites, and the player sheets
+  // (5 classes x 4 colours) are shelf-packed, tallest first, into the free space beside the procedural strip and then below it.
   let usedH = y + rowH + 1;
-  const heroPlaces = heroImages.map((img) => { const pl = { x: 0, y: usedH }; usedH += img.height + 1; return pl; });
   const mobPlaces = mobImages.map((img) => { const pl = { x: 0, y: usedH }; usedH += img.height + 1; return pl; });
+  const heroPlaces: { x: number; y: number }[] = new Array(heroImages.length);
+  {
+    // Region A: the free space right of the procedural strip, as tall as everything stacked so far. Region B: full width below it.
+    const regions = [{ x0: W, y0: 0, w: ATLAS_W - W, h: usedH }, { x0: 0, y0: usedH, w: ATLAS_W, h: Infinity }];
+    let ri = 0, cx = regions[0].x0, cy = regions[0].y0, rh = 0, bottom = usedH;
+    const byHeight = heroImages.map((_, i) => i).sort((a, b) => heroImages[b].height - heroImages[a].height);
+    for (const i of byHeight) {
+      const im = heroImages[i];
+      for (;;) {
+        const R = regions[ri];
+        if (cx + im.width + 1 > R.x0 + R.w) { cx = R.x0; cy += rh + 1; rh = 0; }
+        if (cy + im.height + 1 > R.y0 + R.h && ri < regions.length - 1) { ri++; cx = regions[ri].x0; cy = regions[ri].y0; rh = 0; continue; }
+        break;
+      }
+      heroPlaces[i] = { x: cx, y: cy };
+      cx += im.width + 1;
+      rh = Math.max(rh, im.height);
+      bottom = Math.max(bottom, cy + im.height + 1);
+    }
+    usedH = bottom;
+  }
   let H = 1;
   while (H < usedH) H <<= 1;
 
   const canvas = document.createElement('canvas');
-  canvas.width = W;
+  canvas.width = ATLAS_W;
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
   for (const p of placed) {
     ctx.putImageData(new ImageData(new Uint8ClampedArray(p.it.rgba), p.it.w, p.it.h), p.x, p.y);
     const f = p.it.frame;
-    f.u0 = p.x / W; f.v0 = p.y / H; f.u1 = (p.x + p.it.w) / W; f.v1 = (p.y + p.it.h) / H;
+    f.u0 = p.x / ATLAS_W; f.v0 = p.y / H; f.u1 = (p.x + p.it.w) / ATLAS_W; f.v1 = (p.y + p.it.h) / H;
     f.w = p.it.w; f.h = p.it.h;
   }
 
   heroImages.forEach((img, k) => ctx.drawImage(img, heroPlaces[k].x, heroPlaces[k].y));
   mobImages.forEach((img, k) => ctx.drawImage(img, mobPlaces[k].x, mobPlaces[k].y));
-  const hero = buildHeroSet(heroPlaces, W, H);
-  const mobArt = buildMobArt(mobPlaces, W, H);
+  const heroes = buildHeroSets(heroPlaces, ATLAS_W, H);
+  const mobArt = buildMobArt(mobPlaces, ATLAS_W, H);
   const mob = mobArt.walk;
   // Corpses are the authored `dead` frame of each enemy sheet (the first walk frame laid on its side, built by tools/art.mjs).
   const corpse = mobArt.anims.slice(0, 5).map((a) => a.dead[0]);
 
-  return { atlas: canvas, px, mob, shadow, corpse, coin, hero, mobArt, ground, mountFar, mountNear, glyph };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, heroes, mobArt, ground, mountFar, mountNear, glyph };
 }
