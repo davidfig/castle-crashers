@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node tools/dev.mjs",
     "build": "node tools/build.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node tools/art.mjs && tsc --noEmit",
     "test": "node tools/test.mjs",
     "check": "node tools/check-sim.mjs",
     "playtest": "node tools/playtest.mjs",
