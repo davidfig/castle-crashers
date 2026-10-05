@@ -1,7 +1,7 @@
 // ROGUE — glass look, game scale. Silhouette: low crouch, hooded and masked (one gold eye), a long crimson scarf streaming
 // behind, a dagger in each hand. Fast: attack frames are short. Ability: shadow dash (smoke streak).
 import { GLASS as G, GLASS_PLAYERS } from '../palette.mjs';
-import { rows, shear, smear, ring, weapon, stepLeg } from '../lib.mjs';
+import { rows, shear, smear, weapon, stepLeg } from '../lib.mjs';
 import { robedRig } from '../rigs/robed.mjs';
 
 const palette = { l: G.lead, e: G.lead, ...G };
@@ -94,16 +94,14 @@ pose('atk3', { lean: 2, bob: 1, back: 'scarf1', ang: -40, ang2: 150, rb: 0, hand
 
 // ability: shadow dash — streaks behind, leaning hard into it, then a puff
 parts.fxStreak = rows(`
-  w.w.w.w.w
-  ...w.w.w.
-  w.w.w.w..
+  wwwwww.w
+  ..wwww..
+  .wwwww.w
 `);
-parts.fxPuff1 = ring({ rx: 5, ry: 3, thick: 1, ch: 'w' });
-parts.fxPuff2 = ring({ rx: 9, ry: 4, thick: 2, ch: 'z', inner: 'w' });
 pose('cast0', { lean: 0, bob: 2, back: 'scarf2', ang: -150, ang2: 150, hx: -1, rb: 2, hand: [12, 11], back2: [10, 14] });
 pose('cast1', { lean: 4, bob: 1, back: 'scarf2', ang: 0, ang2: 170, hx: 2, rb: 1, lf: 3, lb: -3, hand: [19, 11], back2: [17, 14], fx: [['fxStreak', -6, 9]] });
-pose('cast2', { lean: 7, bob: 1, back: 'scarf2', ang: 0, ang2: 170, hx: 2, rb: 1, lf: 3, lb: -3, hand: [22, 11], back2: [20, 14], fx: [['fxStreak', 0, 10], ['fxPuff1', 11, 15]] });
-pose('cast3', { lean: 4, bob: 1, back: 'scarf1', ang: -20, ang2: 160, rb: 0, hand: [18, 11], fx: [['fxPuff2', 11, 15]] });
+pose('cast2', { lean: 7, bob: 1, back: 'scarf2', ang: 0, ang2: 170, hx: 2, rb: 1, lf: 3, lb: -3, hand: [22, 11], back2: [20, 14], fx: [['fxStreak', 0, 10]] });
+pose('cast3', { lean: 4, bob: 1, back: 'scarf1', ang: -20, ang2: 160, rb: 0, hand: [18, 11], });
 pose('hurt0', { lean: -1, bob: 1, back: 'scarf2', ang: 60, ang2: 80, hx: -1, hy: 1, rb: 2, lf: -1, lb: 1, hand: [13, 13], back2: [9, 14] });
 
 // down: folds over; hood off beside, daggers crossed on the ground
