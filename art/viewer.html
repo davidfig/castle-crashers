@@ -53,6 +53,11 @@
     <div class="stagewrap" style="padding:8px"><div id="cmpGrid" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end"></div></div>
     <p class="note">Each cell is drawn at the same integer zoom with its own timing and the ground line aligned, so height, silhouette and motion can be judged directly. Click a label to open that sheet below.</p>
   </section>
+  <section class="wide">
+    <h2>All poses — every frame of every animation (including the corpse) for the selected sheet, at once</h2>
+    <div class="row"><label>zoom <select id="pzoom"></select></label><span class="note" style="margin:0">uses the sheet, variant and background chosen at the top</span></div>
+    <div class="stagewrap" style="padding:10px"><div id="poses" style="display:flex;flex-wrap:wrap;gap:16px 22px;align-items:flex-start"></div></div>
+  </section>
   <section>
     <h2>Animation</h2>
     <div class="row" id="animBtns"></div>
@@ -118,7 +123,7 @@ async function loadSheet() {
   await loadImage();
   if (!animName || !meta.anims[animName]) animName = Object.keys(meta.anims)[0];
   buildAnimButtons(); setAnim(animName, true);
-  drawSheet(); drawPalette(); drawGame();
+  drawSheet(); drawPalette(); drawGame(); drawPoses();
 }
 function loadImage() {
   return new Promise((res) => { const i = new Image(); i.onload = () => { img = i; res(); }; i.src = `out/${$('variant').value}?t=${Date.now()}`; });
@@ -174,6 +179,29 @@ function drawSheet() {
   for (let x = 0; x <= meta.size[0]; x += meta.cell[0]) { g.beginPath(); g.moveTo(x * kk + .5, 0); g.lineTo(x * kk + .5, meta.size[1] * kk); g.stroke(); }
   for (let y = 0; y <= meta.size[1]; y += meta.cell[1]) { g.beginPath(); g.moveTo(0, y * kk + .5); g.lineTo(meta.size[0] * kk, y * kk + .5); g.stroke(); }
   $('sheetInfo').textContent = `${meta.title} — ${meta.size[0]}×${meta.size[1]} px, rows = animations (${Object.keys(meta.anims).join(', ')}). ${meta.notes}`;
+}
+// ---- every pose at once: each animation's frames as static tiles, ground lines aligned, with the corpse included
+function drawPoses() {
+  if (!meta || !img) return;
+  const k = Number($('pzoom').value), [cw, ch] = meta.cell, box = $('poses');
+  box.innerHTML = '';
+  const H = Math.min(ch, meta.pivot[1] + 5);
+  for (const [an, a] of Object.entries(meta.anims)) {
+    const grp = document.createElement('div');
+    const lab = document.createElement('div');
+    lab.textContent = `${an}  ×${a.frames.length}`; lab.style.cssText = 'color:var(--dim);font-size:11px;margin-bottom:4px;letter-spacing:.06em';
+    const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:3px;align-items:flex-end';
+    for (const fname of a.frames) {
+      const c = document.createElement('canvas'); const f = meta.frames[fname];
+      const { g, k: kk } = fit(c, cw, H, k);
+      g.fillStyle = $('bg').value; g.fillRect(0, 0, cw * kk, H * kk);
+      drawShadow(g, kk, meta.pivot[0], meta.pivot[1], meta.shadow ?? [9, 5]);
+      g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(0, (meta.pivot[1] + 1) * kk, cw * kk, 1);
+      g.drawImage(img, f.x, f.y, f.w, H, 0, 0, f.w * kk, H * kk);
+      row.appendChild(c);
+    }
+    grp.append(lab, row); box.appendChild(grp);
+  }
 }
 function drawPalette() {
   const used = Object.entries(meta.palette);
@@ -317,6 +345,9 @@ function tick(ts) {
 
 [1,2,3,4,6,8,10,12,16].forEach((z) => { for (const id of ['zoom', 'cmpZoom']) { const o = document.createElement('option'); o.value = z; o.textContent = z + '×'; $(id).appendChild(o); } });
 $('cmpZoom').value = localStorage.getItem('wb.cmpZoom') || 4;
+[1,2,3,4,6,8,10].forEach((z) => { const o = document.createElement('option'); o.value = z; o.textContent = z + '×'; $('pzoom').appendChild(o); });
+$('pzoom').value = mem.get('pzoom', 4);
+$('pzoom').onchange = () => { mem.set('pzoom', $('pzoom').value); drawPoses(); };
 $('cmpZoom').onchange = () => localStorage.setItem('wb.cmpZoom', $('cmpZoom').value);
 $('cmpRef').onclick = () => { $('cmpRef').classList.toggle('on'); mem.set('cmpRef', $('cmpRef').classList.contains('on') ? 1 : 0); };
 $('cmpFlip').onclick = () => { cmp.flip = !cmp.flip; mem.set('cmpFlip', cmp.flip ? 1 : 0); $('cmpFlip').classList.toggle('on', cmp.flip); };
@@ -327,10 +358,10 @@ $('zoom').value = localStorage.getItem('wb.zoom') || 8;
 $('gzoom').value = localStorage.getItem('wb.gzoom') || 1;
 $('bg').value = localStorage.getItem('wb.bg') || '#5a5f6a';
 $('sheet').onchange = async () => { await loadSheet(); };
-$('variant').onchange = async () => { mem.set('variantIdx', $('variant').selectedIndex); await loadImage(); drawSheet(); };
+$('variant').onchange = async () => { mem.set('variantIdx', $('variant').selectedIndex); await loadImage(); drawSheet(); drawPoses(); };
 $('zoom').onchange = () => localStorage.setItem('wb.zoom', $('zoom').value);
 $('gzoom').onchange = () => localStorage.setItem('wb.gzoom', $('gzoom').value);
-$('bg').onchange = () => { localStorage.setItem('wb.bg', $('bg').value); drawSheet(); };
+$('bg').onchange = () => { localStorage.setItem('wb.bg', $('bg').value); drawSheet(); drawPoses(); };
 $('fps').oninput = () => { $('fpsv').textContent = $('fps').value + '%'; mem.set('speed', $('fps').value); };
 $('flip').onclick = () => { flip = !flip; mem.set('flip', flip ? 1 : 0); $('flip').classList.toggle('on', flip); };
 $('grid').onclick = () => { showGrid = !showGrid; mem.set('grid', showGrid ? 1 : 0); $('grid').classList.toggle('on', showGrid); };
