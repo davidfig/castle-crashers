@@ -2,3 +2,4 @@ node_modules/
 public/dist/
 .tmp/
 .DS_Store
+art/out/

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sprite Workbench</title>
+<style>
+  :root { --bg:#14121a; --panel:#1d1a25; --line:#322d3f; --fg:#e6e0d4; --dim:#8d8697; --acc:#e8873a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+  /* THE crispness rule: every bitmap on this page is drawn pixelated, never smoothed. */
+  canvas, img { image-rendering: pixelated; image-rendering: crisp-edges; }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:14px; margin:0 12px 0 0; letter-spacing:.08em; text-transform:uppercase; color:var(--acc); }
+  select, button { background:var(--panel); color:var(--fg); border:1px solid var(--line); padding:4px 8px; font:inherit; border-radius:3px; cursor:pointer; }
+  button.on { border-color:var(--acc); color:var(--acc); }
+  label { color:var(--dim); display:flex; gap:6px; align-items:center; }
+  main { display:grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 1fr); gap:16px; padding:16px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:12px; min-width:0; }
+  section h2 { margin:0 0 10px; font-size:11px; color:var(--dim); letter-spacing:.1em; text-transform:uppercase; font-weight:500; }
+  .wide { grid-column: 1 / -1; }
+  .stagewrap { overflow:auto; background:#000; border-radius:3px; }
+  .row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  .sw { display:inline-flex; align-items:center; gap:4px; margin:2px 10px 2px 0; color:var(--dim); }
+  .sw i { width:14px; height:14px; border:1px solid #0006; display:inline-block; }
+  #err { color:#ff7b6b; white-space:pre-wrap; }
+  .note { color:var(--dim); margin:6px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sprite Workbench</h1>
+  <label>sheet <select id="sheet"></select></label>
+  <label>variant <select id="variant"></select></label>
+  <label>background <select id="bg">
+    <option value="#5a5f6a">slate</option><option value="#4b8039">grass (game)</option><option value="#9cc5df">sky (game)</option>
+    <option value="#14121a">near-black</option><option value="#d6cfc2">bone</option></select></label>
+  <span id="err"></span>
+</header>
+<main>
+  <section class="wide" id="cmp">
+    <h2>Compare variations — tick the sheets to show side by side (all play in sync)</h2>
+    <div class="row" id="cmpPick"></div>
+    <div class="row" id="cmpAnims"></div>
+    <div class="row">
+      <label>zoom <select id="cmpZoom"></select></label>
+      <label>variant <select id="cmpVar"><option value="0">default</option><option value="1">P1</option><option value="2">P2</option><option value="3">P3</option><option value="4">P4</option></select></label>
+      <label>background <select id="cmpBg"><option value="#4b8039">grass (game)</option><option value="#5a5f6a">slate</option><option value="#9cc5df">sky (game)</option><option value="#14121a">near-black</option><option value="#d6cfc2">bone</option></select></label>
+      <button id="cmpRef" class="on" title="White boxes = the game's current placeholder sprites (hero 10×14, goblin 8×9, orc 12×13), drawn to scale on the ground line">size ref boxes</button>
+      <button id="cmpFlip">flip</button>
+    </div>
+    <div class="stagewrap" style="padding:8px"><div id="cmpGrid" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end"></div></div>
+    <p class="note">Each cell is drawn at the same integer zoom with its own timing and the ground line aligned, so height, silhouette and motion can be judged directly. Click a label to open that sheet below.</p>
+  </section>
+  <section>
+    <h2>Animation</h2>
+    <div class="row" id="animBtns"></div>
+    <div class="row">
+      <label>zoom <select id="zoom"></select></label>
+      <label>speed <input id="fps" type="range" min="10" max="300" value="100"> <span id="fpsv">100%</span></label>
+      <button id="flip">flip</button>
+      <button id="grid" class="on">cell+pivot</button>
+      <button id="pause">pause</button>
+    </div>
+    <div class="stagewrap"><canvas id="anim"></canvas></div>
+    <p class="note" id="animInfo"></p>
+  </section>
+  <section>
+    <h2>Spritesheet (what the game would load)</h2>
+    <div class="stagewrap"><canvas id="sheetc"></canvas></div>
+    <p class="note" id="sheetInfo"></p>
+    <div id="pal" style="margin-top:8px"></div>
+  </section>
+  <section class="wide">
+    <h2>In-game scale — 1 art pixel = 1 game pixel on a 640×360 view, shown at an exact integer multiple</h2>
+    <div class="row"><label>scale <select id="gzoom"></select></label><button id="regen">reshuffle horde</button><button id="ref" class="on">game placeholders (size ref)</button></div>
+    <div class="stagewrap"><canvas id="game"></canvas></div>
+    <p class="note">Everything above is drawn with imageSmoothingEnabled=false, CSS image-rendering: pixelated, and a canvas backing store that is an exact integer multiple of the art (devicePixelRatio-aware), so there is nothing for the browser to blur.</p>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const DPR = window.devicePixelRatio || 1;
+let index = [], meta = null, img = null, imgs = {};
+let animName = null, frameIdx = 0, last = 0, paused = false, flip = false, showGrid = true;
+let horde = [];
+
+/** Size a canvas so one art pixel is exactly `k` device pixels (crisp at any devicePixelRatio). */
+function fit(c, wArt, hArt, k) {
+  const k2 = Math.max(1, Math.round(k * DPR)); // device px per art px
+  c.width = wArt * k2; c.height = hArt * k2;
+  c.style.width = (c.width / DPR) + 'px'; c.style.height = (c.height / DPR) + 'px';
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  return { g, k: k2 };
+}
+function fillSelect(sel, vals, cur) { sel.innerHTML = ''; vals.forEach((v) => { const o = document.createElement('option'); o.value = v; o.textContent = v; sel.appendChild(o); }); if (cur) sel.value = cur; }
+
+async function loadIndex() {
+  index = await (await fetch('out/index.json', { cache: 'no-store' })).json();
+  const cur = $('sheet').value || localStorage.getItem('wb.sheet') || index[0];
+  fillSelect($('sheet'), index, index.includes(cur) ? cur : index[0]);
+  await loadSheet();
+}
+async function loadSheet() {
+  const name = $('sheet').value; localStorage.setItem('wb.sheet', name);
+  meta = await (await fetch(`out/${name}.json`, { cache: 'no-store' })).json();
+  const vcur = $('variant').value;
+  $('variant').innerHTML = '';
+  meta.variants.forEach((v) => { const o = document.createElement('option'); o.value = v.file; o.textContent = v.label; $('variant').appendChild(o); });
+  if ([...$('variant').options].some((o) => o.value === vcur)) $('variant').value = vcur;
+  await loadImage();
+  if (!animName || !meta.anims[animName]) animName = Object.keys(meta.anims)[0];
+  buildAnimButtons(); setAnim(animName, true);
+  drawSheet(); drawPalette(); drawGame();
+}
+function loadImage() {
+  return new Promise((res) => { const i = new Image(); i.onload = () => { img = i; res(); }; i.src = `out/${$('variant').value}?t=${Date.now()}`; });
+}
+async function loadAllSheets() {
+  const next = {};
+  await Promise.all(index.map(async (n) => {
+    const m = await (await fetch(`out/${n}.json`, { cache: 'no-store' })).json();
+    const i = new Image(); await new Promise((r) => { i.onload = r; i.src = `out/${m.variants[0].file}?t=${Date.now()}`; });
+    next[n] = { meta: m, img: i };
+  }));
+  imgs = next; // swap atomically so a redraw never sees a half-loaded set
+}
+function buildAnimButtons() {
+  const box = $('animBtns'); box.innerHTML = '';
+  for (const a of Object.keys(meta.anims)) { const b = document.createElement('button'); b.textContent = a; b.className = a === animName ? 'on' : ''; b.onclick = () => setAnim(a); box.appendChild(b); }
+}
+function setAnim(a, keep) {
+  animName = a; if (!keep) frameIdx = 0;
+  [...$('animBtns').children].forEach((b) => b.classList.toggle('on', b.textContent === a));
+}
+function drawFrame(g, k, fname, x, y, fl) {
+  const f = meta.frames[fname];
+  if (!fl) { g.drawImage(img, f.x, f.y, f.w, f.h, x * k, y * k, f.w * k, f.h * k); return; }
+  g.save(); g.translate((x + f.w) * k, y * k); g.scale(-1, 1); g.drawImage(img, f.x, f.y, f.w, f.h, 0, 0, f.w * k, f.h * k); g.restore();
+}
+function drawAnim() {
+  if (!meta || !img) return;
+  const k = Number($('zoom').value), [cw, ch] = meta.cell;
+  const { g, k: kk } = fit($('anim'), cw, ch, k);
+  g.fillStyle = $('bg').value; g.fillRect(0, 0, cw * kk, ch * kk);
+  const a = meta.anims[animName]; const fname = a.frames[frameIdx % a.frames.length];
+  if (showGrid) {
+    g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 1;
+    for (let x = 0; x <= cw; x += 8) { g.beginPath(); g.moveTo(x * kk + .5, 0); g.lineTo(x * kk + .5, ch * kk); g.stroke(); }
+    for (let y = 0; y <= ch; y += 8) { g.beginPath(); g.moveTo(0, y * kk + .5); g.lineTo(cw * kk, y * kk + .5); g.stroke(); }
+  }
+  drawFrame(g, kk, fname, 0, 0, flip);
+  if (showGrid) {
+    const px = flip ? cw - 1 - meta.pivot[0] : meta.pivot[0];
+    g.fillStyle = '#e8873a'; g.fillRect(px * kk, meta.pivot[1] * kk + kk, kk, Math.max(1, kk / 3 | 0));
+    g.fillRect((px - 2) * kk, (meta.pivot[1] + 1) * kk, kk * 5, 1);
+  }
+  $('animInfo').textContent = `${meta.name} / ${animName}  frame ${(frameIdx % a.frames.length) + 1}/${a.frames.length}  (${fname}, ${a.ms[frameIdx % a.frames.length]}ms)  cell ${cw}×${ch}  pivot ${meta.pivot.join(',')}`;
+}
+function drawSheet() {
+  if (!meta || !img) return;
+  const k = Math.max(1, Math.min(6, Math.floor(560 / meta.size[0])));
+  const { g, k: kk } = fit($('sheetc'), meta.size[0], meta.size[1], k);
+  g.fillStyle = $('bg').value; g.fillRect(0, 0, meta.size[0] * kk, meta.size[1] * kk);
+  g.drawImage(img, 0, 0, meta.size[0], meta.size[1], 0, 0, meta.size[0] * kk, meta.size[1] * kk);
+  g.strokeStyle = 'rgba(255,255,255,.14)';
+  for (let x = 0; x <= meta.size[0]; x += meta.cell[0]) { g.beginPath(); g.moveTo(x * kk + .5, 0); g.lineTo(x * kk + .5, meta.size[1] * kk); g.stroke(); }
+  for (let y = 0; y <= meta.size[1]; y += meta.cell[1]) { g.beginPath(); g.moveTo(0, y * kk + .5); g.lineTo(meta.size[0] * kk, y * kk + .5); g.stroke(); }
+  $('sheetInfo').textContent = `${meta.title} — ${meta.size[0]}×${meta.size[1]} px, rows = animations (${Object.keys(meta.anims).join(', ')}). ${meta.notes}`;
+}
+function drawPalette() {
+  const used = Object.entries(meta.palette);
+  $('pal').innerHTML = used.map(([c, h]) => `<span class="sw"><i style="background:${h}"></i>${c} ${h}</span>`).join('');
+}
+
+/** Pixel ellipse shadow centred one pixel below the ground line. (cx = pivot x, gy = pivot y, size = [w, h]) */
+function drawShadow(g, kk, cx, gy, size) {
+  const [w, h] = size; g.fillStyle = 'rgba(0,0,0,.35)';
+  const x0 = cx - (w >> 1), cyc = gy + 1, y0 = cyc - (h >> 1);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (x + 0.5 - w / 2) / (w / 2), dy = (y + 0.5 - h / 2) / (h / 2);
+    if (dx * dx + dy * dy <= 1.05) g.fillRect((x0 + x) * kk, (y0 + y) * kk, kk, kk);
+  }
+}
+// ---- in-game scale stage: ground + one of each character + a horde of mobs, all at 1:1 art pixels
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function reshuffle() { const r = mulberry(Date.now() & 0xffff); horde = Array.from({ length: 70 }, () => ({ x: r() * 640, y: 150 + r() * 190, who: r() < 0.82 ? 'gaunt' : 'slab', t: r() * 8, flip: r() < 0.5 })); }
+function drawGame() {
+  if (!Object.keys(imgs).length) return;
+  const k = Number($('gzoom').value);
+  const { g, k: kk } = fit($('game'), 640, 360, k);
+  g.fillStyle = '#9cc5df'; g.fillRect(0, 0, 640 * kk, 130 * kk);
+  g.fillStyle = '#6c8c84'; for (let x = 0; x < 640; x += 2) { const h = 100 + Math.sin(x / 40) * 10 + Math.sin(x / 9) * 3; g.fillRect(x * kk, h * kk, 2 * kk, (130 - h) * kk); }
+  g.fillStyle = '#4b8039'; g.fillRect(0, 130 * kk, 640 * kk, 230 * kk);
+  const items = [];
+  for (const h of horde) items.push({ ...h });
+  items.push({ x: 120, y: 250, who: 'warrior', t: 0, flip: false, hero: true });
+  items.push({ x: 160, y: 262, who: 'warrior', t: 1, flip: false, hero: true, v: 1 });
+  items.push({ x: 200, y: 254, who: 'warrior', t: 2, flip: false, hero: true, v: 2 });
+  items.push({ x: 240, y: 266, who: 'warrior', t: 3, flip: false, hero: true, v: 3 });
+  items.sort((a, b) => a.y - b.y);
+  drawRef(g, kk);
+  const now = performance.now() / 1000;
+  for (const it of items) {
+    const s = imgs[it.who]; if (!s) continue;
+    const m = s.meta; const anim = it.hero ? 'idle' : 'walk'; const a = m.anims[anim]; if (!a) continue;
+    const total = a.ms.reduce((x, y) => x + y, 0); let tt = ((now + it.t) * 1000) % total, fi = 0; while (tt >= a.ms[fi]) { tt -= a.ms[fi]; fi++; } const f = m.frames[a.frames[fi]];
+    const dx = Math.round(it.x - m.pivot[0]), dy = Math.round(it.y - m.pivot[1]);
+    // shadow
+    drawShadow(g, kk, dx + m.pivot[0], it.y, m.shadow ?? [9, 5]);
+    g.save(); if (it.flip) { g.translate((dx + f.w) * kk, dy * kk); g.scale(-1, 1); g.drawImage(s.img, f.x, f.y, f.w, f.h, 0, 0, f.w * kk, f.h * kk); }
+    else g.drawImage(s.img, f.x, f.y, f.w, f.h, dx * kk, dy * kk, f.w * kk, f.h * kk);
+    g.restore();
+  }
+}
+
+// The game's current placeholder sprites (src/render/art.ts), drawn 1:1 so our art can be judged against the real scale.
+const REF = {
+  hero: { pal: { h: '#b8c2cc', H: '#7d8a99', s: '#f2c9a0', e: '#1b1b2b', P: '#e0443a', p: '#8c2b24', b: '#5a3a22', w: '#eef3f7', g: '#e0b43a' },
+    rows: ['...PP.....','..hhhh....','.hhhhhH...','.hsseeH..w','.hssssH..w','..hhhH...w','..PPPPp..w','.PPPPPPpgg','.PsPPPPp.w','.pPPPPPp..','..PPPPp...','..hh.hh...','..hh.hh...','..bb.bb...'] },
+  goblin: { pal: { G: '#6fbf3f', g: '#3f7f2a', y: '#ffe94a', k: '#2a1a1a', d: '#c9d1d9' },
+    rows: ['g.GGGG.g','ggGGGGgg','.GyGGyG.','.GGkkGG.','..GGGG.d','.gGGGGgd','..GGGG..','..g..g..','..g..g..'] },
+  orc: { pal: { O: '#a05a3a', o: '#6e3a24', t: '#f2ecd0', r: '#ff4040', a: '#7d8a99', x: '#5a3a22', w: '#dde4ea' },
+    rows: ['...oooooo...','..oOOOOOOo..','..OrrOOrrO..','..OOOOOOOO..','..OtOOOOtO.x','.aaaaaaaaaxw','aaaaaaaaaaxw','aOaaaaaaaOx.','aO.aaaaaa.x.','...aaaaaa...','...oo..oo...','...oo..oo...','..ooo..ooo..'] },
+};
+function drawRef(g, kk) {
+  if (!$('ref').classList.contains('on')) return;
+  let x = 14; const y0 = 340;
+  for (const [name, r] of Object.entries(REF)) {
+    const h = r.rows.length, w = r.rows[0].length;
+    r.rows.forEach((row, yy) => [...row].forEach((ch, xx) => { const c = r.pal[ch]; if (c) { g.fillStyle = c; g.fillRect((x + xx) * kk, (y0 - h + yy) * kk, kk, kk); } }));
+    g.fillStyle = '#fff'; g.font = `${Math.max(8, 4 * kk)}px monospace`; g.fillText(`${name} ${w}x${h}`, x * kk, (y0 + 8) * kk);
+    x += w + 8;
+  }
+  g.fillText('= game placeholders today', (x + 2) * kk, (y0 + 8) * kk);
+}
+// ---- compare view
+const cmp = { sel: new Set(JSON.parse(localStorage.getItem('wb.cmpSel') || '[]')), anim: localStorage.getItem('wb.cmpAnim') || 'idle', cells: [], flip: false };
+function buildCompare() {
+  const pick = $('cmpPick'); pick.innerHTML = '';
+  const names = Object.keys(imgs);
+  if (!cmp.sel.size) names.filter((n) => /^cleric/.test(n)).forEach((n) => cmp.sel.add(n));
+  for (const n of names) {
+    const l = document.createElement('label'); const c = document.createElement('input'); c.type = 'checkbox'; c.checked = cmp.sel.has(n);
+    c.onchange = () => { c.checked ? cmp.sel.add(n) : cmp.sel.delete(n); localStorage.setItem('wb.cmpSel', JSON.stringify([...cmp.sel])); rebuildCells(); };
+    l.append(c, document.createTextNode(imgs[n].meta.title)); pick.appendChild(l);
+  }
+  const all = new Set(); names.forEach((n) => Object.keys(imgs[n].meta.anims).forEach((a) => all.add(a)));
+  const ab = $('cmpAnims'); ab.innerHTML = '';
+  for (const a of all) { const b = document.createElement('button'); b.textContent = a; b.className = a === cmp.anim ? 'on' : ''; b.onclick = () => { cmp.anim = a; localStorage.setItem('wb.cmpAnim', a); [...ab.children].forEach((x) => x.classList.toggle('on', x.textContent === a)); }; ab.appendChild(b); }
+  rebuildCells();
+}
+async function loadVariantImg(name, vi) {
+  const m = imgs[name].meta; const f = m.variants[Math.min(vi, m.variants.length - 1)].file;
+  if (imgs[name]['v' + vi]) return imgs[name]['v' + vi];
+  const i = new Image(); await new Promise((r) => { i.onload = r; i.src = `out/${f}?t=${Date.now()}`; }); imgs[name]['v' + vi] = i; return i;
+}
+function rebuildCells() {
+  const grid = $('cmpGrid'); grid.innerHTML = ''; cmp.cells = [];
+  for (const n of Object.keys(imgs)) {
+    if (!cmp.sel.has(n)) continue;
+    const box = document.createElement('div'); const cv = document.createElement('canvas'); const lab = document.createElement('div');
+    lab.textContent = imgs[n].meta.title; lab.style.cssText = 'color:var(--dim);cursor:pointer;margin-top:4px;max-width:260px'; lab.onclick = () => { $('sheet').value = n; $('sheet').dispatchEvent(new Event('change')); };
+    box.append(cv, lab); grid.appendChild(box); cmp.cells.push({ n, cv });
+  }
+}
+const REF_SIZES = [['hero', 10, 14], ['goblin', 8, 9], ['orc', 12, 13]];
+let cmpBusy = false;
+async function drawCompare() {
+  if (!cmp.cells.length || cmpBusy) return;
+  cmpBusy = true;
+  try { await drawCompareInner(); } finally { cmpBusy = false; }
+}
+async function drawCompareInner() {
+  const k = Number($('cmpZoom').value), vi = Number($('cmpVar').value), bg = $('cmpBg').value, flip = cmp.flip;
+  const now = performance.now();
+  // shared canvas height so ground lines line up: use the tallest above-ground and below-ground extents
+  for (const c of cmp.cells) {
+    if (!imgs[c.n]) continue;
+    const { meta } = imgs[c.n]; const im = await loadVariantImg(c.n, vi);
+    const a = meta.anims[cmp.anim]; const [cw, ch] = meta.cell;
+    const H = Math.min(ch, meta.pivot[1] + 6); // crop below the ground line so every cell's ground sits at the same baseline
+    const { g, k: kk } = fit(c.cv, cw, H, k);
+    g.fillStyle = bg; g.fillRect(0, 0, cw * kk, H * kk);
+    drawShadow(g, kk, meta.pivot[0], meta.pivot[1], meta.shadow ?? [9, 5]);
+    g.fillStyle = 'rgba(255,255,255,.25)'; g.fillRect(0, (meta.pivot[1] + 1) * kk, cw * kk, 1);
+    if ($('cmpRef').classList.contains('on')) {
+      let rx = 2; for (const [nm, w, h] of REF_SIZES) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.strokeRect(rx * kk + .5, (meta.pivot[1] + 1 - h) * kk + .5, w * kk - 1, h * kk - 1); g.fillStyle = 'rgba(255,255,255,.8)'; g.font = '10px monospace'; g.fillText(nm + ' ' + w + '×' + h, rx * kk + 2, (meta.pivot[1] + 1 - h) * kk - 3); rx += w + 2; }
+    }
+    if (!a) { g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText('(no ' + cmp.anim + ')', 6, 16); continue; }
+    const total = a.ms.reduce((x, y) => x + y, 0); let tt = now % (total + (a.loop === false ? 500 : 0)), fi = a.frames.length - 1;
+    if (tt < total) { fi = 0; while (tt >= a.ms[fi]) { tt -= a.ms[fi]; fi++; } }
+    const f = meta.frames[a.frames[fi]];
+    if (flip) { g.save(); g.translate(cw * kk, 0); g.scale(-1, 1); g.drawImage(im, f.x, f.y, f.w, H, 0, 0, f.w * kk, H * kk); g.restore(); }
+    else g.drawImage(im, f.x, f.y, f.w, H, 0, 0, f.w * kk, H * kk);
+  }
+}
+function tick(ts) {
+  drawCompare();
+  const a = meta && meta.anims[animName];
+  if (a && !paused) { const step = a.ms[frameIdx % a.ms.length] * 100 / Number($('fps').value); if (ts - last >= step) { last = ts; frameIdx = (frameIdx + 1) % a.frames.length; if (a.loop === false && frameIdx === 0) { /* hold on loop for review */ } } }
+  drawAnim(); drawGame();
+  requestAnimationFrame(tick);
+}
+
+[1,2,3,4,6,8,10,12,16].forEach((z) => { for (const id of ['zoom', 'cmpZoom']) { const o = document.createElement('option'); o.value = z; o.textContent = z + '×'; $(id).appendChild(o); } });
+$('cmpZoom').value = localStorage.getItem('wb.cmpZoom') || 6;
+$('cmpZoom').onchange = () => localStorage.setItem('wb.cmpZoom', $('cmpZoom').value);
+$('cmpRef').onclick = () => $('cmpRef').classList.toggle('on');
+$('cmpFlip').onclick = () => { cmp.flip = !cmp.flip; $('cmpFlip').classList.toggle('on', cmp.flip); };
+$('zoom').value = localStorage.getItem('wb.zoom') || 8;
+[1,2,3].forEach((z) => { const o = document.createElement('option'); o.value = z; o.textContent = z + '×'; $('gzoom').appendChild(o); });
+$('gzoom').value = localStorage.getItem('wb.gzoom') || 1;
+$('bg').value = localStorage.getItem('wb.bg') || '#5a5f6a';
+$('sheet').onchange = async () => { await loadSheet(); };
+$('variant').onchange = async () => { await loadImage(); drawSheet(); };
+$('zoom').onchange = () => localStorage.setItem('wb.zoom', $('zoom').value);
+$('gzoom').onchange = () => localStorage.setItem('wb.gzoom', $('gzoom').value);
+$('bg').onchange = () => { localStorage.setItem('wb.bg', $('bg').value); drawSheet(); };
+$('fps').oninput = () => { $('fpsv').textContent = $('fps').value + '%'; };
+$('flip').onclick = () => { flip = !flip; $('flip').classList.toggle('on', flip); };
+$('grid').onclick = () => { showGrid = !showGrid; $('grid').classList.toggle('on', showGrid); };
+$('pause').onclick = () => { paused = !paused; $('pause').classList.toggle('on', paused); };
+$('regen').onclick = reshuffle;
+$('ref').onclick = () => $('ref').classList.toggle('on');
+window.addEventListener('keydown', (e) => { if (e.key === ' ') { e.preventDefault(); $('pause').click(); } if (e.key === 'ArrowRight' && paused) frameIdx++; if (e.key === 'ArrowLeft' && paused) frameIdx = Math.max(0, frameIdx - 1); });
+
+reshuffle();
+(async () => { await loadIndex(); await loadAllSheets(); buildCompare(); drawGame(); requestAnimationFrame(tick); })();
+const es = new EventSource('/events');
+es.onmessage = async (e) => { if (e.data === 'reload') { $('err').textContent = ''; await loadIndex(); await loadAllSheets(); buildCompare(); } else if (e.data.startsWith('error')) $('err').textContent = JSON.parse(e.data.slice(6)); };
+</script>
+</body>
+</html>

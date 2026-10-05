@@ -155,7 +155,16 @@ export async function build() {
         // (hand-set pivots drifted and made characters float). Weapons/capes may hang lower without moving it.
         console.log(`  pivot y ${def.pivot[1]} -> ${sheet.feet} (derived from feet)`); def.pivot[1] = sheet.feet;
       }
-      if (i === 0) meta = { name: def.name, title: def.title ?? def.name, notes: def.notes ?? '', cell: def.cell, pivot: def.pivot, shadow: def.shadow ?? [9, 5], size: [sheet.W, sheet.H], frames: sheet.frames, anims: sheet.anims, palette: pal, variants: variants.map((x, j) => ({ id: x.id, label: x.label ?? x.id, file: j === 0 ? `${def.name}.png` : `${def.name}.${x.id}.png` })) };
+      let top = null;                       // rows of art above the ground line (head height), measured from idle frames
+      if (i === 0) {
+        let minY = 1e9;
+        for (const fname of sheet.anims.idle?.frames ?? []) {
+          const fr = sheet.frames[fname];
+          for (let y = 0; y < fr.h; y++) { let hit = false; for (let x = 0; x < fr.w && !hit; x++) hit = sheet.rgba[((fr.y + y) * sheet.W + fr.x + x) * 4 + 3] > 0; if (hit) { minY = Math.min(minY, y); break; } }
+        }
+        if (minY < 1e9) top = def.pivot[1] - minY + 1;
+      }
+      if (i === 0) meta = { name: def.name, title: def.title ?? def.name, notes: def.notes ?? '', cell: def.cell, pivot: def.pivot, top, shadow: def.shadow ?? [9, 5], size: [sheet.W, sheet.H], frames: sheet.frames, anims: sheet.anims, palette: pal, variants: variants.map((x, j) => ({ id: x.id, label: x.label ?? x.id, file: j === 0 ? `${def.name}.png` : `${def.name}.${x.id}.png` })) };
     });
     writeFileSync(join(OUT, `${def.name}.json`), JSON.stringify(meta, null, 1));
     index.push(def.name);
