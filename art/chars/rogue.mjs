@@ -87,10 +87,6 @@ parts.fxStab = rows(`
   ..YY
   YYY.
 `);
-pose('atk0', { lean: 0, bob: 1, back: 'scarf2', ang: -140, ang2: 150, hx: -1, rb: 2, lf: -1, lb: 1, hand: [12, 10], back2: [10, 13] });
-pose('atk1', { lean: 3, bob: 1, back: 'scarf2', ang: 5, ang2: 140, hx: 1, rb: 1, lf: 3, lb: -3, hand: [18, 11], back2: [10, 13], fx: [['fxStab', 24, 10]] });
-pose('atk2', { lean: 3, bob: 1, back: 'scarf2', ang: -90, ang2: 175, hx: 1, rb: 1, lf: 3, lb: -3, hand: [15, 9], back2: [19, 13], fx: [['fxStab', 25, 12]] });   // IMPACT
-pose('atk3', { lean: 2, bob: 1, back: 'scarf1', ang: -40, ang2: 150, rb: 0, hand: [15, 11] });
 
 // ability: shadow dash — streaks behind, leaning hard into it, then a puff
 parts.fxStreak = rows(`
@@ -99,9 +95,24 @@ parts.fxStreak = rows(`
   .wwwww.w
 `);
 pose('cast0', { lean: 0, bob: 2, back: 'scarf2', ang: -150, ang2: 150, hx: -1, rb: 2, hand: [12, 11], back2: [10, 14] });
-pose('cast1', { lean: 4, bob: 1, back: 'scarf2', ang: 0, ang2: 170, hx: 2, rb: 1, lf: 3, lb: -3, hand: [19, 11], back2: [17, 14], fx: [['fxStreak', -6, 9]] });
-pose('cast2', { lean: 7, bob: 1, back: 'scarf2', ang: 0, ang2: 170, hx: 2, rb: 1, lf: 3, lb: -3, hand: [22, 11], back2: [20, 14], fx: [['fxStreak', 0, 10]] });
-pose('cast3', { lean: 4, bob: 1, back: 'scarf1', ang: -20, ang2: 160, rb: 0, hand: [18, 11], });
+pose('cast1', { lean: 4, bob: 1, back: 'scarf2', ang: 0, ang2: 170, hx: 2, rb: 1, lf: 3, lb: -3, hand: [19, 11], back2: [17, 14] });
+pose('cast2', { lean: 7, bob: 1, back: 'scarf2', ang: 0, ang2: 170, hx: 2, rb: 1, lf: 3, lb: -3, hand: [22, 11], back2: [20, 14] });
+pose('cast3', { lean: 4, bob: 1, back: 'scarf1', ang: -20, ang2: 160, rb: 0, hand: [18, 11] });
+// ---- melee swing, same contract as the warrior (see warrior.mjs): the lead dagger follows the 8-tick slash arc; the off-hand stays behind
+pose('sw0', { lean: 0, bob: 1, back: 'scarf2', ang: -130, ang2: 150, hx: -1, rb: 2, lf: -1, lb: 1, hand: [12, 10], back2: [10, 13] });
+pose('sw1', { lean: 1, bob: 1, back: 'scarf2', ang: -80, ang2: 150, rb: 1, hand: [14, 9], back2: [10, 13] });
+pose('sw2', { lean: 2, bob: 1, back: 'scarf2', ang: -20, ang2: 160, hx: 1, rb: 1, lf: 2, lb: -2, hand: [16, 10], back2: [10, 13] });
+pose('sw3', { lean: 3, bob: 1, back: 'scarf2', ang: 25, ang2: 170, hx: 1, rb: 1, lf: 3, lb: -3, hand: [18, 11], back2: [11, 13] });
+pose('sw4', { lean: 3, bob: 1, back: 'scarf1', ang: 60, ang2: 175, hx: 1, rb: 1, lf: 3, lb: -3, hand: [18, 12], back2: [12, 13] });
+pose('rec0', { lean: 2, bob: 1, back: 'scarf1', ang: 30, ang2: 160, rb: 1, hand: [16, 11] });
+pose('rec1', { lean: 1, bob: 0, back: 'scarf1', ang: -30, ang2: 150, rb: 0, hand: [15, 11] });
+pose('fin0', { lean: 0, bob: 1, back: 'scarf2', ang: -150, ang2: 150, hx: -1, rb: 2, lf: -2, lb: 2, hand: [12, 10], back2: [10, 13] });
+pose('fin1', { lean: 1, bob: 1, back: 'scarf2', ang: -100, ang2: 120, rb: 2, hand: [13, 9], back2: [11, 12] });
+pose('fin2', { lean: 2, bob: 1, back: 'scarf2', ang: -50, ang2: 90, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 9], back2: [14, 12] });
+pose('fin3', { lean: 3, bob: 1, back: 'scarf2', ang: 0, ang2: 40, hx: 1, rb: 1, lf: 3, lb: -3, hand: [17, 10], back2: [17, 12] });
+pose('fin4', { lean: 4, bob: 1, back: 'scarf2', ang: 45, ang2: 0, hx: 2, rb: 1, lf: 3, lb: -3, hand: [18, 12], back2: [19, 12] });
+pose('fin5', { lean: 4, bob: 1, back: 'scarf1', ang: 80, ang2: -30, hx: 2, rb: 0, lf: 3, lb: -3, hand: [18, 13], back2: [19, 11] });
+
 pose('hurt0', { lean: -1, bob: 1, back: 'scarf2', ang: 60, ang2: 80, hx: -1, hy: 1, rb: 2, lf: -1, lb: 1, hand: [13, 13], back2: [9, 14] });
 
 // down: folds over; hood off beside, daggers crossed on the ground
@@ -139,7 +150,9 @@ export default {
   anims: {
     idle: { fps: 3, frames: ['idle0', 'idle1', 'idle2', 'idle3'] },
     walk: { fps: 10, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
-    attack: { loop: false, frames: ['atk0', 'atk1', 'atk2', 'atk3'], ms: [110, 40, 60, 140] },
+    sweep: { loop: false, frames: ['sw0', 'sw1', 'sw2', 'sw3', 'sw4'], ms: [30, 30, 30, 30, 30] },        // spans the 8-tick slash arc
+    finisher: { loop: false, frames: ['fin0', 'fin1', 'fin2', 'fin3', 'fin4', 'fin5'], ms: [30, 30, 30, 30, 30, 30] },
+    recover: { loop: false, frames: ['rec0', 'rec1'], ms: [100, 120] },
     cast: { loop: false, frames: ['cast0', 'cast1', 'cast2', 'cast3'], ms: [130, 60, 90, 160] },
     hurt: { fps: 6, loop: false, frames: ['hurt0'] },
     down: { fps: 5, loop: false, frames: ['down0', 'down1', 'down2'] },

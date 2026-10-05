@@ -71,11 +71,6 @@ parts.fxThrust = rows(`
   .YYY.
   Y....
 `);
-pose('atk0', { ang: -150, bob: 1, lean: -1, hx: -1, rb: 2, lf: -1, lb: 1, hand: [12, 8] });     // crook drawn back
-pose('atk1', { ang: -120, bob: 1, lean: -1, rb: 2, hand: [12, 8] });
-pose('atk2', { ang: -30, lean: 1, hx: 1, rb: 1, lf: 2, lb: -2, hand: [14, 9], fx: [['fxSweep', 13, 9]] });
-pose('atk3', { ang: 8, bob: 1, lean: 2, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 10], fx: [['fxThrust', 22, 6]] });   // IMPACT
-pose('atk4', { ang: -40, bob: 1, lean: 1, rb: 0, hand: [14, 10] });
 
 parts.fxNova1 = ring({ rx: 6, ry: 2, thick: 1, ch: 'G' });
 parts.fxNova2 = ring({ rx: 11, ry: 3, thick: 2, ch: 'Y', inner: 'G' });
@@ -85,10 +80,25 @@ parts.fxRays = rows(`
   .Y.Y.Y.
 `);
 pose('cast0', { ang: -95, bob: 1, lean: -1, rb: 2, hand: [12, 10] });
-pose('cast1', { ang: -90, rb: 1, hand: [14, 6], fx: [['fxNova1', 10, 14]] });
-pose('cast2', { ang: -90, bob: -1, hand: [14, 5], fx: [['fxNova2', 10, 14], ['fxRays', 11, -8]] });
-pose('cast3', { ang: -90, rb: 1, hand: [14, 6], fx: [['fxNova3', 10, 14]] });
+pose('cast1', { ang: -90, rb: 1, hand: [14, 6] });
+pose('cast2', { ang: -90, bob: -1, hand: [14, 5] });
+pose('cast3', { ang: -90, rb: 1, hand: [14, 6] });
 pose('cast4', { ang: -84, bob: 1, rb: 2, hand: [13, 10] });
+// ---- melee swing, same contract as the warrior (see warrior.mjs): the crook follows the 8-tick slash arc the game draws
+pose('sw0', { ang: -130, bob: 1, lean: -1, hx: -1, rb: 2, lf: -1, lb: 1, hand: [12, 8] });
+pose('sw1', { ang: -85, rb: 2, hand: [13, 7] });
+pose('sw2', { ang: -30, lean: 1, hx: 1, rb: 1, lf: 2, lb: -2, hand: [14, 8] });
+pose('sw3', { ang: 20, bob: 1, lean: 2, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 10] });
+pose('sw4', { ang: 60, bob: 1, lean: 2, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 11] });
+pose('rec0', { ang: 35, bob: 1, lean: 1, rb: 1, hand: [14, 10] });
+pose('rec1', { ang: -45, rb: 0, hand: [14, 9] });
+pose('fin0', { ang: -150, bob: 1, lean: -2, hx: -1, rb: 2, lf: -2, lb: 2, hand: [11, 8] });
+pose('fin1', { ang: -110, lean: -1, rb: 2, hand: [12, 6] });
+pose('fin2', { ang: -60, hx: 1, rb: 1, lf: 2, lb: -2, hand: [13, 5] });
+pose('fin3', { ang: -10, bob: 1, lean: 1, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 8] });
+pose('fin4', { ang: 40, bob: 1, lean: 2, hx: 2, rb: 1, lf: 3, lb: -3, hand: [16, 10] });
+pose('fin5', { ang: 95, bob: 2, lean: 2, hx: 2, rb: 0, lf: 3, lb: -3, hand: [15, 11] });
+
 pose('hurt0', { ang: -40, bob: 1, lean: -2, hx: -1, hy: 1, rb: 2, lf: -1, lb: 1, hand: [12, 10] });
 
 // the mitre is knocked off and lies on its side next to her head, so her face stays visible while she waits to be revived
@@ -118,14 +128,16 @@ frames.down2 = [['puddleLow', ...T(6, 12)], ['head', ...T(3, 10)], ['hatFallen',
 
 export default {
   name: 'cleric', title: 'Cleric', notes: 'Mitre + crozier. Game scale (~17px incl. outline). Robe colour swaps per player.',
-  cell: [46, 36],
+  cell: [46, 44],
   shadow: [9, 5], pivot: [20, 28], palette, post,
   variants: [{ id: 'base', label: 'default', palette: {} }, ...GLASS_PLAYERS.map((v) => ({ ...v, palette: { b: v.palette.R, a: v.palette.r } }))],
   parts, frames,
   anims: {
     idle: { fps: 3, frames: ['idle0', 'idle1', 'idle2', 'idle3'] },
     walk: { fps: 8, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
-    attack: { loop: false, frames: ['atk0', 'atk1', 'atk2', 'atk3', 'atk4'], ms: [190, 110, 40, 120, 170] },
+    sweep: { loop: false, frames: ['sw0', 'sw1', 'sw2', 'sw3', 'sw4'], ms: [30, 30, 30, 30, 30] },        // spans the 8-tick slash arc
+    finisher: { loop: false, frames: ['fin0', 'fin1', 'fin2', 'fin3', 'fin4', 'fin5'], ms: [30, 30, 30, 30, 30, 30] },
+    recover: { loop: false, frames: ['rec0', 'rec1'], ms: [100, 120] },
     cast: { loop: false, frames: ['cast0', 'cast1', 'cast2', 'cast3', 'cast4'], ms: [170, 120, 110, 140, 200] },
     hurt: { fps: 6, loop: false, frames: ['hurt0'] },
     down: { fps: 5, loop: false, frames: ['down0', 'down1', 'down2'] },

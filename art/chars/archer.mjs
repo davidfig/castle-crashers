@@ -106,11 +106,6 @@ pose('walk3', { ...Q, lf: 1, lfl: 1, lb: 0, rb: 0 });
 parts.fxArrow = rows(`
   RW.......WWWWX
 `);
-pose('atk0', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [15, 6], arrow: true, pull: 1 });
-pose('atk1', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [16, 6], arrow: true, pull: 3 });
-pose('atk2', { ...Q, aim: true, bob: 0, lean: 0, rb: 1, hand: [16, 6], arrow: true, pull: 4 });
-pose('atk3', { ...Q, aim: true, bob: 1, lean: 1, rb: 1, hand: [16, 6], pull: 0, fx: [['fxArrow', 20, 6]] });        // RELEASE
-pose('atk4', { ...Q, bob: 1, rb: 0, hand: [15, 10] });
 
 // ability: charged shot — long gold-lit draw, then a piercing beam
 parts.fxBeam = rows(`
@@ -122,10 +117,26 @@ parts.fxSpark = rows(`
   Y.Y
 `);
 pose('cast0', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [15, 7], arrow: true, pull: 2, glow: true });
-pose('cast1', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [16, 6], arrow: true, pull: 4, glow: true, fx: [['fxSpark', 19, 1]] });
-pose('cast2', { ...Q, aim: true, bob: 1, lean: -2, rb: 2, hand: [16, 6], arrow: true, pull: 5, glow: true, fx: [['fxSpark', 20, 9]] });
-pose('cast3', { ...Q, aim: true, bob: 0, lean: 1, rb: 1, hand: [17, 6], pull: 0, fx: [['fxBeam', 21, 6]] });          // RELEASE
+pose('cast1', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [16, 6], arrow: true, pull: 4, glow: true });
+pose('cast2', { ...Q, aim: true, bob: 1, lean: -2, rb: 2, hand: [16, 6], arrow: true, pull: 5, glow: true });
+pose('cast3', { ...Q, aim: true, bob: 0, lean: 1, rb: 1, hand: [17, 6], pull: 0 });          // RELEASE
 pose('cast4', { ...Q, bob: 1, rb: 0, hand: [15, 10] });
+// ---- the shot, same contract as the warrior (see warrior.mjs): draw -> hold -> release over the 8-tick slash arc the game draws
+pose('sw0', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [15, 6], arrow: true, pull: 1 });
+pose('sw1', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [16, 6], arrow: true, pull: 3 });
+pose('sw2', { ...Q, aim: true, bob: 0, rb: 1, hand: [16, 6], arrow: true, pull: 4 });
+pose('sw3', { ...Q, aim: true, bob: 1, lean: 1, rb: 1, hand: [16, 6], pull: 0 });          // RELEASE
+pose('sw4', { ...Q, aim: true, bob: 1, lean: 1, rb: 1, hand: [16, 7], pull: 0 });
+pose('rec0', { ...Q, bob: 1, rb: 0, hand: [15, 10] });
+pose('rec1', { ...Q, bob: 0, rb: 0, hand: [15, 10] });
+// charged shot as the finisher: a long glowing draw, then the release
+pose('fin0', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [15, 7], arrow: true, pull: 2, glow: true });
+pose('fin1', { ...Q, aim: true, bob: 1, lean: -1, rb: 2, hand: [16, 6], arrow: true, pull: 3, glow: true });
+pose('fin2', { ...Q, aim: true, bob: 1, lean: -2, rb: 2, hand: [16, 6], arrow: true, pull: 5, glow: true });
+pose('fin3', { ...Q, aim: true, bob: 1, lean: -2, rb: 2, hand: [16, 6], arrow: true, pull: 5, glow: true });
+pose('fin4', { ...Q, aim: true, bob: 0, lean: 1, rb: 1, hand: [17, 6], pull: 0 });         // RELEASE
+pose('fin5', { ...Q, aim: true, bob: 1, lean: 1, rb: 1, hand: [17, 7], pull: 0 });
+
 pose('hurt0', { ...Q, bob: 1, lean: -2, hx: -1, hy: 1, rb: 2, lf: -1, lb: 1, hand: [13, 10] });
 
 // down: slumps; cap beside, bow dropped, quiver spilled
@@ -161,7 +172,9 @@ export default {
   anims: {
     idle: { fps: 3, frames: ['idle0', 'idle1', 'idle2', 'idle3'] },
     walk: { fps: 8, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
-    attack: { loop: false, frames: ['atk0', 'atk1', 'atk2', 'atk3', 'atk4'], ms: [160, 140, 160, 40, 150] },
+    sweep: { loop: false, frames: ['sw0', 'sw1', 'sw2', 'sw3', 'sw4'], ms: [30, 30, 30, 30, 30] },        // spans the 8-tick slash arc
+    finisher: { loop: false, frames: ['fin0', 'fin1', 'fin2', 'fin3', 'fin4', 'fin5'], ms: [30, 30, 30, 30, 30, 30] },
+    recover: { loop: false, frames: ['rec0', 'rec1'], ms: [100, 120] },
     cast: { loop: false, frames: ['cast0', 'cast1', 'cast2', 'cast3', 'cast4'], ms: [200, 200, 220, 70, 200] },
     hurt: { fps: 6, loop: false, frames: ['hurt0'] },
     down: { fps: 5, loop: false, frames: ['down0', 'down1', 'down2'] },
