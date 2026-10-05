@@ -153,7 +153,8 @@ function drawFrame(g, k, fname, x, y, fl) {
 }
 function drawAnim() {
   if (!meta || !img) return;
-  const k = Number($('zoom').value), [cw, ch] = meta.cell;
+  const [cw, ch] = meta.cell;
+  const k = Math.max(1, Math.min(Number($('zoom').value), Math.floor(Math.max(200, $('anim').parentElement.clientWidth - 4) / cw)));   // a big cell shrinks the zoom rather than scrolling
   const { g, k: kk } = fit($('anim'), cw, ch, k);
   g.fillStyle = $('bg').value; g.fillRect(0, 0, cw * kk, ch * kk);
   const a = meta.anims[animName]; const fname = a.frames[frameIdx % a.frames.length];
@@ -184,7 +185,8 @@ function drawSheet() {
 // ---- every pose at once: each animation's frames as static tiles, ground lines aligned, with the corpse included
 function drawPoses() {
   if (!meta || !img) return;
-  const k = Number($('pzoom').value), [cw, ch] = meta.cell, box = $('poses');
+  const [cw, ch] = meta.cell, box = $('poses');
+  const k = Math.max(1, Math.min(Number($('pzoom').value), Math.floor(Math.max(200, box.parentElement.clientWidth - 24) / cw)));
   box.innerHTML = '';
   const H = Math.min(ch, meta.pivot[1] + 5);
   for (const [an, a] of Object.entries(meta.anims)) {
@@ -308,10 +310,21 @@ async function drawCompare() {
   try { await drawCompareInner(); } finally { cmpBusy = false; }
 }
 // Every box is the same large size with the ground line at the same height, so each sprite sits with space all around.
-const BOX_W = 88, BOX_H = 60, BOX_BASE = 42;   // art pixels; base = the ground line inside the box
+// The box grows to fit the largest selected sheet (a boss cell is far bigger than a goblin's), never smaller than the default.
 async function drawCompareInner() {
-  const k = Number($('cmpZoom').value), vi = Number($('cmpVar').value), bg = $('cmpBg').value, flip = cmp.flip;
+  const vi = Number($('cmpVar').value), bg = $('cmpBg').value, flip = cmp.flip;
   const now = performance.now();
+  let BOX_W = 88, BOX_BASE = 42;                 // art pixels; base = the ground line inside the box
+  for (const c of cmp.cells) {
+    if (!imgs[c.n]) continue;
+    const { meta } = imgs[c.n];
+    BOX_BASE = Math.max(BOX_BASE, meta.pivot[1] + 3);
+    BOX_W = Math.max(BOX_W, Math.ceil(meta.cell[0] * ($('cmpDead').classList.contains('on') && meta.anims.dead ? 1.95 : 1.1)));
+  }
+  const BOX_H = BOX_BASE + 18;
+  // keep one box inside the panel: shrink the zoom for big sheets instead of letting them be clipped
+  const avail = Math.max(200, $('cmpGrid').parentElement.clientWidth - 20);
+  const k = Math.max(1, Math.min(Number($('cmpZoom').value), Math.floor(avail / BOX_W)));
   for (const c of cmp.cells) {
     if (!imgs[c.n]) continue;
     const { meta } = imgs[c.n]; const im = await loadVariantImg(c.n, vi);

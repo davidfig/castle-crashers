@@ -26,3 +26,7 @@ Helpers in `art/lib.mjs`: `shear` (pose a part by sliding rows), `weapon` (raste
   The JSON carries `ms` for every anim.
 - `pivot[1]` (the ground line) is derived by the builder from the lowest sole of `leg*` parts in idle/walk, so weapons
   and capes can hang lower without lifting the character off the ground. Name leg parts `leg…`.
+
+## Non-player characters
+Story figures that stand beside text on the menus are built the same way: `registrar.mjs` and `peddler.mjs` use the robed rig with an
+`idle` and a `talk` loop and no combat poses. The game draws them pixel-doubled (see `src/render/npcArt.ts`, `docs/13-ui-art.md`).
