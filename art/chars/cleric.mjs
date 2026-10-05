@@ -88,16 +88,16 @@ pose('cast4', { ang: -84, bob: 1, rb: 2, hand: [13, 10] });
 pose('sw0', { ang: -130, bob: 1, lean: -1, hx: -1, rb: 2, lf: -1, lb: 1, hand: [12, 8] });
 pose('sw1', { ang: -85, rb: 2, hand: [13, 7] });
 pose('sw2', { ang: -30, lean: 1, hx: 1, rb: 1, lf: 2, lb: -2, hand: [14, 8] });
-pose('sw3', { ang: 20, bob: 1, lean: 2, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 10] });
-pose('sw4', { ang: 60, bob: 1, lean: 2, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 11] });
-pose('rec0', { ang: 35, bob: 1, lean: 1, rb: 1, hand: [14, 10] });
+pose('sw3', { ang: 5, bob: 1, lean: 2, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 9] });
+pose('sw4', { ang: 25, bob: 1, lean: 2, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 10] });
+pose('rec0', { ang: 15, bob: 1, lean: 1, rb: 1, hand: [14, 10] });
 pose('rec1', { ang: -45, rb: 0, hand: [14, 9] });
 pose('fin0', { ang: -150, bob: 1, lean: -2, hx: -1, rb: 2, lf: -2, lb: 2, hand: [11, 8] });
 pose('fin1', { ang: -110, lean: -1, rb: 2, hand: [12, 6] });
 pose('fin2', { ang: -60, hx: 1, rb: 1, lf: 2, lb: -2, hand: [13, 5] });
 pose('fin3', { ang: -10, bob: 1, lean: 1, hx: 1, rb: 1, lf: 2, lb: -2, hand: [15, 8] });
-pose('fin4', { ang: 40, bob: 1, lean: 2, hx: 2, rb: 1, lf: 3, lb: -3, hand: [16, 10] });
-pose('fin5', { ang: 95, bob: 2, lean: 2, hx: 2, rb: 0, lf: 3, lb: -3, hand: [15, 11] });
+pose('fin4', { ang: 12, bob: 1, lean: 2, hx: 2, rb: 1, lf: 3, lb: -3, hand: [16, 9] });
+pose('fin5', { ang: 32, bob: 2, lean: 2, hx: 2, rb: 0, lf: 3, lb: -3, hand: [15, 10] });
 
 pose('hurt0', { ang: -40, bob: 1, lean: -2, hx: -1, hy: 1, rb: 2, lf: -1, lb: 1, hand: [12, 10] });
 
