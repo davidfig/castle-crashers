@@ -33,99 +33,6 @@ function bitmap(rows: string[], pal: Record<string, number>, name: string): { w:
   return { w, h, rgba };
 }
 
-const PLAYER_A = [
-  '...PP.....',
-  '..hhhh....',
-  '.hhhhhH...',
-  '.hsseeH..w',
-  '.hssssH..w',
-  '..hhhH...w',
-  '..PPPPp..w',
-  '.PPPPPPpgg',
-  '.PsPPPPp.w',
-  '.pPPPPPp..',
-  '..PPPPp...',
-  '..hh.hh...',
-  '..hh.hh...',
-  '..bb.bb...',
-];
-const PLAYER_B = [...PLAYER_A.slice(0, 11), '...hhhh...', '...hhhh...', '...bbbb...'];
-
-const GOBLIN_A = [
-  'g.GGGG.g',
-  'ggGGGGgg',
-  '.GyGGyG.',
-  '.GGkkGG.',
-  '..GGGG..',
-  '.gGGGGg.',
-  '..GGGG..',
-  '..g..g..',
-  '..g..g..',
-];
-const GOBLIN_B = [...GOBLIN_A.slice(0, 7), '...gg...', '...gg...'];
-
-const ORC_A = [
-  '...oooooo...',
-  '..oOOOOOOo..',
-  '..OrrOOrrO..',
-  '..OOOOOOOO..',
-  '..OtOOOOtO..',
-  '.aaaaaaaaa..',
-  'aaaaaaaaaa..',
-  'aOaaaaaaaO..',
-  'aO.aaaaaa...',
-  '...aaaaaa...',
-  '...oo..oo...',
-  '...oo..oo...',
-  '..ooo..ooo..',
-];
-const ORC_B = [...ORC_A.slice(0, 10), '....oooo....', '....oooo....', '...oooooo...'];
-
-
-const ARCHER_A = [
-  '..CCC....',
-  '.CcccC.b.',
-  '.CcsscCb.',
-  '..Cccc.bw',
-  '..cccc.bw',
-  '.cccccbw.',
-  '.ccccc.bw',
-  '..cccc.b.',
-  '..cccc...',
-  '..c..c...',
-  '..C..C...',
-];
-const ARCHER_B = [...ARCHER_A.slice(0, 9), '...cc....', '...CC....'];
-
-const SHIELD_A = [
-  '...hhhh....',
-  '..hhhhhH...',
-  '..hsseHH...',
-  '...hhH.rrrr',
-  '..tttt.rSSr',
-  '.ttttttrSSr',
-  '.ttttttrSSr',
-  '..tttt.rSSr',
-  '..tttt..rr.',
-  '..hh.hh....',
-  '..hh.hh....',
-  '..HH.HH....',
-];
-const SHIELD_B = [...SHIELD_A.slice(0, 9), '...hhhh....', '...hhhh....', '...HHHH....'];
-
-const BOMBER_A = [
-  '....y...',
-  '....f...',
-  '..rrrr..',
-  '.rRRRRr.',
-  'rRyRRyRr',
-  'rRRkkRRr',
-  '.rRRRRr.',
-  '..rrrr..',
-  '..k..k..',
-];
-const BOMBER_B = [...BOMBER_A.slice(0, 8), '...kk...'];
-
 const GLYPHS: Record<string, string> = {
   '0': '###' + '#.#' + '#.#' + '#.#' + '###',
   '1': '.#.' + '##.' + '.#.' + '.#.' + '###',
@@ -180,31 +87,6 @@ function hash2(x: number, y: number, s = 0): number {
 }
 
 /** A body lying on its side: the sprite rotated 90 degrees, darkened and spattered with blood. */
-function corpseOf(b: { w: number; h: number; rgba: Uint8ClampedArray }, seed: number, flip: boolean): { w: number; h: number; rgba: Uint8ClampedArray } {
-  const w = b.h, h = b.w;
-  const rgba = new Uint8ClampedArray(w * h * 4);
-  for (let y = 0; y < b.h; y++) {
-    for (let x = 0; x < b.w; x++) {
-      const o = (y * b.w + x) * 4;
-      if (b.rgba[o + 3] === 0) continue;
-      // rotate clockwise (or counter-clockwise for a mirrored pose)
-      const nx = flip ? y : b.h - 1 - y;
-      const ny = flip ? b.w - 1 - x : x;
-      const d = (ny * w + nx) * 4;
-      rgba[d] = b.rgba[o] * 0.86;
-      rgba[d + 1] = b.rgba[o + 1] * 0.82;
-      rgba[d + 2] = b.rgba[o + 2] * 0.82;
-      rgba[d + 3] = 255;
-    }
-  }
-  for (let i = 0; i < w * h; i++) {
-    if (rgba[i * 4 + 3] && hash2(i, w, seed) % 9 === 0) {
-      rgba[i * 4] = 120; rgba[i * 4 + 1] = 24; rgba[i * 4 + 2] = 24; // blood
-    }
-  }
-  return { w, h, rgba };
-}
-
 function makeGround(variant: number): { w: number; h: number; rgba: Uint8ClampedArray } {
   const w = 16, h = 16;
   const rgba = new Uint8ClampedArray(w * h * 4);
@@ -253,16 +135,13 @@ function makeEllipse(w: number, h: number): { w: number; h: number; rgba: Uint8C
 export interface Sprites {
   atlas: HTMLCanvasElement;
   px: Frame;
-  player: Frame[][];
-  /** Indexed by MobType: two walk frames each. */
+  /** Indexed by MobType: the walk cycle (4 frames); other poses live in mobArt. */
   mob: Frame[][];
   shadow: Frame[];
   /** Indexed by MobType: a fallen body of that enemy. */
   corpse: Frame[];
   /** Coins: [small, big] x [face-on, edge-on]. */
   coin: Frame[][];
-  /** Fallen hero per player slot. */
-  playerDown: Frame[];
   /** Warrior sprites from the art workbench, per player slot (see hero.ts). */
   hero: HeroSet;
   /** Enemy art from the art workbench: walk cycles, the raised-bow archer, rotated weapons (see mobArt.ts). */
@@ -284,16 +163,6 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   };
 
   const px = add({ w: 1, h: 1, rgba: new Uint8ClampedArray([255, 255, 255, 255]) });
-
-  const player: Frame[][] = PLAYER_COLORS.map((col, slot) => {
-    const pal = { h: 0xb8c2cc, H: 0x7d8a99, s: 0xf2c9a0, e: 0x1b1b2b, P: col, p: darken(col, 0.62), b: 0x5a3a22, w: 0xeef3f7, g: 0xe0b43a };
-    return [add(bitmap(PLAYER_A, pal, `player${slot}A`)), add(bitmap(PLAYER_B, pal, `player${slot}B`))];
-  });
-
-  const playerDown = PLAYER_COLORS.map((col, slot) => {
-    const pal = { h: 0xb8c2cc, H: 0x7d8a99, s: 0xf2c9a0, e: 0x1b1b2b, P: col, p: darken(col, 0.62), b: 0x5a3a22, w: 0xeef3f7, g: 0xe0b43a };
-    return add(corpseOf(bitmap(PLAYER_A, pal, `down${slot}`), 40 + slot, false));
-  });
 
   const shadow = [add(makeEllipse(8, 3)), add(makeEllipse(12, 4)), add(makeEllipse(16, 5))];
 
@@ -351,5 +220,5 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   // Corpses are the authored `dead` frame of each enemy sheet (the first walk frame laid on its side, built by tools/art.mjs).
   const corpse = mobArt.anims.slice(0, 5).map((a) => a.dead[0]);
 
-  return { atlas: canvas, px, player, mob, shadow, corpse, coin, playerDown, hero, mobArt, ground, mountFar, mountNear, glyph };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, hero, mobArt, ground, mountFar, mountNear, glyph };
 }
