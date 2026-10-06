@@ -7,7 +7,7 @@ import { CLASSES } from '../data/classes';
 import { MOBS } from '../data/mobs';
 import { UPGRADES } from '../data/upgrades';
 import { biomeIndex } from '../data/roster';
-import { planLevel, type ClumpPlan, type SimBeat } from './gen/level';
+import { planGates, planLevel, type ClumpPlan, type Gate, type SimBeat } from './gen/level';
 
 export const BLAST_CAP = 64;
 
@@ -23,6 +23,9 @@ export interface PlayerState {
   dashT: number;
   /** Ticks left unseen after a rogue's vanish: untargetable, and broken by attacking. */
   vanishT: number;
+  /** Where the rogue vanished from: the spot mobs keep heading for while he is unseen. */
+  vanishX: number;
+  vanishY: number;
   /** The cleric's holy aura is switched on: it pulses on its own and drains stamina. */
   auraOn: boolean;
   dashX: number;
@@ -55,6 +58,9 @@ export interface PlayerState {
   lock: boolean;
   /** Buttons held last tick, unmuted: the edges for the panel. */
   rawPrev: number;
+  /** The card highlighted while choosing a level-up, and which way the stick was last pushed (so one push is one step). */
+  cursor: number;
+  stickPrev: number;
   /** Rank of each upgrade taken (index = UPGRADES). */
   ranks: Uint8Array;
   /** Stamina: spent by swings, dashes and the special; comes back once the regen delay has passed. */
@@ -73,6 +79,12 @@ export interface PlayerState {
   silenceT: number;
   /** Ticks left disoriented by a whiteout (movement reversed). */
   confuseT: number;
+  /** Ticks left poisoned (a slow bleed, `POISON_PULSE` ticks per point) and whether it is a burn rather than venom (look only). */
+  poisonT: number;
+  burning: boolean;
+  /** Ticks left hexed (takes half again as much damage) and withered (no stamina comes back). */
+  hexT: number;
+  witherT: number;
   /** A harpoon's haul or a ram's launch: `pullT` ticks of shoving the hero by (`pullX`, `pullY`) each tick. */
   pullT: number;
   pullX: number;
@@ -98,6 +110,10 @@ export interface GameState {
   /** The planned encounters (a function of the seed) and how many have been streamed in so far. */
   plan: ClumpPlan[];
   nextClump: number;
+  /** The barriers that hold the camera (a function of the plan), how many have opened, and the tick the last one did (-1 = none yet). */
+  gates: Gate[];
+  gateIdx: number;
+  gateOpenTick: number;
   /** Index in `plan` of the staged story beat, or -1. */
   beatIndex: number;
   /** Tick the party reached the staged beat (-1 = not yet). */
@@ -139,10 +155,10 @@ export interface GameState {
 function createPlayer(): PlayerState {
   return {
     active: false, ent: -1, classId: 0, downed: false, downTimer: 0, invuln: 0,
-    dashT: 0, vanishT: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
+    dashT: 0, vanishT: 0, vanishX: 0, vanishY: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
     bufAbility1: 0, bufDodge: 0, prevButtons: 0, faceX: 1, faceY: 0, kills: 0, coins: 0,
-    fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, ranks: new Uint8Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
-    rootT: 0, silenceT: 0, confuseT: 0, pullT: 0, pullX: 0, pullY: 0,
+    fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, cursor: 0, stickPrev: 0, ranks: new Uint8Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
+    rootT: 0, silenceT: 0, confuseT: 0, poisonT: 0, burning: false, hexT: 0, witherT: 0, pullT: 0, pullX: 0, pullY: 0,
   };
 }
 
@@ -181,6 +197,9 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     bossDeadTick: -1,
     plan,
     nextClump: 0,
+    gates: planGates(plan),
+    gateIdx: 0,
+    gateOpenTick: -1,
     beatIndex: plan.findIndex((c) => c.beat !== undefined),
     beatPlayedTick: -1,
     surrender: opts.surrender === true,

@@ -34,11 +34,37 @@ import whiteoutspiritPng from '../../art/out/whiteoutspirit.png';
 import tundraguardPng from '../../art/out/tundraguard.png';
 import rimekingPng from '../../art/out/rimeking.png';
 import dreadregentPng from '../../art/out/dreadregent.png';
+import bogfrogPng from '../../art/out/bogfrog.png';
+import mudleechPng from '../../art/out/mudleech.png';
+import toadspitterPng from '../../art/out/toadspitter.png';
+import bullfrogPng from '../../art/out/bullfrog.png';
+import sporebloatPng from '../../art/out/sporebloat.png';
+import reedstalkerPng from '../../art/out/reedstalker.png';
+import wispPng from '../../art/out/wisp.png';
+import peatbrutePng from '../../art/out/peatbrute.png';
+import mirehagPng from '../../art/out/mirehag.png';
+import toadmatronPng from '../../art/out/toadmatron.png';
+import drownedwardenPng from '../../art/out/drownedwarden.png';
+import fenlordPng from '../../art/out/fenlord.png';
+import duneraiderPng from '../../art/out/duneraider.png';
+import scarabPng from '../../art/out/scarab.png';
+import flamearcherPng from '../../art/out/flamearcher.png';
+import sidewinderPng from '../../art/out/sidewinder.png';
+import scorpionPng from '../../art/out/scorpion.png';
+import falconerPng from '../../art/out/falconer.png';
+import dustdevilPng from '../../art/out/dustdevil.png';
+import antlionPng from '../../art/out/antlion.png';
+import mummyPng from '../../art/out/mummy.png';
+import sunpriestPng from '../../art/out/sunpriest.png';
+import sunguardPng from '../../art/out/sunguard.png';
+import suntyrantPng from '../../art/out/suntyrant.png';
 
 /** Order matches MobType (see data/mobs.ts). */
 const SHEETS = [
   goblinPng, orcPng, mobarcherPng, shieldbearerPng, bomberPng, bossPng, wolfPng, slingerPng, shamanPng, drummerPng, trollPng, skeletonPng, bonearcherPng, ghoulPng, wraithPng, skullPng, bonebrutePng, necromancerPng, bansheePng, plaguezombiePng, lichPng, dreadknightPng,
   trapperPng, snowspritePng, harpoonerPng, frostwolfPng, ramPng, icehuskPng, yetiPng, frostshamanPng, blizzardwitchPng, whiteoutspiritPng, tundraguardPng, rimekingPng, dreadregentPng,
+  bogfrogPng, mudleechPng, toadspitterPng, bullfrogPng, sporebloatPng, reedstalkerPng, wispPng, peatbrutePng, mirehagPng, toadmatronPng, drownedwardenPng, fenlordPng,
+  duneraiderPng, scarabPng, flamearcherPng, sidewinderPng, scorpionPng, falconerPng, dustdevilPng, antlionPng, mummyPng, sunpriestPng, sunguardPng, suntyrantPng,
 ];
 
 export function loadMobImages(): Promise<HTMLImageElement[]> {

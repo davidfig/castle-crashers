@@ -43,11 +43,11 @@ export function spoilsScreen(chapter: number, now: Carry, before: Carry | undefi
 /** Picks nobody made during the level, resolved here with nothing at stake. Each player works their own panel. */
 export function pickLanes(sim: GameState, ready: readonly boolean[]): PickLane[] {
   return sim.players.map((p, slot) => {
-    if (!p.active) return { active: false, slot, name: '', level: 0, pending: 0, ready: false, cards: [] };
+    if (!p.active) return { active: false, slot, name: '', level: 0, pending: 0, ready: false, cursor: 0, cards: [] };
     const cards = p.pending > 0
       ? offerFor(sim.offerSeed, slot, p.level - p.pending + 1, p.ranks).slice(0, OFFER_SIZE).map((u) => ({ name: UPGRADES[u].name, text: [...UPGRADES[u].text], rank: p.ranks[u], icon: UPGRADES[u].icon }))
       : [];
-    return { active: true, slot, name: CLASSES[p.classId].name.toUpperCase(), level: p.level, pending: p.pending, ready: p.pending === 0 || ready[slot], cards };
+    return { active: true, slot, name: CLASSES[p.classId].name.toUpperCase(), level: p.level, pending: p.pending, ready: p.pending === 0 || ready[slot], cursor: p.cursor, cards };
   });
 }
 
@@ -57,7 +57,7 @@ export function picksScreen(sim: GameState, ready: readonly boolean[], level: nu
     header: 'LEVEL UPS',
     sub: routeStrip(level, total),
     lanes: pickLanes(sim, ready),
-    footer: 'PICK WITH ATTACK ABILITY 1 ABILITY 2    LEVEL BUTTON KEEPS FOR LATER',
+    footer: 'STICK MOVES    ATTACK OR DASH PICKS    LEVEL BUTTON KEEPS FOR LATER',
   };
 }
 

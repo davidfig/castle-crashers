@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Behavior, MOBS, MobType } from '../data/mobs';
+import { Behavior, MOBS, MobType, ProjStyle } from '../data/mobs';
 import { availableTypes, BIOME_COUNT, biomeIndex, entryWeight, ROSTERS } from '../data/roster';
 import { BIOMES } from '../data/biomes';
 import { createRng, Stream } from '../engine/rng';
@@ -336,6 +336,20 @@ function abilities(type: number): string[] {
   if (d.shot && d.shot.count > 1) a.push('volley');
   if (d.shot?.pull) a.push('hook');
   if (d.special) a.push(d.special.kind);
+  if (d.poisonOnHit) a.push('poisonBite');
+  if (d.rootOnHit) a.push('root');
+  if (d.witherOnHit) a.push('wither');
+  if (d.hop) a.push('hop');
+  if (d.thorns) a.push('thorns');
+  if (d.evade) a.push('evade');
+  if (d.burrow) a.push('burrow');
+  if (d.drain) a.push('drain');
+  if (d.trail) a.push('trail');
+  if (d.flame) a.push('flameAura');
+  if (d.behavior === Behavior.Melee && d.reach >= 20) a.push('longReach');
+  if (d.shot?.poison) a.push(d.shot.style === ProjStyle.Fire ? 'ignite' : 'spit');
+  if (d.shot?.homing) a.push('homing');
+  if (d.onDeath?.cloud) a.push('spores');
   if (d.pack) a.push('pack');
   if (d.revive) a.push('revive');
   if (d.onDeath?.split) a.push('split');

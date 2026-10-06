@@ -6,7 +6,7 @@ import { hex } from '../platform/gl/batcher';
 import { RAIN_FLIGHT, RAIN_HEIGHT, RAIN_SPREAD, rainLaunchTick, rainOffset } from '../sim/rain';
 import { TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
 import { Kind, ZoneKind } from '../sim/entities';
-import { BOSS_SPECIAL, isWarded, SP_CLING, SP_WIND } from '../sim/abilities';
+import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abilities';
 import { Phase, type GameState } from '../sim/state';
 import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, MobType, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
@@ -14,6 +14,7 @@ import { drawAmbient, drawCrest, drawFog, drawGround, drawHaze, drawParallax, dr
 import { makeBlendedMood, moodAt, sceneryFor } from '../data/biomes';
 import { BLINK_TICKS, SLASH_TICKS, type Fx } from './fx';
 import { drawCamps } from './camp';
+import { drawGates } from './gate';
 import { drawLevelUp } from './levelup';
 import { drawMercy } from './mercy';
 import { heroFrame } from './hero';
@@ -23,7 +24,7 @@ import type { FrameStats } from '../platform/perf';
 const mood = makeBlendedMood();
 
 /** Shadow size (0 small, 1 medium, 2 large) by MobType. */
-const SHADOW_FOR = [0, 2, 0, 1, 0, 2, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 2, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 2, 0, 0, 0, 1, 2, 2];
+const SHADOW_FOR = [0, 2, 0, 1, 0, 2, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 2, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 2, 0, 0, 0, 1, 2, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 1, 1, 2, 0, 0, 0, 0, 1, 2, 0, 1, 1, 0, 1, 2];
 const order = new Int32Array(4096);
 const sortedBuf = new Int32Array(4096);
 /** Enemies still climbing up from behind the hill at the top edge (drawn before the ground, so the hill covers them). */
@@ -60,6 +61,16 @@ function star(b: Batcher, S: Sprites, x: number, y: number, arm: number, color: 
   b.drawScaled(S.px, x - 1, y - 1, 3, 3, hex(0xffffff, alpha));
 }
 
+/** A filled circle of radius r from one horizontal strip per pixel row. */
+function drawDisc(b: Batcher, S: Sprites, cx: number, cy: number, r: number, color: number): void {
+  const n = Math.max(1, Math.round(r));
+  for (let dy = -n; dy <= n; dy++) {
+    const half = Math.sqrt(Math.max(0, r * r - dy * dy));
+    const w = Math.max(1, Math.round(half * 2));
+    b.drawScaled(S.px, Math.round(cx - w / 2), Math.round(cy) + dy, w, 1, color);
+  }
+}
+
 function hitFlash(hurt: number): number {
   return hurt > 0 ? 0.12 + 0.06 * hurt : 0;
 }
@@ -75,6 +86,8 @@ export interface DebugInfo {
   endPrompt?: string;
   /** "LEVEL 1 OF 2": where the party is on its route. */
   routeLabel?: string;
+  /** Per player slot: the key or button that opens the level-up panel on that player's device. */
+  levelKeys?: string[];
 }
 
 export function drawText(b: Batcher, S: Sprites, text: string, x: number, y: number, color: number, scale = 1, shadow = true): number {
@@ -135,11 +148,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawGround(b, S, biome, mood, camX, oy, ft);
   drawCrest(b, S, biome, mood, camX, oy);
   drawFog(b, S, biome, mood, camX, oy, ft, progress);
-  // start / goal markers
-  b.drawScaled(S.px, 40 - camX, FIELD_Y0 + oy - 6, 2, WORLD_H + 12, hex(0xf0e6b0, 0.35));
-  b.drawScaled(S.px, WORLD_W - 70 - camX, FIELD_Y0 + oy - 6, 3, WORLD_H + 12, hex(0xffd35a, 0.7));
-
   drawCamps(b, S, s, camX, oy);
+  drawGates(b, S, s, camX, oy);
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);
@@ -298,19 +308,19 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         const cy = sy - 12;
         for (let t = 6; t >= 1; t--) {
           const w = 12 - t;
-          b.drawScaled(S.px, Math.round(sx - dx * t * 5 - w / 2), Math.round(cy - dy * t * 5 - w / 2), w, w, hex(t > 3 ? 0xa02a1e : 0xd8402e, 0.5 - t * 0.06));
+          drawDisc(b, S, sx - dx * t * 5, cy - dy * t * 5, w / 2, hex(t > 3 ? 0xa02a1e : 0xd8402e, 0.5 - t * 0.06));
         }
-        b.drawScaled(S.px, Math.round(sx - 9), Math.round(cy - 9), 18, 18, hex(0xd8402e, 0.4 + flick * 0.1));
-        b.drawScaled(S.px, Math.round(sx - 7), Math.round(cy - 7), 14, 14, hex(0xff8a30, 0.85));
-        b.drawScaled(S.px, Math.round(sx - 5), Math.round(cy - 5), 10, 10, hex(0xffb340));
-        b.drawScaled(S.px, Math.round(sx - 3), Math.round(cy - 3), 6, 6, hex(0xffe890));
-        b.drawScaled(S.px, Math.round(sx - 1 - flick), Math.round(cy - 1 - flick), 3, 3, hex(0xffffff));
+        drawDisc(b, S, sx, cy, 9, hex(0xd8402e, 0.4 + flick * 0.1));
+        drawDisc(b, S, sx, cy, 7, hex(0xff8a30, 0.85));
+        drawDisc(b, S, sx, cy, 5, hex(0xffb340));
+        drawDisc(b, S, sx, cy, 3, hex(0xffe890));
+        drawDisc(b, S, sx - flick * 0.5, cy - flick * 0.5, 1.5, hex(0xffffff));
       } else if (shot && shot.splash) {
         const flick = (s.tick + i) & 2 ? 1 : 0;
         for (let t = 4; t >= 1; t--) b.drawScaled(S.px, sx - dx * t * 3 - 1, sy - 7 - dy * t * 3 - 1, 3 - (t >> 1), 3 - (t >> 1), hex(t > 2 ? 0xd8402e : 0xff8a30, 0.8 - t * 0.14));
-        b.drawScaled(S.px, sx - 3, sy - 10, 6, 6, hex(0xff8a30, 0.45 + flick * 0.15));
-        b.drawScaled(S.px, sx - 2, sy - 9, 4, 4, hex(0xffd35a));
-        b.drawScaled(S.px, sx - 1, sy - 8, 2, 2, hex(0xffffff));
+        drawDisc(b, S, sx, sy - 7, 3, hex(0xff8a30, 0.45 + flick * 0.15));
+        drawDisc(b, S, sx, sy - 7, 2, hex(0xffd35a));
+        drawDisc(b, S, sx, sy - 7, 1, hex(0xffffff));
       } else if (shot) {
         // dark enough to read on snow: a deep brown tail, a burnt-gold shaft and a dark-edged amber head (no white)
         b.drawScaled(S.px, sx - dx * 5, sy - 7 - dy * 5, 2, 2, hex(0x5a3a12));
@@ -325,6 +335,30 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         if (((s.tick >> 1) + i) & 1) b.drawScaled(S.px, Math.round(sx + dx * 2), Math.round(sy - 6 + dy * 2), 1, 1, hex(0xffffff));
       } else if (e.mode[i] === ProjStyle.Harpoon) {
         drawHarpoon(b, S, sx, sy - 7, dx, dy);
+      } else if (e.mode[i] === ProjStyle.Glob) {
+        // a glob of marsh venom: a fat green-black blob that wobbles, with a drip behind it
+        const wob = ((s.tick >> 1) + i) & 1;
+        b.drawScaled(S.px, Math.round(sx - dx * 4), Math.round(sy - 6 - dy * 4), 2, 2, hex(0x4a6a1a, 0.7));
+        b.drawScaled(S.px, Math.round(sx - 2), Math.round(sy - 9), 5, 5, hex(0x24340c, 0.85));
+        b.drawScaled(S.px, Math.round(sx - 1), Math.round(sy - 8 + wob), 3, 3, hex(0x8cc83a));
+        b.drawScaled(S.px, Math.round(sx), Math.round(sy - 8), 1, 1, hex(0xd8f890));
+      } else if (e.mode[i] === ProjStyle.Falcon) {
+        // a falcon stooping on its prey: a dark body, wings that beat, a pale breast
+        const beat = ((s.tick >> 2) + i) & 1;
+        const wy = Math.round(sy - 9);
+        b.drawScaled(S.px, Math.round(sx - dx * 5), Math.round(sy - 8 - dy * 5), 2, 1, hex(0x3a2a18, 0.5));
+        b.drawScaled(S.px, Math.round(sx - 4), beat ? wy - 2 : wy + 1, 3, 1, hex(0x5a3a1c));
+        b.drawScaled(S.px, Math.round(sx + 2), beat ? wy - 2 : wy + 1, 3, 1, hex(0x5a3a1c));
+        b.drawScaled(S.px, Math.round(sx - 2), wy, 5, 3, hex(0x3a2410));
+        b.drawScaled(S.px, Math.round(sx - 1), wy + 1, 3, 1, hex(0xd8c090));
+        b.drawScaled(S.px, Math.round(sx + (dx >= 0 ? 2 : -2)), wy, 1, 1, hex(0xf0c040));
+      } else if (e.mode[i] === ProjStyle.Fire) {
+        // a flaming arrow: a streak of embers behind a burning head
+        const flick = ((s.tick >> 1) + i) & 1;
+        for (let t = 5; t >= 1; t--) b.drawScaled(S.px, Math.round(sx - dx * t * 2.5), Math.round(sy - 7 - dy * t * 2.5), 2, 2, hex(t > 3 ? 0x9a2a10 : 0xe86a1a, 0.9 - t * 0.12));
+        b.drawScaled(S.px, Math.round(sx - 2), Math.round(sy - 9), 4, 4, hex(0x4a1808, 0.8));
+        b.drawScaled(S.px, Math.round(sx - 1), Math.round(sy - 8 - flick), 3, 3, hex(0xff8a30));
+        b.drawScaled(S.px, Math.round(sx), Math.round(sy - 7), 1, 1, hex(0xffe890));
       } else if (e.mode[i] === ProjStyle.Bone) {
         // a thrown bone: pale, tumbling
         const spin = ((s.tick >> 1) + i) & 1;
@@ -377,6 +411,27 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         for (const [dx, dy] of [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]]) b.drawScaled(S.px, cx + dx, cy + dy, 1, 1, hex(0xb890ff));
       }
       if (p.rootT > 0) groundRing(b, S, sx, sy, 7, 10, hex(ICE.steel, 0.95)); // held fast in a snare
+      if (p.hexT > 0) {
+        // hexed: a violet sigil turning on the ground and a pip over the head
+        groundRing(b, S, sx, sy, 8, 12, hex(0x9a4ad0, 0.55 + 0.3 * (((s.tick >> 3) & 1))));
+        b.drawScaled(S.px, Math.round(sx - 1), Math.round(sy - H.top - 14), 3, 3, hex(0x9a4ad0));
+        b.drawScaled(S.px, Math.round(sx), Math.round(sy - H.top - 13), 1, 1, hex(0xe0b0ff));
+      }
+      if (p.witherT > 0) {
+        // withered: grey flecks falling off the hero
+        for (let q = 0; q < 2; q++) {
+          const t = ((s.tick * 0.5 + q * 11 + i * 3) % 18) / 18;
+          b.drawScaled(S.px, Math.round(sx - 3 + q * 5), Math.round(sy - H.top + t * 10), 1, 1, hex(0x8a8070, 0.85 * (1 - t)));
+        }
+      }
+      if (p.poisonT > 0) {
+        // venom (green bubbles) or burning (embers) rising off the body
+        const cx = Math.round(sx), hy = Math.round(sy - H.top);
+        for (let q = 0; q < 3; q++) {
+          const t = ((s.tick * 0.7 + q * 9 + i * 5) % 20) / 20;
+          b.drawScaled(S.px, cx - 3 + q * 3 + (q === 1 ? 1 : 0), Math.round(hy + 8 - t * 12), 1, 1, hex(p.burning ? (q & 1 ? 0xffb030 : 0xff6a20) : (q & 1 ? 0xd8f890 : 0x8cc83a), 0.9 * (1 - t)));
+        }
+      }
       if (p.confuseT > 0) {
         // lost in a whiteout: question marks circling the head
         for (let q = 0; q < 3; q++) {
@@ -550,7 +605,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
 
   drawMercy(b, S, s, camX, alpha, oy);
   drawHud(b, S, s, fx, dbg);
-  drawLevelUp(b, S, s);
+  drawLevelUp(b, S, s, dbg.levelKeys);
 }
 
 function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): void {
@@ -773,6 +828,59 @@ export function drawSpecialTelegraph(b: Batcher, S: Sprites, e: GameState['ents'
     case 'cling':
       drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(0xff5a3a), 1);
       break;
+    case 'hex':
+    case 'dazzle': {
+      // the mark, on the ground where the hero stands: a violet ring for a curse, a hot white-gold one for a flash
+      const tx = sx + (e.ax[i] - e.x[i]), ty = feetY + (e.ay[i] - e.y[i]);
+      const hexc = sp.kind === 'hex';
+      groundRing(b, S, tx, ty, sp.radius, 24, hex(hexc ? 0x9a4ad0 : 0xf0a020, blink));
+      groundRing(b, S, tx, ty, sp.radius * (0.2 + 0.8 * p), 16, hex(hexc ? 0xd8a8f8 : 0xffe080, 0.4 + 0.4 * p));
+      for (let k = 0; k < 6; k++) {
+        const a = (hexc ? -1 : 1) * tick * 0.12 + k * 1.047;
+        b.drawScaled(S.px, Math.round(tx + Math.cos(a) * sp.radius * 0.6), Math.round(ty + Math.sin(a) * sp.radius * 0.4 - 2), 1, 2, hex(hexc ? 0xb86ae8 : 0xffd060, 0.5 + 0.4 * p));
+      }
+      drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(hexc ? 0x9a4ad0 : 0xf0a020), 1);
+      break;
+    }
+    case 'lure': {
+      // a false light: motes streaming in toward the caster, along the whole range it will pull from
+      groundRing(b, S, sx, feetY, sp.radius, 40, hex(0x40e0c0, blink * 0.7));
+      for (let k = 0; k < 12; k++) {
+        const t = ((tick * 0.02 + k / 12) % 1), a = k * 0.5236 + 0.3, rr = sp.radius * (1 - t);
+        b.drawScaled(S.px, Math.round(sx + Math.cos(a) * rr), Math.round(feetY + Math.sin(a) * rr * 0.7 - 3), 1, 1, hex(0x9afff0, 0.35 + 0.5 * p));
+      }
+      drawText(b, S, '~', Math.round(sx - 1), Math.round(top - 8), hex(0x40e0c0), 1);
+      break;
+    }
+    case 'leap': {
+      // the landing spot, marked on the ground where the hero stands
+      const tx = sx + (e.ax[i] - e.x[i]), ty = feetY + (e.ay[i] - e.y[i]);
+      groundRing(b, S, tx, ty, sp.radius, 26, hex(0xff3a2a, blink));
+      groundRing(b, S, tx, ty, sp.radius * (0.2 + 0.8 * p), 18, hex(0xd8e890, 0.4 + 0.3 * p));
+      drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(0xff5a3a), 1);
+      break;
+    }
+    case 'gust': {
+      groundRing(b, S, sx, feetY, sp.radius, 36, hex(0xd8a85a, blink));
+      groundRing(b, S, sx, feetY, sp.radius * (0.2 + 0.8 * p), 24, hex(0xf0d890, 0.4 + 0.4 * p));
+      for (let k = 0; k < 10; k++) {
+        const a = tick * 0.2 + k * 0.628, rr = sp.radius * (0.3 + 0.6 * (k % 3) / 2);
+        b.drawScaled(S.px, Math.round(sx + Math.cos(a) * rr), Math.round(feetY + Math.sin(a) * rr * 0.7 - 3), 2, 1, hex(0xe8c880, 0.4 + 0.4 * p));
+      }
+      drawText(b, S, '>>', Math.round(sx - 3), Math.round(top - 8), hex(0xe8c880), 1);
+      break;
+    }
+    case 'pit': {
+      // where the sand will give way: a ring on the ground at the hero's spot, sand already trickling in
+      const tx = sx + (e.ax[i] - e.x[i]), ty = feetY + (e.ay[i] - e.y[i]);
+      groundRing(b, S, tx, ty, sp.radius, 26, hex(0x6a4a1e, blink));
+      for (let k = 0; k < 8; k++) {
+        const a = tick * 0.15 + k * 0.785, rr = sp.radius * (0.2 + 0.7 * ((k * 37 + tick) % 60) / 60);
+        b.drawScaled(S.px, Math.round(tx + Math.cos(a) * rr), Math.round(ty + Math.sin(a) * rr * 0.7 - 1), 1, 1, hex(0xe0c27a, 0.55 + 0.4 * p));
+      }
+      drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(0x8a6a34), 1);
+      break;
+    }
     case 'heal':
     case 'rally':
     case 'ward': {
@@ -842,6 +950,50 @@ export function drawZone(b: Batcher, S: Sprites, e: GameState['ents'], i: number
       b.drawScaled(S.px, Math.round(sx + Math.cos(a) * r * 0.55), Math.round(sy + Math.sin(a) * r * 0.45 - 1), 1, 2, hex(0xaab2c4));
     }
     b.drawScaled(S.px, Math.round(sx - 1), Math.round(sy - 1), 2, 2, hex(0x5a4a3a));
+    return;
+  }
+  if (e.sub[i] === ZoneKind.Mud) {
+    // churned peat: dark wet blotches, no rim (it hurts nothing; it only drags)
+    const fade = e.cool2[i] < 60 ? e.cool2[i] / 60 : 1;
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2 + (i % 5), rr = r * (0.2 + ((k * 37 + i * 11) % 60) / 100);
+      b.drawScaled(S.px, Math.round(sx + Math.cos(a) * rr - 3), Math.round(sy + Math.sin(a) * rr * 0.7 - 1), 7, 4, hex(k & 1 ? 0x3a2c16 : 0x2a2010, 0.55 * fade));
+    }
+    if (((tick >> 3) + i) % 5 === 0) b.drawScaled(S.px, Math.round(sx + ((i * 7) % 9) - 4), Math.round(sy - 1), 1, 1, hex(0x8a7a4a, 0.8 * fade)); // a bubble
+    return;
+  }
+  if (e.sub[i] === ZoneKind.Spore) {
+    // a drifting cloud of spores: soft yellow-green puffs that rise and turn
+    const fade = e.cool2[i] < 60 ? e.cool2[i] / 60 : 1;
+    for (let k = 0; k < 10; k++) {
+      const a = tick * 0.03 + k * 0.63 + (i % 7), rr = r * (0.15 + ((k * 29 + i * 13) % 70) / 100);
+      b.drawScaled(S.px, Math.round(sx + Math.cos(a) * rr - 2), Math.round(sy + Math.sin(a) * rr * 0.6 - 4 - ((tick + k * 5) % 12) * 0.3), 4, 3, hex(k & 1 ? 0xc8d070 : 0xa0b848, 0.32 * fade));
+    }
+    groundRing(b, S, sx, sy, r * 0.95, 24, hex(0xb8c860, 0.4 * fade));
+    return;
+  }
+  if (e.sub[i] === ZoneKind.Pit) {
+    // a sand pit: a ring that darkens as it opens, then sand spiralling in toward a dark funnel
+    const open = e.mode[i] === 1;
+    const fade = e.cool2[i] < 40 ? e.cool2[i] / 40 : 1;
+    groundRing(b, S, sx, sy, r, 28, hex(0x6a4a1e, (open ? 0.85 : ((tick >> 2) & 1 ? 0.8 : 0.4)) * fade));
+    if (!open) return;
+    for (let k = 0; k < 4; k++) groundRing(b, S, sx, sy, r * (0.25 + 0.2 * k), 16 + k * 4, hex(k < 2 ? 0x2a1a08 : 0x8a6a34, (0.55 - k * 0.08) * fade));
+    for (let k = 0; k < 10; k++) {
+      const t = ((tick * 0.9 + k * 11) % 40) / 40, a = tick * 0.12 + k * 0.63 + t * 3, rr = r * (1 - t);
+      b.drawScaled(S.px, Math.round(sx + Math.cos(a) * rr), Math.round(sy + Math.sin(a) * rr * 0.7 - 1), 1, 1, hex(0xe0c27a, 0.8 * fade));
+    }
+    return;
+  }
+  if (e.sub[i] === ZoneKind.Storm && e.mode[i] === 2) {
+    // a bog brewing: rank bubbles rising in a sickly ring, thickening until it settles into a poison pool
+    const left = e.wind[i];
+    const blink = (tick >> 2) & 1 ? 0.8 : 0.45;
+    groundRing(b, S, sx, sy, r, 26, hex(0x6a8a1a, blink));
+    for (let k = 0; k < 10; k++) {
+      const a = tick * 0.1 + k * 0.63, rr = r * (0.2 + 0.75 * (((k * 29 + tick) % 50) / 50));
+      b.drawScaled(S.px, Math.round(sx + Math.cos(a) * rr), Math.round(sy + Math.sin(a) * rr * 0.7 - 3 - (left & 3)), 2, 2, hex(0xb8e060, 0.5 + 0.4 * (1 - left / 50)));
+    }
     return;
   }
   if (e.sub[i] === ZoneKind.Storm) {
@@ -919,11 +1071,21 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   const type = e.sub[i];
   const def = MOBS[type];
   const face = flip ? -1 : 1;
+  if (def.burrow && e.rem[i] === 0) {
+    // tunnelling under the sand: only a moving ripple of dust shows
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + tick * 0.15 + i;
+      b.drawScaled(S.px, Math.round(sx + Math.cos(a) * 5), Math.round(sy - 1 + Math.sin(a) * 2), 2, 1, hex(0xc8a868, 0.8));
+    }
+    b.drawScaled(S.px, Math.round(sx - 3), Math.round(sy - 2), 6, 2, hex(0xa88848, 0.9));
+    return;
+  }
   const gallop = def.charge !== undefined && e.mode[i] === 2;
   const walk = S.mob[type];
   const wf = walk[gallop ? (tick >> 1) % walk.length : ((tick >> 3) + i) % walk.length];
   const wind = e.wind[i];
-  const winding = wind > 0;
+  const leaping = e.mode[i] === SP_LEAP;
+  const winding = wind > 0 && !leaping;
   // archers raise their bow for the windup
   let f = wf;
   const since = def.atkCooldown - e.atk[i];
@@ -941,7 +1103,11 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
 
   let ox = 0, oy = 0;
   let flash = hurtFlash;
-  if (cling) {
+  if (leaping) {
+    oy = -e.z[i]; // in the air, with its landing marked on the ground
+    const sp = def.special;
+    if (sp && sp.kind === 'leap') groundRing(b, S, sx + (e.ax[i] - e.x[i]), sy + (e.ay[i] - e.y[i]), sp.radius, 22, hex(0xff3a2a, (tick >> 2) & 1 ? 0.8 : 0.45));
+  } else if (cling) {
     oy = -9; // riding a hero's back, not at their feet
   } else if (charging) {
     ox = face * 3;
@@ -982,6 +1148,14 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   if (e.buff[i] > 0) tint = hex(0xffb090); // rallied: flushed and frenzied
   if (isWarded(e, i)) tint = hex(0xb0e4ff); // wrapped in a shaman's ice
   if (special && def.special!.kind === 'blink') tint = hex(0xffffff, 1 - p * 0.85); // fading out
+  if (def.flame) {
+    // a fire licking around it: an orange ring on the ground and sparks rising
+    groundRing(b, S, sx, sy, def.flame.radius, 30, hex(0xe8601a, 0.38 + 0.12 * (((tick >> 2) + i) & 1)));
+    for (let k = 0; k < 3; k++) {
+      const t = ((tick * 0.8 + k * 9 + i * 5) % 22) / 22, a = k * 2.1 + i;
+      b.drawScaled(S.px, Math.round(sx + Math.cos(a) * def.flame.radius * 0.6), Math.round(sy + Math.sin(a) * def.flame.radius * 0.4 - t * 10), 1, 1, hex(k & 1 ? 0xffd060 : 0xff8a30, 0.9 * (1 - t)));
+    }
+  }
   if (def.aura) {
     // the permafrost around it: a faint ring on the ground, and flakes drifting in it
     groundRing(b, S, sx, sy, def.aura.radius, 30, hex(ICE.deep, 0.32));
@@ -1045,7 +1219,8 @@ function drawBoss(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick:
   // one of its own specials (a frost nova, a barrage, a rally...): drawn with that special's telegraph and an authored pose
   const move = mode === BOSS_SPECIAL ? (bd.moves ?? LEGACY_BOSS_MOVES)[e.rem[i]] : undefined;
   const cast = move?.kind === 'special' ? move : undefined;
-  const winding = mode !== 0 && wind > 0 && mode !== 2;
+  const leaping = mode === SP_LEAP;
+  const winding = mode !== 0 && wind > 0 && mode !== 2 && !leaping;
   const total = chargeWind ? def.charge!.windup : slam ? bd.slamWindup : roar ? bd.roarWindup : cast ? cast.special.windup : def.windup;
   const p = winding ? 1 - wind / total : 0;
   const since = def.atkCooldown - e.atk[i];
@@ -1061,7 +1236,11 @@ function drawBoss(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick:
   const w = f.w, h = f.h;
 
   let ox = 0, oy = 0, flash = hurtFlash;
-  if (charging) ox = face * 10;
+  if (leaping) {
+    oy = -e.z[i];
+    const lp = (bd.moves ?? []).find((m) => m.kind === 'special' && m.special.kind === 'leap');
+    if (lp && lp.kind === 'special' && lp.special.kind === 'leap') groundRing(b, S, sx + (e.ax[i] - e.x[i]), sy + (e.ay[i] - e.y[i]), lp.special.radius, 36, hex(0xff3a2a, (tick >> 2) & 1 ? 0.85 : 0.5));
+  } else if (charging) ox = face * 10;
   else if (chargeWind) { ox = -face * p * 10; oy = -(((tick >> 1) & 1) ? 3 : 0); }
   else if (slam) { oy = -p * 6; ox = (((tick >> 1) & 1) ? 1 : -1) * p * 2; } // rears up before the slam
   else if (roar) { ox = (((tick >> 1) & 1) ? 1 : -1) * 2; oy = -p * 4; }

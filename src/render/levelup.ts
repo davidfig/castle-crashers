@@ -14,7 +14,7 @@ const LANE_W = VIEW_W / 4;
 const LANE_Y = 54;
 const CARD_W = 50;
 
-export function drawLevelUp(b: Batcher, S: Sprites, s: GameState): void {
+export function drawLevelUp(b: Batcher, S: Sprites, s: GameState, keys: string[] = []): void {
   for (let slot = 0; slot < s.players.length; slot++) {
     const p = s.players[slot];
     if (!p.active || p.pending <= 0) continue;
@@ -22,7 +22,7 @@ export function drawLevelUp(b: Batcher, S: Sprites, s: GameState): void {
     const col = PLAYER_COLORS[slot];
     if (!p.panel) {
       // a pill: nothing opens by itself
-      const t = `LEVEL ${p.level}${p.pending > 1 ? ` X${p.pending}` : ''}`;
+      const t = `LEVEL ${p.level}${p.pending > 1 ? ` X${p.pending}` : ''}${keys[slot] ? ` - PRESS ${keys[slot]}` : ''}`;
       const on = (s.tick >> 4) & 1;
       const w = t.length * 4 + 8;
       drawPanel(b, S, x0 + 3, LANE_Y, w + 10, 13, { fill: 'ink', accent: col, ornaments: false });
@@ -40,7 +40,7 @@ export function drawLevelUp(b: Batcher, S: Sprites, s: GameState): void {
       if (up === undefined) continue;
       const def = UPGRADES[up];
       const cx = x0 + 3 + k * (CARD_W + 1), cy = LANE_Y + 13;
-      drawCard(b, S, cx, cy, CARD_W, 38, 0, false);
+      drawCard(b, S, cx, cy, CARD_W, 38, 0, k === p.cursor);
       drawText(b, S, String(k + 1), cx + 4, cy + 4, hex(0xffd35a), 1, false);
       drawIcon(b, S, def.icon, cx + CARD_W - 13, cy + 3, 1);
       drawText(b, S, def.name, cx + 4, cy + 14, hex(0xffffff), 1, false);

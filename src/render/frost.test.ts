@@ -26,7 +26,7 @@ const rgbOf = (color: number): number => rgb(hex(color));
 const count = (calls: Rec[], color: number): number => calls.filter((c) => rgb(c.tint) === rgbOf(color)).length;
 
 function ents(over: Record<string, number[]>): GameState['ents'] {
-  return { wind: [12], sub: [0], rem: [24], cool2: [300], ax: [1], ay: [0], ...over } as unknown as GameState['ents'];
+  return { wind: [12], sub: [0], rem: [24], cool2: [300], ax: [1], ay: [0], mode: [0], ...over } as unknown as GameState['ents'];
 }
 
 // No enemy uses a frost nova at the moment (the Blizzard Witch casts a storm), but the look stays available to any nova special.

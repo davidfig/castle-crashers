@@ -10,7 +10,7 @@ import { Fx } from './render/fx';
 import { CLASSES, classForBotSlot } from './data/classes';
 import { MAX_PLAYERS, TICK_RATE, VIEW_H, VIEW_W, WORLD_W } from './sim/constants';
 import { createSim } from './sim/state';
-import { choosePick, step } from './sim/step';
+import { choosePick, pickCard, step } from './sim/step';
 import { applyCarry, captureCarry, restCarry, type Carry } from './sim/carry';
 import { lerp } from './engine/math';
 import { FrameStats } from './platform/perf';
@@ -316,8 +316,9 @@ function campUpdate(): void {
       const p = sim.players[k];
       if (!p.active) continue;
       if (p.pending > 0) {
-        const card = edge & Btn.Attack ? 0 : edge & Btn.Ability1 ? 1 : edge & Btn.Ability2 ? 2 : -1;
-        if (card >= 0) choosePick(sim, k, card);
+        const my = frames[k].moveY;
+        const card = pickCard(p, my > 60 ? 1 : my < -60 ? -1 : 0, edge); // the camp's cards stack top to bottom
+        if (card >= 0) { choosePick(sim, k, card); p.cursor = 0; }
       }
       if (edge & Btn.Level) campReady[k] = true;
     }
@@ -467,6 +468,7 @@ startLoop({
       drawCalls: renderer.batcher.lastDrawCalls,
       sprites: renderer.batcher.lastSprites,
       endPrompt: !cfg.offLedger || route.total > 1 ? 'ATTACK TO CONTINUE' : undefined,
+      levelKeys: sim.players.map((_, k) => input.levelHint(k)),
       routeLabel: route.total > 1 ? `LEVEL ${route.index + 1} OF ${route.total}` : undefined,
     });
     barks.draw(renderer.batcher, sprites, sim, cam, alpha);

@@ -14,6 +14,12 @@ const KILL_COLORS = [
   0x7684b0, 0x5ac8f4, 0x6aaee4, 0x86bce0, 0x587090, // yeti, frost shaman, blizzard witch, whiteout spirit, tundra guard
   0x5a78b8, // rime king
   0x7a4cc0, // dread regent
+  0x7ab030, 0x4a6a3a, 0x8cc83a, 0x6aa04a, 0xb8c860, 0xa0b078, // bog frog, mud leech, toad spitter, bullfrog, sporebloat, reed stalker
+  0x40e0c0, 0x6a5a3a, 0x7a9a3a, 0x5a8a4a, 0x4a7a6a, // wisp, peat brute, mire hag, toad matron, drowned warden
+  0x6a9a2a, // fenlord
+  0xc08040, 0x3a5a4a, 0xd8742a, 0xc8a850, 0x8a3a2a, 0xb08850, // dune raider, scarab, flame archer, sidewinder, scorpion, falconer
+  0xe0c070, 0x9a6a30, 0xc8b48a, 0xe0a030, 0xc08a30, // dust devil, antlion, mummy, sun priest, sun guard
+  0xe8b030, // sun tyrant
 ];
 const MAX_P = 4000;
 const MAX_SPENT = 4000; // spent arrows lie where they fell, like corpses
@@ -301,12 +307,12 @@ export class Fx {
           break;
         }
         case Ev.Burst: {
-          // a = radius, b = style: 0 rock, 1 stomp, 2 scream, 3 bones, 4 poison, 5 frost
+          // a = radius, b = style: 0 rock, 1 stomp, 2 scream, 3 bones, 4 poison, 5 frost, 6 mire, 7 sand, 8 wisp, 9 hex, 10 flash
           const style = b;
-          const ring = style === 5 ? 0x3a9af0 : style === 2 ? 0xc8a8ff : style === 4 ? 0x9ad048 : style === 3 ? 0xefe9da : 0xff9a4a;
+          const ring = style === 5 ? 0x3a9af0 : style === 2 ? 0xc8a8ff : style === 4 ? 0x9ad048 : style === 3 ? 0xefe9da : style === 6 ? 0x7a9a2a : style === 7 ? 0xd8a85a : style === 8 ? 0x40e0c0 : style === 9 ? 0x9a4ad0 : style === 10 ? 0xffe080 : 0xff9a4a;
           this.addRing(x, y, a, hex(ring), style === 1 ? 1 : 0);
           this.trauma = Math.min(1, this.trauma + (style === 1 ? 0.4 : style === 0 ? 0.25 : 0.1));
-          const dust = style === 5 ? 0x7ad0ff : style === 2 ? 0xe0d0ff : style === 4 ? 0x9ad048 : style === 3 ? 0xefe9da : 0xc8b488;
+          const dust = style === 5 ? 0x7ad0ff : style === 2 ? 0xe0d0ff : style === 4 ? 0x9ad048 : style === 3 ? 0xefe9da : style === 6 ? 0x8aa848 : style === 7 ? 0xe0c27a : style === 8 ? 0x9afff0 : style === 9 ? 0xc89af0 : style === 10 ? 0xfff0b0 : 0xc8b488;
           const n = style === 3 ? 10 : style === 5 ? 30 : 22;
           for (let j = 0; j < n; j++) {
             const ang = (j / n) * Math.PI * 2;

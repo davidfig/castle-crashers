@@ -16,9 +16,9 @@ const SCHEMES: KeyScheme[] = [
 const RUMBLE_KEY = 'cc.rumble';
 
 const PAD_ATTACK = [7]; // right trigger
-const PAD_ABILITY1 = [0]; // A
-const PAD_ABILITY2 = [2]; // X
-const PAD_DODGE = [6, 5]; // left trigger, right bumper
+const PAD_ABILITY1 = [2]; // X
+const PAD_ABILITY2 = [6, 5]; // left trigger, right bumper
+const PAD_DODGE = [0]; // A
 const PAD_STAND_DOWN = [1, 3]; // B, Y
 const PAD_LEVEL = [4]; // left bumper
 
@@ -231,6 +231,15 @@ export class InputManager {
       else if (t === Ev.PlayerHurt) this.rumble(d[o + 3], 0.15, 1, 380);
       else if (t === Ev.PlayerDown) this.rumble(d[o + 3], 1, 1, 500);
     }
+  }
+
+  /** What to press to open the level-up panel for the device that holds `slot` ("O", "[", "LB"), or '' while the slot is unclaimed. */
+  levelHint(slot: number): string {
+    const id = this.slots[slot];
+    if (!id) return '';
+    if (id.startsWith('pad')) return 'LB';
+    const code = SCHEMES[Number(id.slice(2))]?.level ?? '';
+    return code.replace(/^Key/, '').replace('BracketLeft', '[');
   }
 
   /** Release all slots (on restart) so devices can re-join. */

@@ -55,6 +55,7 @@ The menus, the camp, the board and the story screens work but are placeholder: f
 - **Exit:** every screen in a full run, from the Writ board to the summary, is drawn from the kit with no flat-rectangle placeholders left.
 
 ## M7 — Content & Polish
+Done so far: five biomes in all (Meadow, Haunted Keep, Frozen Pass, **Sunken Marsh**, **Scorched Dunes**), each with an 11-enemy cast, no ability shared between any two enemies, and a boss with its own repertoire. The Marsh and the Dunes added poison and burning, hex, wither, mud, spore clouds, sand pits, leaps, false lights and a homing falcon (see [03](03-gameplay-combat.md)). Still to do: more mini-bosses, music and SFX, settings, accessibility, balance with real playtesters.
 - Biomes 2–3, more enemies/items/bosses, music & SFX pass, settings, accessibility.
 - Balance tooling (headless simulation of many seeded runs).
 - **Exit:** a shippable vertical slice.

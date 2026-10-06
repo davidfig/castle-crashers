@@ -6,7 +6,7 @@ import { botInput } from './bot';
 import { Btn, createInputFrame } from './input';
 import { allocEntity, Kind } from './entities';
 import { Ev, EV_STRIDE } from './events';
-import { MOBS } from '../data/mobs';
+import { MOBS, MobType } from '../data/mobs';
 import { createSim } from './state';
 import { step } from './step';
 
@@ -197,7 +197,7 @@ test('mage dash teleports a set distance at once and is invulnerable after', () 
   assert.ok(s.players[0].invuln > 0);
 });
 
-test('rogue dash vanishes: mobs stop targeting, and attacking breaks it', () => {
+test('rogue dash vanishes: mobs keep heading for where he vanished, and attacking breaks it', () => {
   const { s, e, me, dash } = dashSetup(3);
   step(s, dash);
   assert.ok(s.players[0].vanishT > 0);
@@ -334,4 +334,32 @@ test("the cleric's aura is continuous: steady chip damage every few ticks, no pu
   assert.ok(hits >= 8, `the aura hit ${hits} times in 80 ticks`);
   assert.equal(pulses, 0);
   assert.equal(stunned, 0);
+});
+
+test("the archer's first ability rains arrows once his fury is full", () => {
+  const { s, e } = dashSetup(CLASSES.findIndex((c) => c.name === 'archer'));
+  s.players[0].fury = CLASSES[s.players[0].classId].furyMax;
+  const press = idle(); press[0].buttons = Btn.Ability1;
+  step(s, press);
+  let zones = 0;
+  for (let i = 0; i < e.highWater; i++) if (e.alive[i] === 1 && e.kind[i] === Kind.Zone) zones++;
+  assert.ok(zones > 0, 'a rain zone appears');
+});
+
+test('mobs keep walking to where the rogue vanished, and one that runs into him attacks', () => {
+  const { s, e, me, dash } = dashSetup(3);
+  const far = allocEntity(e, Kind.Mob, MobType.Goblin, 330, 100, 5000);
+  e.flags[far] = 1;
+  e.face[far] = -1;
+  step(s, dash);
+  e.x[me] = e.px[me] = 60; // he slips away; the mob still heads for the spot he vanished from
+  const vx = s.players[0].vanishX;
+  const x0 = e.x[far];
+  for (let k = 0; k < 20; k++) step(s, idle());
+  assert.ok(s.players[0].vanishT > 0);
+  assert.ok(e.x[far] < x0 - 5 && e.x[far] > vx - 40, 'it carries on toward the vanish spot, not stopping');
+  e.x[me] = e.px[me] = e.x[far] - 8; e.y[me] = e.y[far]; // now he stands right in its path
+  const hp = e.hp[me];
+  for (let k = 0; k < 60; k++) step(s, idle());
+  assert.ok(e.hp[me] < hp, 'it found him and struck, vanished or not');
 });

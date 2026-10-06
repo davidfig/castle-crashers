@@ -20,7 +20,7 @@ export interface SelectSlot { joined: boolean; ready: boolean; classId: number; 
 /** A card in a player's panel at the camp. */
 export interface PickCard { name: string; text: string[]; rank: number; icon: string }
 /** One player's panel at the camp: their pending picks, one card each for the level being chosen. */
-export interface PickLane { active: boolean; slot: number; name: string; level: number; pending: number; ready: boolean; cards: PickCard[] }
+export interface PickLane { active: boolean; slot: number; name: string; level: number; pending: number; ready: boolean; cursor: number; cards: PickCard[] }
 /** A story figure standing beside the text, and whether they are speaking (their talk loop) or listening (idle). */
 export interface Figure { name: 'registrar' | 'peddler'; talking: boolean }
 export interface DoorView { biome: number; label: string; tag: string; icon: string }

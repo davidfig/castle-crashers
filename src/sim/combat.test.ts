@@ -787,7 +787,7 @@ test('reinforcements scale with the party too', () => {
 function hashOf(s: GameState): number { let h = 0; for (let i = 0; i < s.ents.highWater; i++) h = (Math.imul(h, 31) + Math.round(s.ents.x[i] * 100) + Math.round(s.ents.y[i] * 100) + s.ents.sub[i]) | 0; return h; }
 import { spawnClump as spawnClumpOnly } from './gen/level';
 
-test('mobs ahead of the screen hold until it reaches them; once in view they head for the party', () => {
+test('mobs head for the party even from beyond the screen edge', () => {
   const s = arena();
   const pe = s.players[0].ent;
   s.ents.x[pe] = 100; s.ents.y[pe] = 100;
@@ -795,15 +795,20 @@ test('mobs ahead of the screen hold until it reaches them; once in view they hea
   const far = mob(s, MobType.Goblin, 900, 100, -1);
   const x0 = s.ents.x[far];
   for (let t = 0; t < 60; t++) { s.camX = 0; step(s, idle()); }
-  assert.equal(s.ents.x[far], x0, 'a mob beyond the right edge holds while the party stands still');
-  assert.equal(s.ents.flags[far] & 1, 1);
-  const near = mob(s, MobType.Goblin, 600, 100, -1); // on screen
-  const n0 = s.ents.x[near];
-  for (let t = 0; t < 60; t++) { s.camX = 0; step(s, idle()); }
-  assert.ok(s.ents.x[near] < n0 - 20, 'a visible mob heads for the party');
-  s.camX = 400; // the party advances: the far mob is now in view
-  for (let t = 0; t < 60; t++) { s.camX = 400; step(s, idle()); }
-  assert.ok(s.ents.x[far] < x0 - 20, 'once in view it comes');
+  assert.ok(s.ents.x[far] < x0 - 20, 'a mob beyond the right edge comes even while the party stands still');
+});
+
+test('a mob keeps walking the way it faces until it rolls the turn toward the player', () => {
+  const s = arena();
+  const pe = s.players[0].ent;
+  s.ents.x[pe] = 100; s.ents.y[pe] = 100;
+  s.camX = 0; s.prevCamX = 0;
+  const m = mob(s, MobType.Goblin, 400, 100, 1); // facing away from the player
+  const x0 = s.ents.x[m];
+  step(s, idle());
+  if (s.ents.face[m] === 1) assert.ok(s.ents.x[m] > x0, 'carries on away from the player until it turns');
+  for (let t = 0; t < 400; t++) { s.camX = 0; step(s, idle()); }
+  assert.equal(s.ents.face[m], -1, 'eventually turns');
 });
 
 test('streamed-in encounters are awake as soon as they appear', () => {

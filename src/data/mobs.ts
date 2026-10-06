@@ -37,10 +37,14 @@ export interface ShotDef {
   style: number;
   /** A hit also hauls the hero this many pixels toward the shooter (a harpoon). */
   pull?: number;
+  /** A hit also poisons (or sets alight) the hero for this many ticks (see `poisonOnHit`). */
+  poison?: number;
+  /** The projectile steers toward the nearest hero as it flies (a falcon); a dodge-roll shakes it. */
+  homing?: boolean;
 }
 
 /** What a mob projectile looks like. Render-only; the sim just carries the number. */
-export const ProjStyle = { Arrow: 0, Bone: 1, Harpoon: 2, Shard: 3 } as const;
+export const ProjStyle = { Arrow: 0, Bone: 1, Harpoon: 2, Shard: 3, Glob: 4, Fire: 5, Falcon: 6 } as const;
 
 /** A move with a telegraph: the mob stops, winds up (`windup` ticks, interruptible by a hit), then it happens. */
 interface SpecialBase {
@@ -91,6 +95,8 @@ export interface StormSpecial extends SpecialBase {
   kind: 'storm'; minRange: number; maxRange: number; radius: number; delay: number; linger: number; damage: number; slow: number;
   /** A barrage: `count` storms in all, the first on the hero and the rest scattered within `spread` px of it (default one). */
   count?: number; spread?: number;
+  /** The storm is a stinking bog, not blizzard: it settles into a poison pool instead of black ice. */
+  bog?: boolean;
   /** Most storm zones (gathering or settled) alive at once, for a party of one (scaled by party size): pools from several witches would stack. */
   cap?: number;
 }
@@ -98,9 +104,26 @@ export interface StormSpecial extends SpecialBase {
 export interface WhiteoutSpecial extends SpecialBase { kind: 'whiteout'; radius: number; damage: number; duration: number }
 /** A death-wail around the caster: heroes inside are silenced (no ability buttons) for `duration` ticks. */
 export interface WailSpecial extends SpecialBase { kind: 'wail'; radius: number; damage: number; duration: number }
+/** A false light: every hero within `radius` is dragged `pull` px toward the caster (and bitten `damage`) so the crowd gets them. */
+export interface LureSpecial extends SpecialBase { kind: 'lure'; radius: number; pull: number; damage: number }
+/** Spring onto the hero's spot: a ring marks the landing, `delay` ticks later it comes down, hitting everyone within `radius` and slowing them. */
+export interface LeapSpecial extends SpecialBase { kind: 'leap'; minRange: number; maxRange: number; radius: number; damage: number; slow: number; delay: number }
+/** A gust around the caster: heroes inside `radius` take `damage` and are blown `push` px outward. */
+export interface GustSpecial extends SpecialBase { kind: 'gust'; radius: number; damage: number; push: number }
+/** Open a pit under the hero: after `delay` ticks it sucks heroes within `radius` toward its centre (`pull` px per tick) for `linger` ticks, biting whoever reaches the middle. */
+export interface PitSpecial extends SpecialBase {
+  kind: 'pit'; minRange: number; maxRange: number; radius: number; delay: number; linger: number; pull: number; damage: number;
+  /** A field of pits: `count` in all, the first under the hero and the rest scattered within `spread` px of it (default one). */
+  count?: number; spread?: number;
+}
+/** Mark the hero's spot: when the windup ends, every hero within `radius` of it is hexed for `duration` ticks (takes half again as much damage). Moving away dodges it. */
+export interface HexSpecial extends SpecialBase { kind: 'hex'; minRange: number; maxRange: number; radius: number; duration: number }
+/** A blinding flash on the hero's spot: heroes within `radius` of it are stunned (cannot move or use abilities) for `duration` ticks and take `damage`. */
+export interface DazzleSpecial extends SpecialBase { kind: 'dazzle'; minRange: number; maxRange: number; radius: number; duration: number; damage: number }
 export type Special =
-  | LobSpecial | SummonSpecial | HealSpecial | RallySpecial | BlinkSpecial | NovaSpecial | BeamSpecial
-  | TrapSpecial | ClingSpecial | WardSpecial | StormSpecial | WhiteoutSpecial | WailSpecial;
+  | HexSpecial | DazzleSpecial | LobSpecial | SummonSpecial | HealSpecial | RallySpecial | BlinkSpecial | NovaSpecial | BeamSpecial
+  | TrapSpecial | ClingSpecial | WardSpecial | StormSpecial | WhiteoutSpecial | WailSpecial
+  | LureSpecial | LeapSpecial | GustSpecial | PitSpecial;
 
 /** Nova looks. */
 export const NovaStyle = { Stomp: 0, Scream: 1, Frost: 2 } as const;
@@ -113,6 +136,8 @@ export interface DeathDef {
   pool?: { radius: number; linger: number; damage: number; slow: number; frost?: boolean };
   /** Bursts into a ring of `count` flying shards. */
   shards?: { count: number; speed: number; damage: number };
+  /** Leaves a cloud of spores that chokes whoever stands in it: `drain` stamina per tick, and a little slowing. */
+  cloud?: { radius: number; linger: number; drain: number };
 }
 
 /**
@@ -203,6 +228,26 @@ export interface MobDef {
   retreat?: number;
   /** A melee hit also flings the hero this many pixels away. */
   launch?: number;
+  /** A melee hit also poisons the hero: this many ticks of damage over time. */
+  poisonOnHit?: number;
+  /** A melee hit also snares the hero (cannot walk, a dodge-roll breaks free) for this many ticks. */
+  rootOnHit?: number;
+  /** A melee hit also withers the hero: no stamina comes back for this many ticks. */
+  witherOnHit?: number;
+  /** Hops toward its target: every `every` ticks (once the hero is `minDist` away) it springs forward at `speed` px/tick. */
+  hop?: { every: number; speed: number; minDist: number };
+  /** Its venomous skin: whoever hits it is poisoned for this many ticks. */
+  thorns?: number;
+  /** Chance (0..1) that a blow glances off without touching it. */
+  evade?: number;
+  /** Travels hidden under the ground (and cannot be hurt) until a hero is within this many px, then surfaces. */
+  burrow?: number;
+  /** A melee hit heals it by this much. */
+  drain?: number;
+  /** Leaves slowing mud behind as it walks: a puddle every `every` ticks of movement. */
+  trail?: { every: number; radius: number; linger: number; slow: number };
+  /** A fire around it: a hero within `radius` is set alight (burning) while there. */
+  flame?: { radius: number };
   /** Below this fraction of its health it goes berserk: frenzied, harder-hitting, and no longer staggered. */
   berserk?: number;
   /** A chill around it: a hero within `radius` is slowed (`slow` ticks) and frostbitten (`damage` every `pulse` ticks). */
@@ -224,6 +269,16 @@ export const MobType = {
   RimeKing: 33,
   // Haunted Keep boss
   DreadRegent: 34,
+  // Sunken Marsh (the bog-folk and what rises from the mire)
+  BogFrog: 35, MudLeech: 36, ToadSpitter: 37, Bullfrog: 38, Sporebloat: 39, ReedStalker: 40,
+  Wisp: 41, PeatBrute: 42, MireHag: 43, ToadMatron: 44, DrownedWarden: 45,
+  // Sunken Marsh boss
+  Fenlord: 46,
+  // Scorched Dunes (the sun-cult nomads, the desert's beasts and the sand's spirits)
+  DuneRaider: 47, Scarab: 48, FlameArcher: 49, Sidewinder: 50, Scorpion: 51, Falconer: 52,
+  DustDevil: 53, Antlion: 54, Mummy: 55, SunPriest: 56, SunGuard: 57,
+  // Scorched Dunes boss
+  SunTyrant: 58,
 } as const;
 
 export const MOBS: MobDef[] = [
@@ -343,6 +398,86 @@ export const MOBS: MobDef[] = [
       ],
       slamRadius: 80, slamWindup: 58, slamDamage: 18, roarWindup: 52, summonSize: 8, retinue: 26,
       specialGap: 220, specialGapEnraged: 130, enrageAt: 0.5, enrageSpeed: 1.3, hpScale: [1, 1.6, 2.1, 2.6],
+      lootCoins: 16, lootValue: 12,
+    },
+  },
+  // ---- Sunken Marsh: the bog-folk. Venom, mud and false lights; the ground itself is the enemy. Like every other biome, each enemy
+  // does something no other enemy does (see the test in roster.test.ts).
+  { name: 'bogfrog', behavior: Behavior.Melee, hp: 6, speed: 0.5, radius: 3.5, damage: 3, atkCooldown: 50, reach: 8, windup: 10, knockResist: 1, shield: false, coinChance: 0.5, coinMin: 1, coinMax: 1,
+    hop: { every: 55, speed: 1.4, minDist: 30 } },
+  { name: 'mudleech', behavior: Behavior.Melee, hp: 4, speed: 0.7, radius: 3, damage: 2, atkCooldown: 45, reach: 7, windup: 8, knockResist: 1, shield: false, coinChance: 0.2, coinMin: 1, coinMax: 1, poisonOnHit: 150 },
+  { name: 'toadspitter', behavior: Behavior.Ranged, hp: 6, speed: 0.45, radius: 3.5, damage: 3, atkCooldown: 125, reach: 105, windup: 32, knockResist: 1, shield: false, coinChance: 0.7, coinMin: 1, coinMax: 3,
+    shot: { count: 1, spread: 0, speed: 1.9, damage: 3, style: ProjStyle.Glob, poison: 140 } },
+  { name: 'bullfrog', behavior: Behavior.Melee, hp: 20, speed: 0.42, radius: 5, damage: 7, atkCooldown: 75, reach: 11, windup: 18, knockResist: 0.5, shield: false, coinChance: 1, coinMin: 2, coinMax: 4,
+    special: { kind: 'leap', windup: 28, cooldown: 270, minRange: 50, maxRange: 150, radius: 20, damage: 9, slow: 60, delay: 30 } },
+  { name: 'sporebloat', behavior: Behavior.Melee, hp: 9, speed: 0.4, radius: 4.5, damage: 2, atkCooldown: 70, reach: 9, windup: 16, knockResist: 0.9, shield: false, coinChance: 0.4, coinMin: 1, coinMax: 2,
+    onDeath: { cloud: { radius: 28, linger: 300, drain: 0.7 } } },
+  { name: 'reedstalker', behavior: Behavior.Melee, hp: 12, speed: 0.55, radius: 3.5, damage: 7, atkCooldown: 75, reach: 22, windup: 18, knockResist: 0.8, shield: false, coinChance: 0.8, coinMin: 1, coinMax: 3 },
+  { name: 'wisp', behavior: Behavior.Caster, hp: 8, speed: 0.5, radius: 3.5, damage: 0, atkCooldown: 0, reach: 100, windup: 40, knockResist: 1, shield: false, coinChance: 0.9, coinMin: 2, coinMax: 5,
+    special: { kind: 'lure', windup: 40, cooldown: 270, radius: 140, pull: 64, damage: 2 } },
+  { name: 'peatbrute', behavior: Behavior.Melee, hp: 52, speed: 0.3, radius: 6, damage: 12, atkCooldown: 88, reach: 15, windup: 24, knockResist: 0.25, shield: false, coinChance: 1, coinMin: 3, coinMax: 6,
+    trail: { every: 36, radius: 13, linger: 420, slow: 30 } },
+  { name: 'mirehag', behavior: Behavior.Caster, hp: 13, speed: 0.5, radius: 4, damage: 0, atkCooldown: 0, reach: 100, windup: 44, knockResist: 1, shield: false, coinChance: 0.9, coinMin: 2, coinMax: 5,
+    special: { kind: 'hex', windup: 44, cooldown: 260, minRange: 30, maxRange: 170, radius: 22, duration: 300 } },
+  { name: 'toadmatron', behavior: Behavior.Melee, hp: 44, speed: 0.3, radius: 6, damage: 9, atkCooldown: 90, reach: 13, windup: 22, knockResist: 0.4, shield: false, coinChance: 1, coinMin: 4, coinMax: 8, thorns: 180 },
+  { name: 'drownedwarden', behavior: Behavior.Melee, hp: 62, speed: 0.33, radius: 6, damage: 13, atkCooldown: 85, reach: 14, windup: 22, knockResist: 0.3, shield: false, coinChance: 1, coinMin: 6, coinMax: 10, rootOnHit: 40 },
+  // ---- Sunken Marsh boss: a bloated toad-lord of the fen. It leaps, drags you toward it with its false lights, brews the bog under
+  // you, calls the frogs, and (enraged) lobs filth in a volley.
+  {
+    name: 'fenlord', behavior: Behavior.Boss, hp: 700, speed: 0.28, radius: 22, damage: 22, atkCooldown: 100, reach: 30, windup: 30,
+    knockResist: 0, shield: false, coinChance: 0, coinMin: 0, coinMax: 0, armored: true,
+    charge: { chance: 0, speed: 2.6, distance: 220, windup: 46, cooldown: 0, damage: 22, minRange: 80, maxRange: 280, dazed: 80 },
+    boss: {
+      title: 'THE FENLORD',
+      moves: [
+        { kind: 'roar', weight: 2.5 },
+        { kind: 'special', weight: 3.5, pose: 'slam', special: { kind: 'leap', windup: 44, cooldown: 0, minRange: 60, maxRange: 340, radius: 56, damage: 22, slow: 100, delay: 44 } },
+        { kind: 'special', weight: 2.5, pose: 'roar', special: { kind: 'lure', windup: 50, cooldown: 0, radius: 220, pull: 90, damage: 4 } },
+        { kind: 'special', weight: 3, pose: 'roar', special: { kind: 'storm', windup: 46, cooldown: 0, minRange: 0, maxRange: 420, radius: 30, delay: 56, linger: 320, damage: 2, slow: 60, count: 4, spread: 80, bog: true } },
+        { kind: 'special', weight: 2, pose: 'smash', special: { kind: 'summon', windup: 50, cooldown: 0, type: MobType.BogFrog, count: 5, cap: 20 } },
+        { kind: 'special', weight: 2.5, pose: 'slam', enragedOnly: true, special: { kind: 'lob', windup: 40, cooldown: 0, minRange: 50, maxRange: 340, radius: 20, damage: 12, delay: 56, count: 5, spread: 80 } },
+      ],
+      slamRadius: 84, slamWindup: 58, slamDamage: 20, roarWindup: 52, summonSize: 9, retinue: 26,
+      specialGap: 220, specialGapEnraged: 130, enrageAt: 0.5, enrageSpeed: 1.35, hpScale: [1, 1.6, 2.1, 2.6],
+      lootCoins: 16, lootValue: 12,
+    },
+  },
+  // ---- Scorched Dunes: the sun-cult nomads and the desert's beasts. Fire, sand and venom; the open ground pulls and blows you about.
+  { name: 'duneraider', behavior: Behavior.Melee, hp: 7, speed: 0.55, radius: 3.5, damage: 4, atkCooldown: 52, reach: 9, windup: 12, knockResist: 0.9, shield: false, coinChance: 0.5, coinMin: 1, coinMax: 1, evade: 0.25 },
+  { name: 'scarab', behavior: Behavior.Melee, hp: 4, speed: 0.7, radius: 3, damage: 3, atkCooldown: 42, reach: 7, windup: 8, knockResist: 1, shield: false, coinChance: 0.2, coinMin: 1, coinMax: 1, drain: 2 },
+  { name: 'flamearcher', behavior: Behavior.Ranged, hp: 6, speed: 0.45, radius: 3.5, damage: 4, atkCooldown: 120, reach: 110, windup: 32, knockResist: 1, shield: false, coinChance: 0.7, coinMin: 1, coinMax: 3,
+    shot: { count: 1, spread: 0, speed: 2.3, damage: 4, style: ProjStyle.Fire, poison: 120 } },
+  { name: 'sidewinder', behavior: Behavior.Melee, hp: 9, speed: 0.85, radius: 3.5, damage: 5, atkCooldown: 60, reach: 8, windup: 10, knockResist: 0.9, shield: false, coinChance: 0.5, coinMin: 1, coinMax: 2, burrow: 46 },
+  { name: 'scorpion', behavior: Behavior.Melee, hp: 16, speed: 0.55, radius: 4.5, damage: 7, atkCooldown: 70, reach: 11, windup: 16, knockResist: 0.6, shield: false, coinChance: 0.8, coinMin: 1, coinMax: 3, armored: true },
+  { name: 'falconer', behavior: Behavior.Ranged, hp: 8, speed: 0.42, radius: 3.5, damage: 5, atkCooldown: 150, reach: 120, windup: 36, knockResist: 1, shield: false, coinChance: 0.8, coinMin: 2, coinMax: 4,
+    shot: { count: 1, spread: 0, speed: 1.5, damage: 5, style: ProjStyle.Falcon, homing: true } },
+  { name: 'dustdevil', behavior: Behavior.Melee, hp: 10, speed: 0.6, radius: 4, damage: 6, atkCooldown: 65, reach: 10, windup: 14, knockResist: 1, shield: false, coinChance: 0.8, coinMin: 2, coinMax: 4,
+    special: { kind: 'gust', windup: 34, cooldown: 280, radius: 56, damage: 4, push: 90 } },
+  { name: 'antlion', behavior: Behavior.Caster, hp: 20, speed: 0.3, radius: 5, damage: 0, atkCooldown: 0, reach: 95, windup: 46, knockResist: 0.7, shield: false, coinChance: 1, coinMin: 3, coinMax: 7,
+    special: { kind: 'pit', windup: 46, cooldown: 300, minRange: 30, maxRange: 170, radius: 34, delay: 45, linger: 240, pull: 0.55, damage: 4 } },
+  { name: 'mummy', behavior: Behavior.Melee, hp: 48, speed: 0.3, radius: 5.5, damage: 11, atkCooldown: 90, reach: 13, windup: 26, knockResist: 0.3, shield: false, coinChance: 1, coinMin: 3, coinMax: 6, witherOnHit: 240 },
+  { name: 'sunpriest', behavior: Behavior.Caster, hp: 16, speed: 0.4, radius: 4, damage: 0, atkCooldown: 0, reach: 120, windup: 48, knockResist: 0.8, shield: false, coinChance: 1, coinMin: 4, coinMax: 8,
+    special: { kind: 'dazzle', windup: 48, cooldown: 280, minRange: 40, maxRange: 200, radius: 24, duration: 50, damage: 3 } },
+  { name: 'sunguard', behavior: Behavior.Melee, hp: 64, speed: 0.34, radius: 6, damage: 14, atkCooldown: 85, reach: 14, windup: 22, knockResist: 0.3, shield: false, coinChance: 1, coinMin: 6, coinMax: 10,
+    flame: { radius: 34 } },
+  // ---- Scorched Dunes boss: a god-king of the sun cult. Sunbeams, a rain of sunfire, hot gusts, pits in the sand, a stampede, and its
+  // priests' summoned scarabs.
+  {
+    name: 'suntyrant', behavior: Behavior.Boss, hp: 720, speed: 0.27, radius: 22, damage: 24, atkCooldown: 100, reach: 30, windup: 30,
+    knockResist: 0, shield: false, coinChance: 0, coinMin: 0, coinMax: 0, armored: true,
+    charge: { chance: 0, speed: 3.0, distance: 260, windup: 44, cooldown: 0, damage: 26, minRange: 80, maxRange: 300, dazed: 80 },
+    boss: {
+      title: 'SUN TYRANT',
+      moves: [
+        { kind: 'roar', weight: 2 }, { kind: 'charge', weight: 2 },
+        { kind: 'special', weight: 3, pose: 'slam', special: { kind: 'beam', windup: 70, cooldown: 0, range: 420, width: 14, damage: 28 } },
+        { kind: 'special', weight: 3, pose: 'roar', special: { kind: 'lob', windup: 44, cooldown: 0, minRange: 0, maxRange: 380, radius: 20, damage: 12, delay: 56, count: 6, spread: 90 } },
+        { kind: 'special', weight: 2.5, pose: 'slam', special: { kind: 'gust', windup: 48, cooldown: 0, radius: 110, damage: 10, push: 100 } },
+        { kind: 'special', weight: 2.5, pose: 'smash', special: { kind: 'pit', windup: 44, cooldown: 0, minRange: 0, maxRange: 420, radius: 36, delay: 48, linger: 260, pull: 0.6, damage: 5, count: 3, spread: 70 } },
+        { kind: 'special', weight: 2, pose: 'roar', enragedOnly: true, special: { kind: 'summon', windup: 50, cooldown: 0, type: MobType.Scarab, count: 6, cap: 24 } },
+      ],
+      slamRadius: 88, slamWindup: 58, slamDamage: 20, roarWindup: 52, summonSize: 10, retinue: 28,
+      specialGap: 225, specialGapEnraged: 135, enrageAt: 0.5, enrageSpeed: 1.35, hpScale: [1, 1.6, 2.1, 2.6],
       lootCoins: 16, lootValue: 12,
     },
   },

@@ -91,6 +91,46 @@ export const ROSTERS: readonly Roster[] = [
     support: [[MobType.Trapper, 0.62], [MobType.Harpooner, 0.2], [MobType.FrostWolf, 0.18]],
     enragedExtra: { type: MobType.SnowSprite, chance: 0.1 },
   },
+  {
+    boss: MobType.Fenlord,
+    // Sunken Marsh: the bog-folk and what rises from the mire. Frogs alone at first, then leeches, spitters and bullfrogs; sporebloats, stalkers
+    // and false lights behind them, and by the end the peat brutes, hags, toad matrons and drowned wardens.
+    entries: spread([
+      [MobType.BogFrog, 10, 3],
+      [MobType.MudLeech, 1.2, 1.8],
+      [MobType.ToadSpitter, 1, 1.5],
+      [MobType.Bullfrog, 1.2, 1.8],
+      [MobType.Sporebloat, 0.7, 1.1],
+      [MobType.ReedStalker, 1, 1.4],
+      [MobType.Wisp, 0.5, 0.9],
+      [MobType.PeatBrute, 0.55, 1],
+      [MobType.MireHag, 0.45, 0.8],
+      [MobType.ToadMatron, 0.4, 0.75],
+      [MobType.DrownedWarden, 0.4, 0.8],
+    ]),
+    support: [[MobType.BogFrog, 0.62], [MobType.ToadSpitter, 0.2], [MobType.MudLeech, 0.18]],
+    enragedExtra: { type: MobType.MudLeech, chance: 0.1 },
+  },
+  {
+    boss: MobType.SunTyrant,
+    // Scorched Dunes: the sun-cult nomads and the desert's beasts. Raiders alone at first, then scarabs, flame archers, sidewinders and scorpions;
+    // falconers, dust devils and antlions behind them, and by the end the mummies, sun priests and sun guard.
+    entries: spread([
+      [MobType.DuneRaider, 10, 3],
+      [MobType.Scarab, 1.2, 1.8],
+      [MobType.FlameArcher, 1, 1.5],
+      [MobType.Sidewinder, 1, 1.5],
+      [MobType.Scorpion, 1, 1.5],
+      [MobType.Falconer, 0.9, 1.5],
+      [MobType.DustDevil, 0.7, 1.2],
+      [MobType.Antlion, 0.45, 0.8],
+      [MobType.Mummy, 0.55, 1],
+      [MobType.SunPriest, 0.4, 0.75],
+      [MobType.SunGuard, 0.4, 0.8],
+    ]),
+    support: [[MobType.DuneRaider, 0.62], [MobType.FlameArcher, 0.2], [MobType.Scarab, 0.18]],
+    enragedExtra: { type: MobType.Scarab, chance: 0.1 },
+  },
 ];
 
 export const BIOME_COUNT = ROSTERS.length;

@@ -34,14 +34,14 @@ test('the sun sets and the moon rises over the level', () => {
 });
 
 test('every parallax layer names a sprite the art builds', () => {
-  const known = ['mountFar', 'mountNear', 'hills', 'treesFar', 'trees', 'spiresFar', 'cragsNear', 'ruins', 'deadFar', 'deadNear', 'peaksFar', 'peaksNear', 'pinesFar', 'pinesNear'];
+  const known = ['mountFar', 'mountNear', 'hills', 'treesFar', 'trees', 'spiresFar', 'cragsNear', 'ruins', 'deadFar', 'deadNear', 'peaksFar', 'peaksNear', 'pinesFar', 'pinesNear', 'mesasFar', 'dunesFar', 'ruinsDune', 'dunesNear', 'palmsNear', 'mrShore', 'mrReedFar', 'mrStilts', 'mrCypFar', 'mrCypNear'];
   for (const biome of ALL_SCENERY) for (const l of biome.layers) assert.ok(l.sprite === DESTINATION_LAYER || known.includes(l.sprite), l.sprite);
 });
 
 test('every biome names ground tiles and decor sprites the art builds', () => {
-  const tiles = ['grass', 'snow'];
-  const decor = ['tuft0', 'tuft1', 'tuft2', 'flowerW', 'flowerY', 'flowerP', 'flowerB', 'pebble', 'rock', 'mushroom', 'iceshard0', 'iceshard1', 'snowrock', 'snowmound', 'twigsS', 'sapling', 'tracks', 'deadshrub', 'clover', 'wheat', 'bush', 'daisies', 'twig', 'stump', 'mossrock', 'bone0', 'bone1', 'skull', 'rubble0', 'rubble1', 'weeds0', 'weeds1', 'moss0', 'crack0', 'candle0', 'candle1', 'glowcap', 'brazier0', 'brazier1'];
-  const patches = ['snowshadow', 'snowshadow2', 'ice0', 'ice1', 'wildflowers', 'wildflowers2', 'clover', 'puddle1', 'blood0', 'blood1', 'rubble', 'moss'];
+  const tiles = ['grass', 'snow', 'sand', 'marsh'];
+  const decor = ['tuft0', 'tuft1', 'tuft2', 'flowerW', 'flowerY', 'flowerP', 'flowerB', 'pebble', 'rock', 'mushroom', 'iceshard0', 'iceshard1', 'snowrock', 'snowmound', 'twigsS', 'sapling', 'tracks', 'deadshrub', 'clover', 'wheat', 'bush', 'daisies', 'twig', 'stump', 'mossrock', 'bone0', 'bone1', 'skull', 'rubble0', 'rubble1', 'weeds0', 'weeds1', 'moss0', 'crack0', 'candle0', 'candle1', 'glowcap', 'brazier0', 'brazier1', 'cactus', 'cactusBloom', 'cactusBarrel', 'scrubDry', 'scrubTuft', 'tumbleweed', 'skullBleached', 'ribcage', 'sherd', 'sandrock', 'statuehead', 'flagstake', 'camelbones', 'sandpebble', 'mrGrass0', 'mrGrass1', 'mrCattail0', 'mrCattail1', 'mrReeds0', 'mrReeds1', 'mrLily', 'mrLilies', 'mrMoss', 'mrLog', 'mrStump', 'mrFrog', 'mrSkull', 'mrRibs', 'mrBone', 'mrFlowerP', 'mrFlowerW', 'mrShroom', 'mrGlow', 'mrHelm'];
+  const patches = ['snowshadow', 'snowshadow2', 'ice0', 'ice1', 'wildflowers', 'wildflowers2', 'clover', 'puddle1', 'blood0', 'blood1', 'rubble', 'moss', 'sandripple', 'sandripple2', 'sandripple3', 'drypatch', 'mrWater0', 'mrWater1', 'mrWater2', 'mrLily0', 'mrLily1', 'mrScum', 'mrScum2', 'mrMud'];
   for (const biome of ALL_SCENERY) {
     if (biome.ground.floor.kind === 'tiles') assert.ok(tiles.includes(biome.ground.floor.set), biome.name);
     for (const k of biome.ground.decor.table) {

@@ -327,8 +327,118 @@ export const FROZEN_PASS: BiomeDef = {
   ridge: { fill: 0xb4c4dc, edge: 0xffffff, shade: 0xd0dcec },
 };
 
+/** The Sunken Marsh: a drowned bog under a heavy overcast, reed banks and stilt huts on the horizon, fireflies and mist. */
+export const SUNKEN_MARSH: BiomeDef = {
+  name: 'Sunken Marsh',
+  // marsh: a grey-green murky dawn -> a heavy hazy day (low sun behind the overcast) -> a poisonous yellow-green dusk -> a dark bog night
+  timeline: [
+    { at: 0, sky: [0x4e5c52, 0x5c6c5e, 0x6c7c68, 0x7e8c72, 0x909c7a, 0xa0a882, 0xb0b48a], tint: 0xdce6d0, sunY: 112, moonY: 175, stars: 0 },
+    { at: 0.38, sky: [0x66766a, 0x76867a, 0x86948a, 0x96a292, 0xa6b09c, 0xb4bca6, 0xc2c8b0], tint: 0xeef4e4, sunY: 80, moonY: 175, stars: 0 },
+    { at: 0.7, sky: [0x2a3a2e, 0x3c4c2c, 0x546230, 0x6e7a30, 0x8a9234, 0xa8a83a, 0xc4b845], tint: 0xe6e8b0, sunY: 118, moonY: 175, stars: 0 },
+    { at: 1, sky: [0x0a1214, 0x0e1a1c, 0x14262a, 0x1a3234, 0x223e3c, 0x2a4a44, 0x34584c], tint: 0xb4d0c8, sunY: 190, moonY: 42, stars: 0.75 },
+  ],
+  layers: [
+    { sprite: 'mrShore', k: 0.06 },
+    { sprite: 'mrReedFar', k: 0.2 },
+    { sprite: 'mrStilts', k: 0.34, windows: { colors: [0xe8e070, 0xe8e070, 0xd8c860], a: 0.8, lit: 0.6 } },
+    { sprite: 'mrCypFar', k: 0.5, dy: 1 },
+    { sprite: 'mrCypNear', k: 0.66, dy: 2 },
+  ],
+  moonScale: 2.4,
+  // low, heavy overcast: dense grey-green banks
+  clouds: [
+    { k: 0.04, drift: 0.02, count: 14, y0: 2, y1: 50, alpha: 0.95, tint: 0x8a9a88 },
+    { k: 0.1, drift: 0.04, count: 12, y0: 16, y1: 74, alpha: 0.95, tint: 0x788a78 },
+  ],
+  haze: { height: 36, alpha: 0.55 },
+  // heavy low bands of mist, hanging on the water all day
+  fog: [
+    { k: 0.5, drift: 0.03, count: 5, y0: 104, y1: 150, alpha: 0.32, color: 0xa4b498, big: true },
+    { k: 1, drift: 0.05, count: 6, y0: 140, y1: 320, alpha: 0.17, color: 0x90a284, big: true },
+  ],
+  // fireflies, gnats and spores drifting over the water
+  ambient: { colors: [0xe4ee6c, 0xc8e45c, 0xf2f4a0, 0xb4d468], count: 44, speed: 0.1, bias: [0.04, -0.01], wobble: 5, alpha: 0.85, w: 2, h: 2, y0: 118, y1: 335, k: [0.8, 1.6] },
+  wind: 1,
+  ground: {
+    floor: { kind: 'tiles', set: 'marsh' },
+    // a churned wet-mud track, with water gleaming in the ruts and reed fringing the edges
+    path: { half: 14, fill: 0x544a31, edge: 0x2e2a1b, lip: 0x655a3c, speck: 0x433a26, speck2: 0x4c5e50, ruts: 0x372f1f, fringe: [0x3e5a28, 0x4e6a30, 0x32481f] },
+    patches: { sprites: ['mrWater0', 'mrWater1', 'mrWater2', 'mrLily0', 'mrLily1', 'mrScum', 'mrScum2', 'mrMud', 'mrMud'], cell: 170, chance: 0.6 },
+    mottle: { light: 0x6e7a46, dark: 0x1a2014, alpha: 0.14 },
+    decor: {
+      cellW: 20, cellH: 14, density: 0.36,
+      table: [
+        { sprite: 'mrGrass0', w: 6, sway: true }, { sprite: 'mrGrass1', w: 6, sway: true },
+        { sprite: 'mrCattail0', w: 2.5, sway: true }, { sprite: 'mrCattail1', w: 2.5, sway: true },
+        { sprite: 'mrReeds0', w: 2, sway: true }, { sprite: 'mrReeds1', w: 2, sway: true },
+        { sprite: 'mrLily', w: 1.2 }, { sprite: 'mrLilies', w: 1 }, { sprite: 'mrMoss', w: 1.5, onPath: true },
+        { sprite: 'mrLog', w: 0.7 }, { sprite: 'mrStump', w: 0.6 }, { sprite: 'mrFrog', w: 0.25 },
+        { sprite: 'mrSkull', w: 0.5, onPath: true }, { sprite: 'mrRibs', w: 0.45 }, { sprite: 'mrBone', w: 0.8, onPath: true },
+        { sprite: 'mrFlowerP', w: 0.8, sway: true }, { sprite: 'mrFlowerW', w: 0.8, sway: true },
+        { sprite: 'mrShroom', w: 0.8 }, { sprite: 'mrGlow', w: 0.9, glow: { color: 0x90f060, r: 12, a: 0.12 } },
+        { sprite: 'mrHelm', w: 0.2 },
+      ],
+    },
+  },
+  crest: { fill: 0x2a3622, edge: 0x44562e },
+  ridge: { fill: 0x141c12, edge: 0x36462a, shade: 0x202c1a },
+};
+
+/** The Scorched Dunes: a bleached desert of dune ridges, red mesas, a ruined ziggurat and dead palms, under a white-hot sky. */
+export const SCORCHED_DUNES: BiomeDef = {
+  name: 'Scorched Dunes',
+  // dunes: pale gold dawn -> blinding bleached noon -> blazing orange-crimson sunset -> a cold deep-blue night with huge stars and a big moon
+  timeline: [
+    { at: 0, sky: [0xdcb878, 0xe8c888, 0xf0d498, 0xf6dea8, 0xfae6b8, 0xfcecc8, 0xfff2d6], tint: 0xfff0d8, sunY: 84, moonY: 170, stars: 0 },
+    { at: 0.45, sky: [0xdce6ea, 0xe6eeec, 0xeef2ec, 0xf4f4ea, 0xf8f6ec, 0xfcf8f0, 0xfffcf4], tint: 0xffffff, sunY: 34, moonY: 170, stars: 0 },
+    { at: 0.78, sky: [0x4a2858, 0x862c52, 0xc4403c, 0xe8662c, 0xf88c30, 0xfcb048, 0xffd070], tint: 0xffc090, sunY: 100, moonY: 170, stars: 0 },
+    { at: 1, sky: [0x03051a, 0x070b2a, 0x0d1538, 0x15214a, 0x1e3058, 0x2a4068, 0x3a5078], tint: 0x7c96dc, sunY: 140, moonY: 38, stars: 1 },
+  ],
+  layers: [
+    { sprite: 'mesasFar', k: 0.05 },
+    { sprite: 'dunesFar', k: 0.14, dy: 1 },
+    { sprite: 'ruinsDune', k: 0.3 },
+    { sprite: 'dunesNear', k: 0.46, dy: 1 },
+    { sprite: 'palmsNear', k: 0.66, dy: 2 },
+  ],
+  // a few thin streaks of high cloud
+  clouds: [
+    { k: 0.04, drift: 0.05, count: 2, y0: 10, y1: 40, alpha: 0.35 },
+  ],
+  moonScale: 2.4,
+  // heat shimmer at the horizon
+  haze: { height: 44, alpha: 0.62 },
+  // low bands of blown sand instead of mist
+  fog: [
+    { k: 0.5, drift: 0.28, count: 4, y0: 110, y1: 152, alpha: 0.26, color: 0xe8cf9c, big: true },
+    { k: 1, drift: 0.45, count: 4, y0: 150, y1: 320, alpha: 0.09, color: 0xe2c68c, big: true },
+  ],
+  // sand streaks driven by a strong wind from the left
+  ambient: { colors: [0xeed6a2, 0xd8bc84, 0xf4e4ba, 0xc8a870], count: 70, speed: 0.1, bias: [0.85, 0.06], wobble: 1, alpha: 0.7, w: 3, h: 1, y0: 112, y1: 340, k: [0.8, 1.8] },
+  wind: 1,
+  ground: {
+    floor: { kind: 'tiles', set: 'sand' },
+    // a worn caravan track: packed, darker sand with wheel and hoof ruts, fringed with dry scrub
+    path: { half: 12, fill: 0xc9a572, edge: 0xad8856, lip: 0xdcc08a, speck: 0xa88458, speck2: 0xdac290, ruts: 0xa38052, fringe: [0xa89450, 0xc0ac66] },
+    patches: { sprites: ['sandripple', 'sandripple2', 'sandripple3', 'drypatch'], cell: 160, chance: 0.55 },
+    mottle: { light: 0xf0dcaa, dark: 0xb89868, alpha: 0.2 },
+    decor: {
+      cellW: 22, cellH: 15, density: 0.3,
+      table: [
+        { sprite: 'sandpebble', w: 3, onPath: true }, { sprite: 'sandrock', w: 1.6, onPath: true }, { sprite: 'scrubTuft', w: 3, sway: true },
+        { sprite: 'scrubDry', w: 2, sway: true }, { sprite: 'tumbleweed', w: 1, sway: true, onPath: true },
+        { sprite: 'cactus', w: 1.1 }, { sprite: 'cactusBloom', w: 0.5 }, { sprite: 'cactusBarrel', w: 1 },
+        { sprite: 'skullBleached', w: 0.6, onPath: true }, { sprite: 'ribcage', w: 0.5 }, { sprite: 'sherd', w: 1, onPath: true },
+        { sprite: 'statuehead', w: 0.15 }, { sprite: 'flagstake', w: 0.3, sway: true }, { sprite: 'camelbones', w: 0.12 },
+      ],
+    },
+  },
+  crest: { fill: 0xd2ac74, edge: 0xe8cc98 },
+  ridge: { fill: 0xb08a58, edge: 0xcfae7c, shade: 0x9a7648 },
+};
+
 /** Every biome's scenery, in the order of `ROSTERS` in roster.ts (the biome index picks both). */
-export const BIOMES: readonly BiomeDef[] = [...BASE_BIOMES, FROZEN_PASS];
+export const BIOMES: readonly BiomeDef[] = [...BASE_BIOMES, FROZEN_PASS, SUNKEN_MARSH, SCORCHED_DUNES];
 
 /** Alias kept for tests and previews: all of the scenery. */
 export const ALL_SCENERY: readonly BiomeDef[] = BIOMES;

@@ -8,9 +8,14 @@ import {
   makeBlob, makeCloud, makeCrag, makeDeadTrees, makeDither, makeFog, makeGround, makeJagged, makeKeep, makeMottle, makeMoon,
   makeIce, makeMountains, makePatch, makePuddle, makeRuins, makeSnow, makeSnowPeaks, makeSnowPines, makeTrees,
 } from './bgArt';
+// dunes: the Scorched Dunes' generators
+import { makeDeadPalms, makeDesertSkyline, makeDunes, makeSand, makeSandRipples } from './bgArt';
+import { makeMarshFloor, makeMarshReeds, makeMarshStilts, makeMarshTrees, makeMarshWater } from './bgArt'; // marsh:
 import { makeEllipse, type Pix } from './pix';
 import { buildUiArt, type UiArt } from './uiArt';
 import { buildNpcSets, type NpcName, type NpcSet } from './npcArt';
+
+type DesertColsT = { fill: number; lit: number; shade: number; edge: number; band: number };
 
 export const PLAYER_COLORS = [0xe0443a, 0x3a7be0, 0xe8c43a, 0xa04ae0];
 
@@ -158,6 +163,7 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   const groundSets = {
     grass: [0, 1, 2, 3, 4, 5].map((v) => add(makeGround(v))),
     snow: [0, 1, 2, 3, 4, 5].map((v) => add(makeSnow(v))),
+    marsh: [0, 1, 2, 3, 4, 5].map((v) => add(makeMarshFloor(v))), // marsh:
   };
   const layerLights: Record<string, { x: number; y: number; w?: number; h?: number }[][]> = {};
   const variants = (n: number, make: (v: number) => Pix, key?: string): Frame[] => Array.from({ length: n }, (_, v) => {
@@ -180,9 +186,28 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     pinesFar: variants(5, (v) => makeSnowPines(256, 28, 16, 9 + v * 7, { dark: 0x3c5c6c, light: 0x4c7080, snow: 0xe0ecf8, snowShade: 0xb8cce0 })),
     pinesNear: variants(6, (v) => makeSnowPines(256, 38, 10, 4 + v * 5, { dark: 0x1e4034, light: 0x2c5a48, snow: 0xf4f8ff, snowShade: 0xc0d2e6 })),
     deadNear: variants(5, (v) => makeDeadTrees(256, 40, 7, 7 + v * 5, [[0x14121e, 0x201c2e], [0x181624, 0x262236]])),
+    // marsh: far shore, reed banks, stilt huts and jetties, cypress and snags hung with moss
+    mrShore: variants(4, (v) => makeMountains(256, 44, 28, 9, 2.3 + v * 1.9, 0x7a8c78, 0x8a9c86)),
+    mrReedFar: variants(4, (v) => makeMarshReeds(256, 26, 3 + v * 7, { dark: 0x62786a, light: 0x74887a, head: 0x5a5648 })),
+    mrStilts: variants(6, (v) => makeMarshStilts(256, 48, 1 + v * 3, { dark: 0x1c2822, light: 0x3c4a34 }), 'mrStilts'),
+    mrCypFar: variants(5, (v) => makeMarshTrees(256, 44, 8, 5 + v * 7, { dark: 0x405448, light: 0x506658, moss: 0x4a5e50 })),
+    mrCypNear: variants(6, (v) => makeMarshTrees(256, 56, 6, 2 + v * 5, { dark: 0x0e1812, light: 0x1c2a20, moss: 0x142018 })),
   };
 
+  // dunes: sand tiles and the parallax strips (far mesas and a ziggurat, dune ridges, near arches and obelisks, dead palms)
+  Object.assign(groundSets, { sand: [0, 1, 2, 3, 4, 5].map((v) => add(makeSand(v))) });
+  const sandFar: DesertColsT = { fill: 0xd2a07c, lit: 0xdcb08c, shade: 0xbe8c6c, edge: 0xe6c4a0, band: 0xc89674 };
+  const sandMid: DesertColsT = { fill: 0xc8794a, lit: 0xd88c58, shade: 0xa85a38, edge: 0xe8a470, band: 0xb86a40 };
+  Object.assign(layers, {
+    mesasFar: variants(4, (v) => makeDesertSkyline(256, 66, 5, 3 + v * 4, ['mesa', 'mesa', 'butte', 'ziggurat', 'mesa'], sandFar)),
+    dunesFar: variants(4, (v) => makeDunes(256, 40, 22, 12, 1.7 + v * 1.9, { lit: 0xe2bc8e, shade: 0xc9966c, edge: 0xefd0a4, ripple: 0xd8ae82 })),
+    ruinsDune: variants(5, (v) => makeDesertSkyline(256, 52, 4, 11 + v * 5, ['obelisk', 'arch', 'mesa', 'columns', 'obelisk', 'butte'], sandMid)),
+    dunesNear: variants(4, (v) => makeDunes(256, 32, 18, 10, 4.3 + v * 2.2, { lit: 0xdcb47e, shade: 0xbf8d5c, edge: 0xecca96, ripple: 0xd0a46c })),
+    palmsNear: variants(5, (v) => makeDeadPalms(256, 52, 6, 5 + v * 5, { trunk: 0x4a3420, frond: 0x5c4426, dry: 0x7a6034 })),
+  });
+
   const gp = { g: 0x3f7a33, G: 0x5fa04a, h: 0x2f6228 };
+  const mp = { s: 0x3e5a28, S: 0x587a34, b: 0x4a3020, B: 0x6a4a2c, d: 0x2c4420 }; // marsh:
   const decor: Record<string, Frame> = {
     tuft0: add(bitmap(['.G..G.', '.GG.Gg', 'gGgGgg', 'ghgggh'], gp, 'tuft0')),
     tuft1: add(bitmap(['..G..', '.GgG.', 'GgGgG', 'hggGh'], gp, 'tuft1')),
@@ -224,7 +249,48 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     glowcap: add(bitmap(['.gg.', 'gGGg', '.ss.', '.ss.'], { g: 0x30a090, G: 0x70f0d0, s: 0xb0c0b0 }, 'glowcap')),
     brazier0: add(bitmap(['..f..', '.fFf.', 'bbbbb', '.bbb.', '..b..', '.b.b.'], { f: 0xff8a30, F: 0xffd060, b: 0x3a363e }, 'brazier0')),
     brazier1: add(bitmap(['.f.f.', '.fFf.', 'bbbbb', '.bbb.', '..b..', '.b.b.'], { f: 0xff7020, F: 0xffc050, b: 0x3a363e }, 'brazier1')),
+    // marsh: cattails, reeds, marsh grass, lilies, a sunk log, a mossy stump, a frog statue, bones, bog flowers, toadstools, a rusted helm
+    mrCattail0: add(bitmap(['...b..', '...B..', '...b..', '...s..', 's..s.s', 's.ss.s', 'sSss.s', '.sssS.'], mp, 'mrCattail0')),
+    mrCattail1: add(bitmap(['..b...', '..B..b', '..b..B', '..s..b', '.ss..s', 's.s.ss', 's.sS.s', '.ssss.'], mp, 'mrCattail1')),
+    mrReeds0: add(bitmap(['.s...s.', '.s..s..', 's..Ss.s', 's.s.s.s', 'sSs.sSs', '.sssss.'], mp, 'mrReeds0')),
+    mrReeds1: add(bitmap(['..s....', '.s.s.s.', '.s.s.s.', 's.sSs.s', 'sssSsss', '.ssssS.'], mp, 'mrReeds1')),
+    mrGrass0: add(bitmap(['.S..S.', '.sS.sS', 'sSsSss', 'dsssds'], mp, 'mrGrass0')),
+    mrGrass1: add(bitmap(['..S..', '.sSs.', 'sSsSs', 'dssds'], mp, 'mrGrass1')),
+    mrLily: add(bitmap(['.gGgg.', 'gGGpGg', '.gggg.'], { ...mp, g: 0x3c5a24, G: 0x4e6c2c, p: 0xd0a4b4 }, 'mrLily')),
+    mrLilies: add(bitmap(['.gGg.....', 'gGGGg.gg.', '.ggg.gGGg', '...gg.ggg', '..gGGg...'], { ...mp, g: 0x38541f, G: 0x4a6828 }, 'mrLilies')),
+    mrLog: add(bitmap(['..mmmm..mm...', '.bBBBbbBBbm..', 'bBkBBbbBBkBb.', '.wwwwwwwwwwww'], { b: 0x4a3a28, B: 0x5e4a32, k: 0x3a2c1e, m: 0x44602c, w: 0x2f4338 }, 'mrLog')),
+    mrStump: add(bitmap(['.mMm.m.', 'mbbbbbm', 'bBBkBBb', 'bBbbbBb', '.d.d.d.'], { b: 0x4c3c2a, B: 0x62503a, k: 0x3a2c1e, m: 0x44602c, M: 0x5a7a34, d: 0x2a2018 }, 'mrStump')),
+    mrFrog: add(bitmap(['.k..k.', 'kgkkgk', 'gGGGGg', 'gGgGgg', 'ggmmgg', 'ddddd.'], { g: 0x5c6a58, G: 0x748270, k: 0x2a2e26, m: 0x44602c, d: 0x3a4236 }, 'mrFrog')),
+    mrSkull: add(bitmap(['.www.', 'wwwww', 'wkwkw', '.www.', '.w.w.'], { w: 0xb8b296, k: 0x1a1a14 }, 'mrSkull')),
+    mrRibs: add(bitmap(['..w.w.w..', '.wWwWwWw.', 'w.w.w.w.w', '....w....'], { w: 0xa8a28a, W: 0xc0baa0 }, 'mrRibs')),
+    mrBone: add(bitmap(['w.....w', 'wwwwwww', 'w.....w'], { w: 0xaaa48c }, 'mrBone')),
+    mrFlowerP: add(bitmap(['.p.', 'pPp', '.s.', '.s.', 'sSs'], { p: 0x8a60a0, P: 0xd8c0e0, s: 0x3e5a28, S: 0x587a34 }, 'mrFlowerP')),
+    mrFlowerW: add(bitmap(['.w.', 'wYw', '.s.', 'sSs'], { w: 0xdad4be, Y: 0xd8b840, s: 0x3e5a28, S: 0x587a34 }, 'mrFlowerW')),
+    mrShroom: add(bitmap(['.oo..oo', 'oOoo.oOo', '.ss..ss.', '.ss..s..'].map((r) => r.padEnd(8, '.')), { o: 0x9a5a30, O: 0xc8a070, s: 0xc8bea0 }, 'mrShroom')),
+    mrGlow: add(bitmap(['.gg.', 'gGGg', '.ss.', '.ss.'], { g: 0x58a838, G: 0xb8f070, s: 0xa8b890 }, 'mrGlow')),
+    mrHelm: add(bitmap(['.rRRr.', 'rRrrRr', 'rkkkkr', 'dr..rd'], { r: 0x7a4a30, R: 0x9a6a40, k: 0x1e1a16, d: 0x4a3020 }, 'mrHelm')),
+    mrMoss: add(bitmap(['.mm.mm.', 'mMmmMmm', '.mmmm..'], { m: 0x3a5226, M: 0x4e6a30 }, 'mrMoss')),
   };
+  // dunes: decals (all flat, sun-bleached, kept small and sparse so a crowd reads over them)
+  {
+    const cp = { g: 0x4f7a3a, G: 0x6a9a4a, d: 0x365a2a, P: 0xe86aa0, Y: 0xf4d048 };
+    Object.assign(decor, {
+      cactus: add(bitmap(['....Gg...', '.g..Gg.g.', 'gG..Gg.Gg', 'gG..GgGGg', 'gGg.GGGg.', '.gGGGGg..', '...GGg...', '...Ggg...', '...Ggd...', '..ddddd..'], cp, 'cactus')),
+      cactusBloom: add(bitmap(['....PY...', '.P..Gg.P.', 'gG..Gg.Gg', 'gG..GgGGg', 'gGg.GGGg.', '.gGGGGg..', '...GGg...', '...Ggg...', '...Ggd...', '..ddddd..'], cp, 'cactusBloom')),
+      cactusBarrel: add(bitmap(['..PP..', '.GgGg.', 'GgGgGg', 'GgGgGg', '.dddd.'], cp, 'cactusBarrel')),
+      scrubDry: add(bitmap(['b..B..b', '.bB.Bb.', 'bbBbbBb', '.bbbbb.'], { b: 0x8a7440, B: 0xb09a58 }, 'scrubDry')),
+      scrubTuft: add(bitmap(['y..y.y', '.yy.y.', 'yYyyYy', '.bbbb.'], { y: 0xb4a050, Y: 0xd0bc6c, b: 0x8a7440 }, 'scrubTuft')),
+      tumbleweed: add(bitmap(['.t.tt.', 'tt.t.t', 't.tt.t', 'tt.tt.', '.t.t.t', '..tt..'], { t: 0x9c8048 }, 'tumbleweed')),
+      skullBleached: add(bitmap(['.ooo.', 'owwwo', 'okwko', '.owo.', '.o.o.'], { w: 0xf0e6cc, o: 0x9c8a62, k: 0x4a3a2a }, 'skullBleached')),
+      ribcage: add(bitmap(['.w.w.w.w..', 'oooooooooo', '.w.w.w.w..'], { w: 0xeadec0, o: 0x9c8a62 }, 'ribcage')),
+      sherd: add(bitmap(['.rr.', 'rRrr', '.dr.'], { r: 0xb8602c, R: 0xd88040, d: 0x7a3a1c }, 'sherd')),
+      sandrock: add(bitmap(['..rrr..', '.rRRRr.', 'rRRrrrr', '.ddddd.'], { r: 0xb8946a, R: 0xd0aa7c, d: 0x8a6a48 }, 'sandrock')),
+      statuehead: add(bitmap(['..rrrrr..', '.rRRRRRr.', 'rRRRRRRRr', 'rRkRRRkRr', 'rRRRaRRRr', 'rRRkkkRRr', '.rrrrrrr.', 'ssssssssss'.slice(0, 9)], { r: 0xa8844c, R: 0xc8a266, k: 0x5a4228, a: 0x8a6a3a, s: 0xd8be88 }, 'statuehead')),
+      flagstake: add(bitmap(['bRRR.', 'bRRrR', 'bRr..', 'b....', 'b....', 'b....', 'b....', 'b....'], { b: 0x6a4a2a, R: 0xb02830, r: 0x80181c }, 'flagstake')),
+      camelbones: add(bitmap(['ww............', '.ww...........', '..w...........', '..wwwwwwwwww..', '....w.w.w.w.w.', '....w.w.w.w.w.', '....w.w...w.w.', '....w.w...w.w.'].map((r) => r.padEnd(14, '.').slice(0, 14)), { w: 0xe2d6b6 }, 'camelbones')),
+      sandpebble: add(bitmap(['.ss.', 'sSdd'], { s: 0xb8946a, S: 0xd0aa7c, d: 0x8a6a48 }, 'sandpebble')),
+    });
+  }
   const patch: Record<string, Frame> = {
     mottle0: add(makeMottle(96, 40, 1)),
     mottle1: add(makeMottle(128, 54, 2)),
@@ -242,7 +308,23 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     blood1: add(makeBlob(26, 11, 8, 0x621f2c, 0x501822, 0x3e121c)),
     rubble: add(makeBlob(34, 14, 9, 0x4c485c, 0x5e5a72, 0x34314a)),
     moss: add(makeBlob(38, 15, 10, 0x2c4a30, 0x38603c, 0x233a28)),
+    // marsh: standing water, lily pools, algae scum and wet mud
+    mrWater0: add(makeMarshWater(44, 16, 31, false)),
+    mrWater1: add(makeMarshWater(30, 12, 32, false)),
+    mrWater2: add(makeMarshWater(58, 20, 34, false)),
+    mrLily0: add(makeMarshWater(40, 15, 33, true)),
+    mrLily1: add(makeMarshWater(52, 18, 35, true)),
+    mrScum: add(makePatch(56, 20, 36, [0x44522a, 0x3e4c26, 0x4a5830], [0x5c6c34, 0x6c7a3c], 0.12)),
+    mrScum2: add(makePatch(40, 15, 37, [0x44522a, 0x3e4c26], [0x5c6c34], 0.1)),
+    mrMud: add(makePatch(70, 24, 38, [0x38382a, 0x3c3b2b, 0x353528], [0x44503a], 0.04)),
   };
+  // dunes: ground patches (wind ripples, a scrubby dry patch)
+  Object.assign(patch, {
+    sandripple: add(makeSandRipples(64, 22, 31, 0xc9ac76, 0xe8d09c)),
+    sandripple2: add(makeSandRipples(86, 26, 32, 0xc9ac76, 0xe8d09c)),
+    sandripple3: add(makeSandRipples(48, 18, 33, 0xc4a670, 0xe6cd98)),
+    drypatch: add(makePatch(50, 18, 34, [0xd2b57c, 0xcdb078], [0xb4a050, 0x9c8648, 0xc8b268], 0.14)),
+  });
   const widths = [20, 26, 33, 42, 53, 66, 80, 96];
   const keeps = widths.map(makeKeep);
   const crags = widths.map((w) => makeCrag(w, 72));
@@ -287,13 +369,29 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   }
   // The atlas is wider than the procedural shelf: enemy sheets stack under the procedural sprites, and the player sheets
   // (5 classes x 4 colours) are shelf-packed, tallest first, into the free space beside the procedural strip and then below it.
-  let usedH = y + rowH + 1;
-  const mobPlaces = mobImages.map((img) => { const pl = { x: 0, y: usedH }; usedH += img.height + 1; return pl; });
-  const npcPlaces = npcImages.map((img) => { const pl = { x: 0, y: usedH }; usedH += img.height + 1; return pl; });
+  const stripH = y + rowH + 1;
+  let usedH = stripH;
+  // Enemy and story-figure sheets are shelf-packed, tallest first, across the full atlas width (stacked in one column they would
+  // pass the 16384 px texture limit once there are dozens of enemies).
+  const sheets = [...mobImages, ...npcImages];
+  const sheetPlaces: { x: number; y: number }[] = new Array(sheets.length);
+  {
+    let sx = 0, sy = stripH, sh = 0;
+    for (const i of sheets.map((_, k) => k).sort((a, b) => sheets[b].height - sheets[a].height)) {
+      const im = sheets[i];
+      if (sx + im.width + 1 > ATLAS_W) { sx = 0; sy += sh + 1; sh = 0; }
+      sheetPlaces[i] = { x: sx, y: sy };
+      sx += im.width + 1;
+      sh = Math.max(sh, im.height);
+    }
+    usedH = sy + sh + 1;
+  }
+  const mobPlaces = sheetPlaces.slice(0, mobImages.length);
+  const npcPlaces = sheetPlaces.slice(mobImages.length);
   const heroPlaces: { x: number; y: number }[] = new Array(heroImages.length);
   {
-    // Region A: the free space right of the procedural strip, as tall as everything stacked so far. Region B: full width below it.
-    const regions = [{ x0: W, y0: 0, w: ATLAS_W - W, h: usedH }, { x0: 0, y0: usedH, w: ATLAS_W, h: Infinity }];
+    // Region A: the free space right of the procedural strip. Region B: full width below the enemy sheets.
+    const regions = [{ x0: W, y0: 0, w: ATLAS_W - W, h: stripH }, { x0: 0, y0: usedH, w: ATLAS_W, h: Infinity }];
     let ri = 0, cx = regions[0].x0, cy = regions[0].y0, rh = 0, bottom = usedH;
     const byHeight = heroImages.map((_, i) => i).sort((a, b) => heroImages[b].height - heroImages[a].height);
     for (const i of byHeight) {

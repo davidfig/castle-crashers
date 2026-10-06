@@ -31,6 +31,8 @@ export function hashState(s: GameState): number {
   h = mixNum(h, s.nextClump);
   h = mixNum(h, s.biome);
   h = mixNum(h, s.bossDeadTick);
+  h = mixNum(h, s.gateIdx);
+  h = mixNum(h, s.gateOpenTick);
   h = mixNum(h, s.beatIndex);
   h = mixNum(h, s.beatPlayedTick);
   h = mixNum(h, s.surrender ? 1 : 0);
@@ -76,6 +78,9 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.invuln);
     h = mixNum(h, p.dashT);
     h = mixNum(h, p.vanishT);
+    h = mixNum(h, p.cursor);
+    h = mixNum(h, p.vanishX);
+    h = mixNum(h, p.vanishY);
     h = mixNum(h, p.auraOn ? 1 : 0);
     h = mixNum(h, p.cdAttack);
     h = mixNum(h, p.cdAbility1);
@@ -102,6 +107,10 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.rootT);
     h = mixNum(h, p.silenceT);
     h = mixNum(h, p.confuseT);
+    h = mixNum(h, p.poisonT);
+    h = mixNum(h, p.burning ? 1 : 0);
+    h = mixNum(h, p.hexT);
+    h = mixNum(h, p.witherT);
     h = mixNum(h, p.pullT);
     h = mixNum(h, p.pullX);
     h = mixNum(h, p.pullY);

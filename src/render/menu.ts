@@ -147,7 +147,7 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
         drawStory(b, S, `${ln.pending} pick${ln.pending > 1 ? 's' : ''} waiting`, x + 9, y + 34, TONE.gold);
         ln.cards.forEach((c, k) => {
           const cy = y + 50 + k * 58;
-          drawCard(b, S, x + 8, cy, w - 16, 53, 0, false);
+          drawCard(b, S, x + 8, cy, w - 16, 53, 0, k === ln.cursor);
           drawText(b, S, String(k + 1), x + 13, cy + 7, hex(TONE.gold));
           drawIcon(b, S, c.icon, x + w - 34, cy + 6, 2);
           drawStory(b, S, c.name[0] + c.name.slice(1).toLowerCase(), x + 13, cy + 19, 0xffffff);

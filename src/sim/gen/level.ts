@@ -24,6 +24,8 @@ export interface ClumpPlan {
   boss?: boolean;
   /** A staged story beat (docs/12-story.md, tier 2): this encounter is the beat's scene, not a crowd. */
   beat?: string;
+  /** A barrier closes the field just past this wall of enemies until the screen is clear (see `planGates`). */
+  gate?: boolean;
   /** Random stream number of this encounter, so inserting one never changes the others. Defaults to its index. */
   rid?: number;
 }
@@ -77,7 +79,7 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
     const size = Math.floor(16 + t * 26 + rngRange(r, 0, 10));
     const line = c % 4 === 3;
     const y = rngRange(r, 8, WORLD_H - 8); // anywhere from the very top to the very bottom
-    plan.push({ x, y, size, line, t, rid: c });
+    plan.push({ x, y, size, line, t, gate: line, rid: c });
   }
   // Final stand: a wall across the field, then the boss with its retinue at the very end.
   plan.push({ x: WORLD_W - 440, y: WORLD_H / 2, size: 38, line: true, t: 1, rid: clumps });
@@ -91,6 +93,21 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
     plan.splice(at, 0, { x, y: WORLD_H / 2 + 10, size: 0, line: false, t, beat: beat.id, rid: BEAT_STREAM });
   }
   return plan;
+}
+
+/** A barrier that holds the camera: it stands `GATE_PAST` px beyond the wall of enemies it guards, and opens once the wall has been dealt with. */
+export interface Gate {
+  x: number;
+  /** Index in the plan of the encounter it guards: the gate cannot open before that encounter has streamed in. */
+  clump: number;
+}
+const GATE_PAST = 40;
+
+/** The level's gates, in order along the field. A function of the plan alone. */
+export function planGates(plan: readonly ClumpPlan[]): Gate[] {
+  const gates: Gate[] = [];
+  for (let i = 0; i < plan.length; i++) if (plan[i].gate) gates.push({ x: plan[i].x + GATE_PAST, clump: i });
+  return gates;
 }
 
 function addMob(s: GameState, r: Rng, x: number, y: number, t: number): boolean {

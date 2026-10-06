@@ -1,7 +1,7 @@
 // The telegraphed special moves of ordinary enemies (docs/03-gameplay-combat.md, "Enemy roster"): lobbed rocks, healing and
 // rally pulses, summoning, blinking, stomps and screams, death rays, and what a mob leaves behind when it dies.
 // Everything here is data-driven by `MobDef.special` / `MobDef.onDeath`; step.ts only schedules it.
-import { Behavior, MOBS, MobType, NovaStyle, isBossType, ProjStyle, type ClingSpecial, type DeathDef, type MobDef, type Special } from '../data/mobs';
+import { Behavior, MOBS, MobType, NovaStyle, isBossType, ProjStyle, type ClingSpecial, type DeathDef, type LeapSpecial, type MobDef, type Special } from '../data/mobs';
 import { clamp, cosTurns, sinTurns } from '../engine/math';
 import { rngFloat, rngRange } from '../engine/rng';
 import { VIEW_W, WORLD_H, WORLD_W } from './constants';
@@ -19,6 +19,9 @@ export const SP_WIND = 6;
 /** `mode` of a snow sprite clinging to a hero (`rem` = the hero's slot). */
 export const SP_CLING = 7;
 
+/** `mode` of a mob in mid-leap (a bullfrog, the Fenlord): it arcs onto the spot it marked (`ax`, `ay`); `wind` counts the ticks left. */
+export const SP_LEAP = 9;
+
 /** `mode` of a boss casting one of its specials (modes 1-5 are its own moves; `rem` holds the index in its `moves`). */
 export const BOSS_SPECIAL = 8;
 
@@ -29,7 +32,7 @@ const SHOVE_TICKS = 10;
 export const SP_INIT = 32;
 
 /** Burst looks for Ev.Burst. */
-export const BurstStyle = { Rock: 0, Stomp: 1, Scream: 2, Bones: 3, Poison: 4, Frost: 5 } as const;
+export const BurstStyle = { Rock: 0, Stomp: 1, Scream: 2, Bones: 3, Poison: 4, Frost: 5, Mire: 6, Sand: 7, Wisp: 8, Hex: 9, Flash: 10 } as const;
 
 /** A frenzied (rallied) mob moves and attacks this much faster. */
 export const RALLY_SPEED = 1.35;
@@ -140,7 +143,28 @@ export function startSpecialOf(s: GameState, i: number, sp: Special, target: num
       break;
     case 'whiteout':
     case 'wail':
+    case 'gust':
       if (!onScreen(s, x) || dist > sp.radius * 0.9) return false;
+      break;
+    case 'lure':
+      if (!onScreen(s, x) || dist > sp.radius * 0.9 || dist < 24) return false;
+      break;
+    case 'leap':
+      if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
+      e.ax[i] = e.x[tp]; // it comes down where the hero stands now; moving away dodges it
+      e.ay[i] = e.y[tp];
+      break;
+    case 'hex':
+    case 'dazzle':
+      if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
+      e.ax[i] = e.x[tp]; // the mark lands where the hero stands now; moving away dodges it
+      e.ay[i] = e.y[tp];
+      break;
+    case 'pit':
+      if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
+      if (countZones(s, ZoneKind.Pit) >= Math.round(4 * partyScale(activePlayers(s)))) { e.cool2[i] = 40; return false; }
+      e.ax[i] = e.x[tp];
+      e.ay[i] = e.y[tp];
       break;
     case 'ward': {
       const n = gatherCircle(s.grid, e, x, y, sp.radius, s.scratch);
@@ -247,6 +271,69 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
         e.hp[z] = sp.damage;
         e.cool2[z] = sp.linger;
         e.buff[z] = sp.slow;
+        if (sp.bog) e.mode[z] = 2; // (a bog: it settles into a poison pool, not black ice)
+      }
+      break;
+    }
+    case 'pit': {
+      for (let k = 0; k < (sp.count ?? 1); k++) {
+        const [ox, oy] = k === 0 ? [0, 0] : scatter(s, sp.spread ?? 0);
+        const z = allocEntity(e, Kind.Zone, ZoneKind.Pit, clamp(e.ax[i] + ox, 0, WORLD_W), clamp(e.ay[i] + oy, 6, WORLD_H - 6), 1);
+        if (z < 0) break;
+        e.wind[z] = sp.delay + k * 4;
+        e.rem[z] = sp.radius;
+        e.hp[z] = sp.damage;
+        e.cool2[z] = sp.linger + sp.delay;
+        e.ax[z] = sp.pull;
+      }
+      break;
+    }
+    case 'leap': {
+      e.mode[i] = SP_LEAP;
+      e.wind[i] = sp.delay;
+      e.vx[i] = 0;
+      e.vy[i] = 0;
+      e.face[i] = e.ax[i] >= x ? 1 : -1;
+      break;
+    }
+    case 'hex':
+    case 'dazzle': {
+      emit(s.events, Ev.Burst, e.ax[i], e.ay[i], sp.radius, sp.kind === 'hex' ? BurstStyle.Hex : BurstStyle.Flash);
+      for (let k = 0; k < s.players.length; k++) {
+        const p = s.players[k];
+        if (!p.active || p.downed || p.invuln > 0) continue; // a dodge-roll slips the mark
+        const dx = e.x[p.ent] - e.ax[i], dy = e.y[p.ent] - e.ay[i];
+        if (dx * dx + dy * dy > sp.radius * sp.radius) continue;
+        if (sp.kind === 'hex') { p.hexT = Math.max(p.hexT, sp.duration); continue; }
+        hurtPlayer(s, k, sp.damage);
+        p.rootT = Math.max(p.rootT, sp.duration);
+        p.silenceT = Math.max(p.silenceT, sp.duration);
+      }
+      break;
+    }
+    case 'lure': {
+      emit(s.events, Ev.Burst, x, y, sp.radius, BurstStyle.Wisp);
+      for (let k = 0; k < s.players.length; k++) {
+        const p = s.players[k];
+        if (!p.active || p.downed || p.invuln > 0) continue; // a dodge-roll resists the pull
+        const dx = x - e.x[p.ent], dy = y - e.y[p.ent];
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > sp.radius || d < 1) continue;
+        shovePlayer(s, k, dx / d, dy / d, Math.min(sp.pull, d - 8));
+        if (sp.damage > 0) hurtPlayer(s, k, sp.damage);
+      }
+      break;
+    }
+    case 'gust': {
+      emit(s.events, Ev.Burst, x, y, sp.radius, BurstStyle.Sand);
+      for (let k = 0; k < s.players.length; k++) {
+        const p = s.players[k];
+        if (!p.active || p.downed || p.invuln > 0) continue;
+        const dx = e.x[p.ent] - x, dy = e.y[p.ent] - y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > sp.radius) continue;
+        hurtPlayer(s, k, sp.damage);
+        shovePlayer(s, k, d > 0.5 ? dx / d : e.face[i], d > 0.5 ? dy / d : 0, sp.push);
       }
       break;
     }
@@ -366,7 +453,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
 /** What the special's telegraph looks like to the renderer: the radius of a ring around the mob, or 0 for none. */
 export function specialRing(sp: Special | undefined): number {
   if (!sp) return 0;
-  return sp.kind === 'nova' || sp.kind === 'whiteout' || sp.kind === 'wail' ? sp.radius : sp.kind === 'heal' || sp.kind === 'rally' || sp.kind === 'ward' ? sp.radius : 0;
+  return sp.kind === 'nova' || sp.kind === 'whiteout' || sp.kind === 'wail' || sp.kind === 'gust' ? sp.radius : sp.kind === 'heal' || sp.kind === 'rally' || sp.kind === 'ward' ? sp.radius : 0;
 }
 
 /** A mob has just been killed at its slot `m` (still allocated): break apart, or leave something behind. */
@@ -402,6 +489,18 @@ export function onMobDeath(s: GameState, m: number, d: DeathDef, dirX: number, d
       e.mode[a] = ProjStyle.Shard;
     }
   }
+  if (d.cloud) {
+    const z = allocEntity(e, Kind.Zone, ZoneKind.Spore, x, y, 1);
+    if (z >= 0) {
+      e.mode[z] = 1;
+      e.rem[z] = d.cloud.radius;
+      e.hp[z] = 0;
+      e.cool2[z] = d.cloud.linger;
+      e.buff[z] = 24;
+      e.ax[z] = d.cloud.drain;
+      emit(s.events, Ev.Burst, x, y, d.cloud.radius, BurstStyle.Mire);
+    }
+  }
   if (d.pool) {
     const z = allocEntity(e, Kind.Zone, d.pool.frost ? ZoneKind.Frost : ZoneKind.Poison, x, y, 1);
     if (z >= 0) {
@@ -413,6 +512,22 @@ export function onMobDeath(s: GameState, m: number, d: DeathDef, dirX: number, d
       emit(s.events, Ev.Burst, x, y, d.pool.radius, d.pool.frost ? BurstStyle.Frost : BurstStyle.Poison);
     }
   }
+}
+
+/** Most puddles of mud on the field at once (a peat brute leaves one every few steps). */
+const MUD_CAP = 40;
+
+/** A puddle of slowing mud (no damage) where a peat brute has walked. */
+export function dropMud(s: GameState, x: number, y: number, t: { radius: number; linger: number; slow: number }): void {
+  const e = s.ents;
+  if (countZones(s, ZoneKind.Mud) >= MUD_CAP) return;
+  const z = allocEntity(e, Kind.Zone, ZoneKind.Mud, x, y, 1);
+  if (z < 0) return;
+  e.mode[z] = 1;
+  e.rem[z] = t.radius;
+  e.hp[z] = 0;
+  e.cool2[z] = t.linger;
+  e.buff[z] = t.slow;
 }
 
 /** A snare: arms (`mode` 0 to 2), then snaps shut on the first hero to step in, rooting them. A dodge-roll passes over it. */
@@ -458,6 +573,64 @@ export function clingStep(s: GameState, i: number, def: MobDef): void {
   }
 }
 
+/** The leap a mob can make: its own special, or (for a boss) the one among its moves. */
+function leapOf(def: MobDef): LeapSpecial | undefined {
+  if (def.special?.kind === 'leap') return def.special;
+  for (const mv of def.boss?.moves ?? []) if (mv.kind === 'special' && mv.special.kind === 'leap') return mv.special;
+  return undefined;
+}
+
+/** A mob in mid-leap: it arcs toward the spot it marked and comes down on it (a stomp that hurts and slows whoever is under it). */
+export function leapStep(s: GameState, i: number, def: MobDef): void {
+  const e = s.ents;
+  const sp = leapOf(def);
+  const left = e.wind[i];
+  if (!sp || left <= 0) { e.mode[i] = 0; e.z[i] = 0; return; }
+  e.x[i] += (e.ax[i] - e.x[i]) / left;
+  e.y[i] += (e.ay[i] - e.y[i]) / left;
+  e.z[i] = sinTurns((1 - left / sp.delay) * 0.5) * (6 + def.radius);
+  e.wind[i] = left - 1;
+  if (e.wind[i] > 0) return;
+  e.mode[i] = 0;
+  e.z[i] = 0;
+  e.stun[i] = def.behavior === Behavior.Boss ? 20 : 16; // it lands heavily
+  emit(s.events, Ev.Burst, e.x[i], e.y[i], sp.radius, BurstStyle.Mire);
+  stop(s, def.behavior === Behavior.Boss ? 5 : 2);
+  for (let k = 0; k < s.players.length; k++) {
+    const p = s.players[k];
+    if (!p.active || p.downed) continue;
+    const dx = e.x[p.ent] - e.x[i], dy = e.y[p.ent] - e.y[i];
+    if (dx * dx + dy * dy <= sp.radius * sp.radius) hurtPlayer(s, k, sp.damage, sp.slow);
+  }
+}
+
+/** A sand pit: opens after its delay, then drags heroes toward its centre and bites whoever reaches it. A dodge-roll is not pulled. */
+function pitStep(s: GameState, i: number): void {
+  const e = s.ents;
+  if (--e.cool2[i] <= 0) { freeEntity(e, i); return; }
+  const r = e.rem[i];
+  if (e.mode[i] === 0) {
+    if (--e.wind[i] > 0) return;
+    e.mode[i] = 1;
+    emit(s.events, Ev.Burst, e.x[i], e.y[i], r, BurstStyle.Sand);
+    return;
+  }
+  const bite = (s.tick + i) % POOL_PULSE === 0;
+  for (let k = 0; k < s.players.length; k++) {
+    const p = s.players[k];
+    if (!p.active || p.downed || p.dashT > 0) continue;
+    const dx = e.x[i] - e.x[p.ent], dy = (e.y[i] - e.y[p.ent]) * 1.3;
+    const d2 = dx * dx + dy * dy;
+    if (d2 > r * r) continue;
+    const d = Math.sqrt(d2) || 1;
+    const step = Math.min(e.ax[i], d);
+    e.x[p.ent] += (dx / d) * step;
+    e.y[p.ent] += ((e.y[i] - e.y[p.ent]) / d) * step;
+    if (p.slowT < 12) p.slowT = 12;
+    if (bite && d < r * 0.3) hurtPlayer(s, k, e.hp[i], 0, HURT_DOT);
+  }
+}
+
 /** Ground zones: a lobbed rock waiting to land, poison and frost pools that linger, snares, and gathering storms. */
 export function updateZones(s: GameState): void {
   const e = s.ents;
@@ -467,13 +640,15 @@ export function updateZones(s: GameState): void {
     if (e.x[i] < s.camX - 60) { freeEntity(e, i); continue; }
     const r = e.rem[i];
     if (e.sub[i] === ZoneKind.Trap) { trapStep(s, i); continue; }
+    if (e.sub[i] === ZoneKind.Pit) { pitStep(s, i); continue; }
     if (e.sub[i] === ZoneKind.Storm) {
       // the blizzard gathers where the witch aimed, then settles into a pool of black ice
       if (--e.wind[i] > 0) continue;
-      e.sub[i] = ZoneKind.Frost;
+      const bog = e.mode[i] === 2;
+      e.sub[i] = bog ? ZoneKind.Poison : ZoneKind.Frost;
       e.mode[i] = 1;
       e.atk[i] = 0;
-      emit(s.events, Ev.Burst, e.x[i], e.y[i], r, BurstStyle.Frost);
+      emit(s.events, Ev.Burst, e.x[i], e.y[i], r, bog ? BurstStyle.Mire : BurstStyle.Frost);
       continue;
     }
     if (e.mode[i] === 0) {
@@ -499,7 +674,11 @@ export function updateZones(s: GameState): void {
       const dx = e.x[p.ent] - e.x[i], dy = (e.y[p.ent] - e.y[i]) * 1.3; // pools are drawn flattened
       if (dx * dx + dy * dy > r * r) continue;
       if (e.buff[i] > p.slowT) p.slowT = e.buff[i];
-      if (bite) hurtPlayer(s, k, e.hp[i], 0, HURT_DOT);
+      if (e.sub[i] === ZoneKind.Spore) { // spores: breathing them in saps the stamina
+        p.stamina = Math.max(0, p.stamina - e.ax[i]);
+        p.staminaDelay = Math.max(p.staminaDelay, 24);
+      }
+      if (bite && e.hp[i] > 0) hurtPlayer(s, k, e.hp[i], 0, HURT_DOT);
     }
   }
 }

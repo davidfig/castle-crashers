@@ -631,3 +631,388 @@ export function makeSnow(variant: number): Pix {
   }
   return p;
 }
+
+// ---- Sunken Marsh: dark peat floor, murky water, reed banks, cypress and stilt-hut silhouettes -------------------------
+
+/** A 16 px peat tile: dark olive-brown mud, muted and low-contrast so bright enemies and corpses read on it. */
+export function makeMarshFloor(variant: number): Pix {
+  const p: Pix = { w: 16, h: 16, rgba: new Uint8ClampedArray(16 * 16 * 4) };
+  const shades = [0x47452f, 0x45442d, 0x49472f, 0x43422c];
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const r = hash2(x, y, variant + 61);
+      let col = shades[r % 4];
+      const k = (r >>> 8) % 110;
+      if (k === 0 && x < 14) { setPix(p, x, y, 0x373822); setPix(p, x + 1, y, 0x373822); continue; } // a dark wet fleck
+      if (k === 1) col = 0x4e4d33; // a drier crumb
+      else if (k === 2) col = 0x44542f; // a pixel of moss
+      else if (k === 3 && x < 14) { setPix(p, x, y, 0x3c4a3a); setPix(p, x + 1, y, 0x3c4a3a); continue; } // a sliver of water
+      setPix(p, x, y, col);
+    }
+  }
+  return p;
+}
+
+/**
+ * A pool of standing water: a dark wet bank around murky green water that is darker at the far (top) side and takes a
+ * faint sky tint toward the near side, with a few short sheen dashes. `lilies` floats pads (and the odd pink flower) on it.
+ */
+export function makeMarshWater(w: number, h: number, seed: number, lilies: boolean): Pix {
+  const p: Pix = { w, h, rgba: new Uint8ClampedArray(w * h * 4) };
+  const water = [0x2f4338, 0x33483c, 0x3a5043];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (x + 0.5 - w / 2) / (w / 2), dy = (y + 0.5 - h / 2) / (h / 2);
+      const d = Math.hypot(dx, dy), ang = Math.atan2(dy, dx);
+      const r = 0.88 + 0.1 * Math.sin(ang * 3 + seed) + 0.06 * Math.sin(ang * 5 + seed * 2);
+      const ragged = ((hash2(x, y, seed) % 100) / 100 - 0.5) * 0.14;
+      if (d >= r + ragged) continue;
+      if (d > r - 0.2) { setPix(p, x, y, hash2(x, y, seed + 3) % 3 === 0 ? 0x2c2c1c : 0x34341f); continue; } // the wet bank
+      const t = (dy + 1) / 2;
+      let c = t < 0.3 ? water[0] : t > 0.68 ? water[2] : water[1];
+      if (t > 0.3 && hash2(x >> 1, y, seed + 9) % 19 === 0) c = 0x5b7566; // sheen
+      setPix(p, x, y, c);
+    }
+  }
+  if (lilies) {
+    const n = 3 + (seed % 3);
+    for (let k = 0; k < n; k++) {
+      const cx = 4 + (hash2(k, seed, 21) % Math.max(1, w - 9)), cy = 3 + (hash2(k, seed, 22) % Math.max(1, h - 6));
+      if (p.rgba[(cy * w + cx) * 4 + 3] === 0) continue;
+      for (const [ox, oy, c] of [[0, 0, 0x4c6a2c], [1, 0, 0x4c6a2c], [2, 0, 0x5a7a34], [0, 1, 0x3c5a24], [1, 1, 0x4c6a2c], [2, 1, 0x4c6a2c]] as const) {
+        if (p.rgba[((cy + oy) * w + cx + ox) * 4 + 3] > 0) setPix(p, cx + ox, cy + oy, c);
+      }
+      if (hash2(k, seed, 23) % 3 === 0) setPix(p, cx + 1, cy, 0xcfa6b4); // a pink bloom
+    }
+  }
+  return p;
+}
+
+/** Hanging moss: a ragged strand of `len` px dropping from (x, y), a pixel to either side as it goes, thinning to every other pixel. */
+function mossStrand(plot: (x: number, y: number, c: number) => void, x: number, y: number, len: number, seed: number, c: number): void {
+  let sx = x;
+  for (let j = 1; j <= len; j++) {
+    if (hash2(j, seed, 77) % 4 === 0) sx += (hash2(j, seed, 78) & 1) ? 1 : -1;
+    if (j < len * 0.6 || j % 2 === 0) plot(sx, y + j, c);
+  }
+}
+
+/**
+ * A line of marsh trees as silhouettes: bald cypresses (flared buttress, a few flat boughs, moss hanging), dead snags with
+ * moss draped from their forks, and mangroves arching over their prop roots, with little knees poking up along the water.
+ * Objects stay 12 px clear of the strip's edges so any variant can follow any other.
+ */
+export function makeMarshTrees(w: number, h: number, count: number, seed: number, c: { dark: number; light: number; moss: number }): Pix {
+  const p: Pix = { w, h, rgba: new Uint8ClampedArray(w * h * 4) };
+  const plot = clipPlot(p);
+  const rnd = (n: number, salt: number, mod: number): number => hash2(n, seed, salt) % mod;
+  const xs = scatter(count, w, 13, seed);
+  const bough = (bx: number, by: number, rx: number, ry: number, n: number): void => {
+    for (let y = -ry; y <= ry; y++) {
+      for (let x = -rx; x <= rx; x++) {
+        const d = (x * x) / (rx * rx) + (y * y) / (ry * ry);
+        if (d > 1 || (d > 0.8 && hash2(x + bx, y + by, seed + n) % 3 === 0)) continue;
+        plot(bx + x, by + y, y <= -ry + 1 && x < 0 ? c.light : c.dark);
+      }
+    }
+    for (let k = 0; k < 3 + Math.round(rx / 2); k++) mossStrand(plot, bx - rx + 1 + rnd(n * 7 + k, 32, rx * 2 - 1), by + ry - (k % 2), 3 + rnd(n * 5 + k, 33, 10), n * 11 + k, c.moss);
+  };
+  for (let n = 0; n < count; n++) {
+    if (rnd(n, 9, 8) === 0) continue; // a gap
+    const cx = xs[n], kind = rnd(n, 1, 10); // 0..4 cypress, 5..6 snag, 7..9 mangrove
+    const th = Math.round(h * (0.6 + rnd(n, 2, 38) / 100));
+    if (kind < 5) {
+      const tw = 1 + rnd(n, 3, 2);
+      for (let y = 0; y < th; y++) {
+        const flare = y < th * 0.22 ? Math.round((1 - y / (th * 0.22)) * 3) : 0;
+        const lean = Math.round(Math.sin(y * 0.2 + n) * 0.9);
+        for (let x = -tw - flare; x <= tw + flare; x++) plot(cx + lean + x, h - 1 - y, x < -tw / 2 ? c.light : c.dark);
+      }
+      const top = h - th;
+      const sd = rnd(n, 7, 2) ? 1 : -1;
+      bough(cx, top + 3, 9 + rnd(n, 4, 6), 3 + rnd(n, 5, 2), n);
+      bough(cx + sd * 6, top + 9 + rnd(n, 8, 4), 7 + rnd(n, 10, 4), 3, n + 40);
+      bough(cx - sd * 5, top + 15 + rnd(n, 12, 4), 6 + rnd(n, 13, 4), 2 + rnd(n, 14, 2), n + 80);
+    } else if (kind < 7) {
+      for (let y = 0; y < th; y++) {
+        const tx = cx + Math.sin(y * 0.4 + n) * 0.9;
+        plot(tx, h - 1 - y, c.dark);
+        if (y < th * 0.4) plot(tx + 1, h - 1 - y, c.dark);
+      }
+      for (let b = 0; b < 3; b++) {
+        const by = Math.round(th * (0.4 + b * 0.2)), side = (b + rnd(n, 5, 2)) % 2 ? 1 : -1;
+        const bx = cx + Math.sin(by * 0.4 + n) * 0.9, len = 4 + rnd(n * 3 + b, 6, 6);
+        const ex = bx + side * len, ey = h - 1 - by - Math.round(len * 0.6);
+        line(plot, bx, h - 1 - by, ex, ey, c.dark);
+        line(plot, ex, ey, ex + side * 2, ey - 2, c.dark);
+        mossStrand(plot, ex, ey, 4 + rnd(n * 3 + b, 14, 9), n * 13 + b, c.moss);
+        mossStrand(plot, (bx + ex) / 2, (h - 1 - by + ey) / 2, 3 + rnd(n * 3 + b, 15, 5), n * 17 + b, c.moss);
+      }
+    } else {
+      const rx = 10 + rnd(n, 4, 6), ry = 4 + rnd(n, 5, 3), cy = h - 1 - Math.round(th * 0.42);
+      for (let k = 0; k < 7 + rnd(n, 7, 3); k++) { // prop roots: arcs bowing out from the trunk and canopy down into the water
+        const side = k % 2 ? 1 : -1, reach = 2 + rnd(n * 5 + k, 8, rx + 2), sx = cx + side * (1 + (k >> 1));
+        const mx = sx + side * reach * 0.5, my = cy + (h - 1 - cy) * 0.35;
+        line(plot, sx, cy, mx, my, c.dark); line(plot, mx, my, cx + side * reach, h - 1, c.dark);
+      }
+      for (let x = -1; x <= 1; x++) for (let y = cy; y < h; y++) plot(cx + x, y, c.dark);
+      bough(cx, cy - 1, rx, ry, n + 120);
+      bough(cx + (rnd(n, 9, 2) ? 6 : -6), cy - ry, Math.round(rx * 0.6), 3, n + 160);
+    }
+  }
+  // knees: little pointed stumps along the waterline
+  for (let k = 0; k < 14; k++) {
+    const kx = 10 + rnd(k, 41, w - 20), kh = 2 + rnd(k, 42, 4);
+    for (let y = 0; y < kh; y++) { plot(kx, h - 3 - y, c.dark); if (y < kh - 2) plot(kx + 1, h - 3 - y, c.dark); }
+  }
+  for (let y = h - 3; y < h; y++) for (let x = 0; x < w; x++) setPix(p, x, y, c.dark);
+  return p;
+}
+
+/** A far bank of reeds: dense thin blades of uneven height leaning a little, with the odd cattail head. */
+export function makeMarshReeds(w: number, h: number, seed: number, c: { dark: number; light: number; head: number }): Pix {
+  const p: Pix = { w, h, rgba: new Uint8ClampedArray(w * h * 4) };
+  const plot = clipPlot(p);
+  const patchy = (x: number): number => 0.55 + 0.45 * Math.sin(x * 0.045 + seed) * Math.sin(x * 0.11 + seed * 2.3);
+  for (let x = 0; x < w; x++) {
+    if (hash2(x, seed, 5) % 100 > 70) continue;
+    const bh = Math.max(3, Math.round((h * 0.35 + (hash2(x, seed, 6) % Math.round(h * 0.55))) * patchy(x) * (0.35 + 0.65 * edgeEnv(x, w, 16))));
+    const lean = ((hash2(x, seed, 7) % 5) - 2) / 4;
+    const col = hash2(x, seed, 8) % 3 === 0 ? c.light : c.dark;
+    for (let y = 0; y < bh; y++) plot(x + Math.round(lean * (y / 3) ** 1.2 * 0.5), h - 1 - y, col);
+    if (bh > h * 0.55 && hash2(x, seed, 9) % 7 === 0) { // a cattail head
+      const hx = x + Math.round(lean * (bh / 3) ** 1.2 * 0.5);
+      for (let y = 0; y < 3; y++) { plot(hx, h - bh - 2 + y, c.head); if (y === 1) plot(hx + 1, h - bh - 2 + y, c.head); }
+    }
+  }
+  for (let y = h - 3; y < h; y++) for (let x = 0; x < w; x++) setPix(p, x, y, c.dark);
+  return p;
+}
+
+/**
+ * Rotting stilt-built things standing in the water: huts on posts (sagging roof, a dim window that the renderer can light),
+ * jetties (a plank deck on leaning pilings, one broken), and lone pilings. A strip holds a hut, a jetty, both, or just pilings.
+ */
+export function makeMarshStilts(w: number, h: number, seed: number, c: { dark: number; light: number }): Pix {
+  const p: Pix = { w, h, rgba: new Uint8ClampedArray(w * h * 4), lights: [] };
+  const plot = clipPlot(p);
+  const rnd = (n: number, salt: number, mod: number): number => hash2(n, seed, salt) % mod;
+  const post = (x: number, top: number, lean: number): void => { for (let y = top; y < h; y++) plot(x + Math.round(lean * ((y - top) / (h - top))), y, c.dark); };
+  const hut = (x0: number, n: number): void => {
+    const pw = 22 + rnd(n, 1, 12), deck = h - 12 - rnd(n, 2, 4), bw = pw - 8, bh = 9 + rnd(n, 3, 3);
+    for (let px = x0; px <= x0 + pw; px += 6) post(px, deck, rnd(px, 4, 3) - 1);
+    line(plot, x0, deck + 4, x0 + 6, h - 3, c.dark); line(plot, x0 + pw, deck + 4, x0 + pw - 6, h - 3, c.dark); // cross braces
+    for (let x = x0 - 2; x <= x0 + pw + 2; x++) { plot(x, deck, c.dark); plot(x, deck + 1, c.dark); } // the deck
+    const bx = x0 + 3, by = deck - bh;
+    for (let y = by; y < deck; y++) for (let x = bx; x < bx + bw; x++) plot(x, y, c.dark);
+    for (let r = 0; r < 5; r++) for (let x = bx - 1 - r; x <= bx + bw + r; x++) plot(x, by - 5 + r + (Math.abs(x - bx - bw / 2) < 3 ? 1 : 0), c.dark); // a pitched roof, sagging in the middle
+    const wx = bx + 3 + rnd(n, 5, Math.max(1, bw - 8));
+    for (let y = 0; y < 3; y++) for (let x = 0; x < 2; x++) plot(wx + x, by + 3 + y, c.light);
+    p.lights!.push({ x: wx, y: by + 3, w: 2, h: 3 });
+    if (rnd(n, 6, 2)) { for (let y = 0; y < 5; y++) plot(bx + bw - 3, by - 6 - y, c.dark); } // a crooked chimney
+    for (let y = deck; y < h; y += 2) plot(x0 - 3, y, c.dark); // a ladder rail
+  };
+  const jetty = (x0: number, len: number, n: number): void => {
+    const deck = h - 7 - rnd(n, 1, 3);
+    for (let x = x0; x < x0 + len; x++) { plot(x, deck, c.dark); if (rnd(x, 2, 9) !== 0) plot(x, deck + 1, c.dark); }
+    let k = 0;
+    for (let px = x0 + 1; px < x0 + len; px += 7, k++) {
+      const broken = rnd(n * 9 + k, 3, 6) === 0;
+      post(px, broken ? deck + 3 : deck - 1 - rnd(n * 9 + k, 4, 2), rnd(n * 9 + k, 5, 3) - 1);
+    }
+    post(x0 + len - 1, deck - 6, 1); plot(x0 + len - 2, deck - 6, c.dark); plot(x0 + len - 3, deck - 5, c.dark); // the end post, with a rope loop
+  };
+  const layout = rnd(0, 20, 6);
+  if (layout === 0 || layout === 2) hut(24 + rnd(0, 21, 20), 1);
+  if (layout === 1 || layout === 2) jetty(layout === 2 ? 150 + rnd(0, 22, 30) : 30 + rnd(0, 22, 70), 38 + rnd(0, 23, 28), 2);
+  if (layout === 3) { hut(26 + rnd(0, 21, 16), 3); hut(150 + rnd(0, 22, 40), 4); }
+  if (layout === 4) jetty(40 + rnd(0, 22, 40), 50, 5);
+  for (let k = 0; k < 5; k++) { // lone pilings
+    const x = 14 + rnd(k, 30, w - 28);
+    post(x, h - 5 - rnd(k, 31, 9), rnd(k, 32, 3) - 1);
+  }
+  for (let y = h - 2; y < h; y++) for (let x = 0; x < w; x++) setPix(p, x, y, c.dark);
+  return p;
+}
+
+// ---- Scorched Dunes (sand, mesas, ruins, dead palms; see docs/11-backgrounds.md)
+
+/** A seamless row of rolling dune ridges: the lee (right) face of each crest is shaded, the windward face lit, with faint ripple lines. */
+export function makeDunes(w: number, h: number, base: number, amp: number, seed: number, c: { lit: number; shade: number; edge: number; ripple: number }): Pix {
+  const p: Pix = { w, h, rgba: new Uint8ClampedArray(w * h * 4) };
+  const TAU = Math.PI * 2;
+  const top: number[] = [];
+  for (let x = 0; x < w; x++) {
+    const t = (x / w) * TAU;
+    const a = t * 2 + seed, b = t * 3 + seed * 2.1;
+    const f = 0.55 * Math.sin(a + 0.7 * Math.sin(a)) + 0.3 * Math.sin(b + 0.6 * Math.sin(b)) + 0.15 * Math.sin(t * 5 + seed * 0.7);
+    top.push(Math.max(0, Math.round(base + (base - amp * f - base) * edgeEnv(x, w))));
+  }
+  for (let x = 0; x < w; x++) {
+    const slope = top[Math.min(w - 1, x + 1)] - top[Math.max(0, x - 1)]; // > 0: falling to the right, the lee face
+    const lee = slope > 0 ? 2 + Math.min(9, slope * 5) : 0;
+    for (let y = top[x]; y < h; y++) {
+      const dy = y - top[x];
+      let col = dy < lee ? c.shade : c.lit;
+      if (dy === 0) col = c.edge;
+      else if (dy >= lee && (y + (x >> 3)) % 6 === 0 && hash2(x >> 1, y, seed | 0) % 3 === 0) col = c.ripple;
+      setPix(p, x, y, col);
+    }
+  }
+  return p;
+}
+
+type DesertCols = { fill: number; lit: number; shade: number; edge: number; band: number };
+
+/** A tapering block of sandstone: half-width eases from hw0 at `top` to hw1 at `bot`; lit left, shaded right, strata every 5 rows. */
+function sandBlock(p: Pix, cx: number, top: number, bot: number, hw0: number, hw1: number, c: DesertCols): void {
+  const n = Math.max(1, bot - top - 1);
+  for (let y = top; y < bot; y++) {
+    const hw = Math.round(hw0 + (hw1 - hw0) * ((y - top) / n)), x0 = cx - hw, x1 = cx + hw;
+    for (let x = x0; x <= x1; x++) {
+      let col = c.fill;
+      if (x <= x0 + 1 && hw > 1) col = c.lit;
+      else if (x >= x1 - 1 && hw > 1) col = c.shade;
+      else if ((y - top) % 5 === 4) col = c.band;
+      if (y === top) col = c.edge;
+      setPix(p, x, y, col);
+    }
+  }
+}
+
+function clearPix(p: Pix, x: number, y: number): void {
+  if (x < 0 || y < 0 || x >= p.w || y >= p.h) return;
+  p.rgba[(y * p.w + x) * 4 + 3] = 0;
+}
+
+/**
+ * A desert skyline: flat-topped mesas and buttes, a crumbling step-pyramid, obelisks, wind-carved arches and broken
+ * columns, scattered unevenly across a strip with a low band of dune along its foot. `kinds` lists the pieces to draw,
+ * repeated to weight them. Everything stays 30 px clear of the strip's edges so any variant can follow any other.
+ */
+export function makeDesertSkyline(w: number, h: number, count: number, seed: number, kinds: readonly string[], c: DesertCols): Pix {
+  const p: Pix = { w, h, rgba: new Uint8ClampedArray(w * h * 4) };
+  const rnd = (n: number, salt: number, mod: number): number => hash2(n, seed, salt) % mod;
+  const xs = scatter(count, w, 30, seed);
+  for (let n = 0; n < count; n++) {
+    const kind = kinds[rnd(n, 1, kinds.length)];
+    const cx = xs[n];
+    const hg = Math.round(h * (0.45 + rnd(n, 2, 50) / 100)) - 4;
+    if (kind === 'mesa') {
+      const hw = 8 + rnd(n, 3, 7), tall = Math.max(10, Math.min(hg, h - 6));
+      sandBlock(p, cx, h - tall, h - Math.round(tall * 0.38), hw, hw + 1, c);
+      sandBlock(p, cx, h - Math.round(tall * 0.38), h, hw + 1, hw + 1 + Math.round(tall * 0.45), c);
+      if (rnd(n, 4, 3) === 0) sandBlock(p, cx - 2 + rnd(n, 5, 4), h - tall - 4, h - tall + 1, hw - 4, hw - 4, c); // a cap
+    } else if (kind === 'butte') {
+      const hw = 3 + rnd(n, 3, 3), tall = Math.max(12, Math.min(hg + 6, h - 4));
+      sandBlock(p, cx, h - tall, h - Math.round(tall * 0.6), hw, hw, c);
+      sandBlock(p, cx, h - Math.round(tall * 0.6), h, hw, hw + 5, c);
+    } else if (kind === 'ziggurat') {
+      const steps = 4 + rnd(n, 3, 2), sh = Math.max(3, Math.floor((Math.min(hg, h - 6) + 4) / steps));
+      for (let i = 0; i < steps; i++) {
+        const hw = 17 - i * 3;
+        sandBlock(p, cx, h - (i + 1) * sh, h - i * sh, hw, hw, c);
+      }
+      // the stair up its middle, and the shrine on top
+      for (let y = h - steps * sh; y < h; y++) for (let x = cx - 1; x <= cx + 1; x++) setPix(p, x, y, y % 2 === 0 ? c.band : c.shade);
+      sandBlock(p, cx, h - steps * sh - 3, h - steps * sh, 3, 3, c);
+      if (rnd(n, 6, 2) === 0) for (let x = cx + 8; x < cx + 14; x++) clearPix(p, x, h - 2 * sh - 1 - ((x - cx - 8) >> 1)); // a crumbled corner
+    } else if (kind === 'obelisk') {
+      const hw = 2 + rnd(n, 3, 2), tall = Math.max(14, Math.min(hg + 8, h - 3));
+      sandBlock(p, cx, h - tall + 5, h, hw, hw + 1, c);
+      if (rnd(n, 4, 3) === 0) sandBlock(p, cx - hw, h - tall + 2, h - tall + 6, 0, hw, c); // broken: a ragged stump
+      else sandBlock(p, cx, h - tall, h - tall + 5, 0, hw, c);
+      sandBlock(p, cx, h - 3, h, hw + 3, hw + 3, c); // plinth
+    } else if (kind === 'arch') {
+      const hw = 12 + rnd(n, 3, 4), tall = Math.max(18, Math.min(hg + 6, h - 3));
+      sandBlock(p, cx, h - tall, h, hw, hw + 3, c);
+      const rx = Math.round(hw * 0.58), ry = Math.round(tall * 0.62);
+      for (let y = 0; y < h; y++) for (let x = cx - rx; x <= cx + rx; x++) {
+        const dx = (x - cx) / rx, dy = (y - (h - 1)) / ry;
+        if (dx * dx + dy * dy < 1) clearPix(p, x, y);
+      }
+    } else { // columns
+      const k = 2 + rnd(n, 3, 2);
+      for (let i = 0; i < k; i++) {
+        const th = Math.max(8, Math.round(hg * (0.4 + rnd(n * 7 + i, 7, 60) / 100)));
+        sandBlock(p, cx + i * 7 - 7, h - th, h, 2, 2, c);
+        if (rnd(n * 7 + i, 8, 2) === 0) sandBlock(p, cx + i * 7 - 7, h - th - 2, h - th, 3, 3, c); // a capital
+      }
+    }
+  }
+  // a low band of dune along the foot so the gaps between pieces are sand and not sky
+  for (let x = 0; x < w; x++) {
+    const t = (x / w) * Math.PI * 2, bh = 3 + Math.round(1.5 * Math.sin(t * 4 + seed) + 1.5 * Math.sin(t * 9 + seed * 2));
+    for (let y = h - Math.max(2, bh); y < h; y++) setPix(p, x, y, y === h - Math.max(2, bh) ? c.edge : c.fill);
+  }
+  return p;
+}
+
+/** A seamless line of wind-bent dead palms and flat-topped acacias, dark against the bright sky: trunks lean to the right on the wind. */
+export function makeDeadPalms(w: number, h: number, count: number, seed: number, c: { trunk: number; frond: number; dry: number }): Pix {
+  const p: Pix = { w, h, rgba: new Uint8ClampedArray(w * h * 4) };
+  const plot = clipPlot(p);
+  const rnd = (n: number, salt: number, mod: number): number => hash2(n, seed, salt) % mod;
+  const xs = scatter(count, w, 18, seed);
+  for (let n = 0; n < count; n++) {
+    if (rnd(n, 9, 6) === 0) continue;
+    const cx = xs[n], th = Math.round(h * (0.55 + rnd(n, 2, 35) / 100)), lean = 0.18 + rnd(n, 3, 25) / 100;
+    const tx = (u: number): number => cx + lean * th * u * u * 1.3;
+    for (let i = 0; i <= th; i++) { const u = i / th; plot(tx(u), h - i, c.trunk); if (i > th * 0.4) plot(tx(u) + 1, h - i, c.trunk); }
+    const topX = tx(1), topY = h - th;
+    if (rnd(n, 4, 3) === 0) { // an acacia: a flat, ragged umbrella with a few broken branches below
+      const rw = 7 + rnd(n, 5, 6);
+      for (let y = -2; y <= 1; y++) for (let x = -rw; x <= rw; x++) if ((x * x) / (rw * rw) + (y * y) / 5 < 1 && hash2(x, y, seed + n) % 5 > 0) plot(topX + x, topY + y, y < 0 ? c.frond : c.dry);
+      line(plot, topX, topY + 4, topX - rw * 0.6, topY + 1, c.trunk);
+      line(plot, topX, topY + 5, topX + rw * 0.6, topY + 1, c.trunk);
+    } else { // a dead palm: a few ragged fronds drooping to the left of the wind
+      const fr = 4 + rnd(n, 5, 3);
+      for (let f = 0; f < fr; f++) {
+        const ang = -Math.PI * 0.95 + (f / (fr - 1)) * Math.PI * 0.95 + (rnd(n * 9 + f, 6, 10) - 5) * 0.05, len = 8 + rnd(n * 9 + f, 7, 7);
+        const ex = topX + Math.cos(ang) * len, ey = topY + Math.sin(ang) * len * 0.6 + len * 0.45;
+        line(plot, topX, topY, topX + Math.cos(ang) * len * 0.6, topY + Math.sin(ang) * len * 0.5 - 1, c.frond);
+        line(plot, topX + Math.cos(ang) * len * 0.6, topY + Math.sin(ang) * len * 0.5 - 1, ex, ey, rnd(n * 9 + f, 8, 3) === 0 ? c.dry : c.frond);
+      }
+    }
+  }
+  for (let y = h - 2; y < h; y++) for (let x = 0; x < w; x++) setPix(p, x, y, c.trunk);
+  return p;
+}
+
+/** A 16 px sand tile: a clean mid sand in three close shades, the odd lit grain, darker fleck and short wind-ripple streak. Kept calm so a crowd reads on it. */
+export function makeSand(variant: number): Pix {
+  const p: Pix = { w: 16, h: 16, rgba: new Uint8ClampedArray(16 * 16 * 4) };
+  const shades = [0xdfc58f, 0xdbc18a, 0xe2c994];
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const r = hash2(x, y, variant + 61);
+      let col = shades[r % 3];
+      const k = (r >>> 8) % 60;
+      if (k === 0) col = 0xeed6a2; // a lit grain
+      else if (k === 1) col = 0xc9ac76; // a darker fleck
+      else if (k === 2 && x < 12) { setPix(p, x, y, 0xd3b983); setPix(p, x + 1, y, 0xd3b983); setPix(p, x + 2, y, 0xd8be88); setPix(p, x + 3, y, 0xd8be88); continue; } // a ripple streak
+      setPix(p, x, y, col);
+    }
+  }
+  return p;
+}
+
+/** A patch of wind ripples: wavy lines of darker sand (with a lit lip) in a lobed area that thins out toward its edge. Gentle, not busy. */
+export function makeSandRipples(w: number, h: number, seed: number, dark: number, light: number): Pix {
+  const p: Pix = { w, h, rgba: new Uint8ClampedArray(w * h * 4) };
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (x + 0.5 - w / 2) / (w / 2), dy = (y + 0.5 - h / 2) / (h / 2);
+      const ang = Math.atan2(dy, dx);
+      const r = 0.8 + 0.2 * Math.sin(ang * 2 + seed) + 0.12 * Math.sin(ang * 3 + seed * 1.7);
+      const d = Math.hypot(dx, dy) / r;
+      if (d >= 1) continue;
+      if ((1 - d) ** 0.6 <= BAYER4[(y & 3) * 4 + (x & 3)] / 16 * 0.8) continue;
+      const wave = Math.round(1.2 * Math.sin(x * 0.45 + seed + (y >> 3)));
+      const row = (y + wave + 8) % 4;
+      if (row === 0) setPix(p, x, y, dark);
+      else if (row === 1 && hash2(x, y, seed) % 3 === 0) setPix(p, x, y, light);
+    }
+  }
+  return p;
+}

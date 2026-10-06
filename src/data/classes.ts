@@ -34,6 +34,8 @@ export interface ArrowDef {
   /** Fraction of `damage` the blast deals to things it did not hit directly (default 0.55). */
   splashDamage?: number;
   pierce?: boolean;
+  /** A piercing shot that also ignores shields; without it, a shield still blocks it (and the shot stops there). */
+  shieldPierce?: boolean;
 }
 
 /** The archer's ability 1: a volley loosed into the air that rains down on a spot `reach` px ahead (see sim/rain.ts). */
@@ -179,8 +181,9 @@ CLASSES.push(
     special: swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 24 }),
     shot: { damage: 6, knock: 3, speed: 2.8, ttl: 60, cooldown: 22, splash: 22 },
     // ability 2: one huge, slow fireball that bursts on the first enemy it meets or at the end of its range
-    specialShot: { count: 1, spread: 0, damage: 14, knock: 6, speed: 1.3, ttl: 130, cooldown: 30, splash: 52, splashDamage: 0.7, radius: 10 },
-    attackCost: 2,
+    specialShot: { count: 1, spread: 0, damage: 14, knock: 6, speed: 2.2, ttl: 80, cooldown: 30, splash: 52, splashDamage: 0.7, radius: 10 },
+    // 12 a shot: at a 22-tick cooldown the regen between shots is ~7.5, so sustained fire drains about 4.5 a shot and runs dry in ~8 s
+    attackCost: 12,
     specialCost: 40, specialCooldown: 170,
     novaCost: 40, novaRadius: 85, novaDamage: 11, novaBigRadius: 125, novaBigDamage: 16,
   },
@@ -213,13 +216,13 @@ CLASSES.push(
     special: swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 8 }),
     // Sniper: an arrow hits up to 2.2x harder at the far end of its flight, so he wants distance (and the mage's fireball does not scale).
     longShot: 1.2,
-    shot: { damage: 3, knock: 1.2, speed: 4.2, ttl: 70, cooldown: 8 },
-    specialShot: { count: 5, spread: 0.09, damage: 5, knock: 2.5, speed: 4.6, ttl: 80, cooldown: 14, pierce: true },
+    shot: { damage: 3, knock: 1.2, speed: 4.2, ttl: 50, cooldown: 8, pierce: true },
+    specialShot: { count: 5, spread: 0.09, damage: 5, knock: 2.5, speed: 4.6, ttl: 80, cooldown: 14, pierce: true, shieldPierce: true },
     attackCost: 1,
     specialCost: 35, specialCooldown: 150,
     novaRadius: 60, novaDamage: 7, novaBigRadius: 95, novaBigDamage: 12,
-    // Ability 1: a rain of arrows that lands about halfway out along his arrows' range (4.2 px/tick x 70 ticks / 2).
-    rain: { arrows: 24, bigArrows: 38, radius: 36, bigRadius: 50, damage: 4, knock: 1.5, hitRadius: 9, reach: 147 },
+    // Ability 1: a rain of arrows that lands about halfway out along his arrows' range (4.2 px/tick x 50 ticks / 2).
+    rain: { arrows: 24, bigArrows: 38, radius: 36, bigRadius: 50, damage: 4, knock: 1.5, hitRadius: 9, reach: 105 },
   },
 );
 

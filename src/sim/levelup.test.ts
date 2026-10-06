@@ -92,11 +92,10 @@ test('with the panel open the hero can do nothing, but the world and everyone el
   s.ents.flags[g] = 1;
   tap(s, Btn.Level);
   const x0 = s.ents.x[pe], gx0 = s.ents.x[g], tick0 = s.tick;
-  const f2 = hold(Btn.Dodge, 127); // (the face buttons would pick a card)
+  const f2 = idle(); // (any face button, dodge included, would pick a card)
   f2[0].moveY = 127;
   for (let t = 0; t < 60; t++) step(s, f2);
   assert.equal(s.ents.x[pe], x0, 'no movement');
-  assert.equal(s.players[0].dashT, 0, 'no dodge');
   assert.equal(s.players[0].cdAttack, 0, 'no swing');
   assert.ok(s.ents.x[g] < gx0, 'the goblin kept walking at them');
   assert.ok(s.tick > tick0 + 50, 'the game did not pause');
@@ -234,4 +233,21 @@ test('levels, picks and ranks are part of the hash, and a run with picks is dete
   const e = arena(1), f = arena(1);
   tap(f, Btn.Level);
   assert.notEqual(hashState(e), hashState(f));
+});
+
+test('the stick steps a highlight along the cards and a confirm button takes the highlighted one', () => {
+  const s = arena(1);
+  tap(s, Btn.Level);
+  step(s, hold(0, 127));
+  step(s, idle());
+  step(s, hold(0, 127));
+  assert.equal(s.players[0].cursor, 2, 'one step per push');
+  step(s, idle());
+  step(s, hold(0, 127));
+  assert.equal(s.players[0].cursor, 2, 'stops at the last card');
+  const expected = offerFor(s.offerSeed, 0, s.players[0].level, s.players[0].ranks)[2];
+  step(s, idle());
+  tap(s, Btn.Dodge);
+  assert.equal(s.players[0].pending, 0, 'the pick was made');
+  assert.equal(s.players[0].ranks[expected], 1, 'it was the third card');
 });

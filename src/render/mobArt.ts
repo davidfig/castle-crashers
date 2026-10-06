@@ -37,12 +37,38 @@ import whiteoutspiritMeta from '../../art/out/whiteoutspirit.json';
 import tundraguardMeta from '../../art/out/tundraguard.json';
 import rimekingMeta from '../../art/out/rimeking.json';
 import dreadregentMeta from '../../art/out/dreadregent.json';
+import bogfrogMeta from '../../art/out/bogfrog.json';
+import mudleechMeta from '../../art/out/mudleech.json';
+import toadspitterMeta from '../../art/out/toadspitter.json';
+import bullfrogMeta from '../../art/out/bullfrog.json';
+import sporebloatMeta from '../../art/out/sporebloat.json';
+import reedstalkerMeta from '../../art/out/reedstalker.json';
+import wispMeta from '../../art/out/wisp.json';
+import peatbruteMeta from '../../art/out/peatbrute.json';
+import mirehagMeta from '../../art/out/mirehag.json';
+import toadmatronMeta from '../../art/out/toadmatron.json';
+import drownedwardenMeta from '../../art/out/drownedwarden.json';
+import fenlordMeta from '../../art/out/fenlord.json';
+import duneraiderMeta from '../../art/out/duneraider.json';
+import scarabMeta from '../../art/out/scarab.json';
+import flamearcherMeta from '../../art/out/flamearcher.json';
+import sidewinderMeta from '../../art/out/sidewinder.json';
+import scorpionMeta from '../../art/out/scorpion.json';
+import falconerMeta from '../../art/out/falconer.json';
+import dustdevilMeta from '../../art/out/dustdevil.json';
+import antlionMeta from '../../art/out/antlion.json';
+import mummyMeta from '../../art/out/mummy.json';
+import sunpriestMeta from '../../art/out/sunpriest.json';
+import sunguardMeta from '../../art/out/sunguard.json';
+import suntyrantMeta from '../../art/out/suntyrant.json';
 
 interface Rect { x: number; y: number; w: number; h: number }
 interface SheetMeta { frames: Record<string, Rect>; anims: Record<string, { frames: string[] }> }
 const MOB_METAS = [
   goblinMeta, orcMeta, mobarcherMeta, shieldbearerMeta, bomberMeta, bossMeta, wolfMeta, slingerMeta, shamanMeta, drummerMeta, trollMeta, skeletonMeta, bonearcherMeta, ghoulMeta, wraithMeta, skullMeta, bonebruteMeta, necromancerMeta, bansheeMeta, plaguezombieMeta, lichMeta, dreadknightMeta,
   trapperMeta, snowspriteMeta, harpoonerMeta, frostwolfMeta, ramMeta, icehuskMeta, yetiMeta, frostshamanMeta, blizzardwitchMeta, whiteoutspiritMeta, tundraguardMeta, rimekingMeta, dreadregentMeta,
+  bogfrogMeta, mudleechMeta, toadspitterMeta, bullfrogMeta, sporebloatMeta, reedstalkerMeta, wispMeta, peatbruteMeta, mirehagMeta, toadmatronMeta, drownedwardenMeta, fenlordMeta,
+  duneraiderMeta, scarabMeta, flamearcherMeta, sidewinderMeta, scorpionMeta, falconerMeta, dustdevilMeta, antlionMeta, mummyMeta, sunpriestMeta, sunguardMeta, suntyrantMeta,
 ] as unknown as SheetMeta[];
 
 export interface MobArt {
