@@ -77,7 +77,7 @@ export function boardScreen(l: Ledger, writs: readonly Writ[], sel: number, save
       biome: biomeIndex(w.seed),
       lines: writLines(w).slice(1).map(storySafe),
     })),
-    footer: fontSafe(saveNote ?? 'LEFT/RIGHT CHOOSE    ATTACK ACCEPT'),
+    footer: fontSafe(saveNote ?? 'LEFT/RIGHT CHOOSE    ATTACK ACCEPT    R CHANGE PARTY'),
   };
 }
 
@@ -181,17 +181,20 @@ export const BLURB: Record<string, string[]> = {
 
 export interface LobbySlot { joined: boolean; ready: boolean; classId: number }
 
-/** Character select: one panel per player slot; a device joins by pressing attack. */
-export function selectScreen(w: Writ, lobby: readonly LobbySlot[]): Screen {
+/**
+ * Character select: one panel per player slot; a device joins by pressing attack. With a Writ (the dev path) it shows where the
+ * run is headed; without one it is the party select that opens the game, before the board, and says how to change the party later.
+ */
+export function selectScreen(w: Writ | undefined, lobby: readonly LobbySlot[]): Screen {
   return {
     kind: 'select',
-    header: 'CHOOSE YOUR HERO',
-    sub: storySafe(w.title),
-    biome: biomeIndex(w.seed),
+    header: w ? 'CHOOSE YOUR HERO' : 'CHOOSE YOUR PARTY',
+    sub: storySafe(w ? w.title : 'Who rides out for the Tally Office?'),
+    biome: w ? biomeIndex(w.seed) : -1,
     slots: lobby.map((l) => {
       const c = CLASSES[l.classId];
       return { joined: l.joined, ready: l.ready, classId: l.classId, name: fontSafe(c.name), blurb: BLURB[c.name] ?? [], hp: c.hp, speed: c.speed };
     }),
-    footer: 'LEFT/RIGHT CHOOSE    ATTACK READY    ALL READY STARTS',
+    footer: w ? 'LEFT/RIGHT CHOOSE    ATTACK READY    ALL READY STARTS' : 'LEFT/RIGHT CHOOSE    ATTACK READY    ALL READY CONTINUES',
   };
 }

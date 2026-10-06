@@ -105,8 +105,15 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
       drawStory(b, S, String(sl.hp), cx - 6, y + 132, TONE.normal);
       if (sl.ready) drawStory(b, S, 'Ready', x + cw - 10 - storyWidth('Ready'), y + 9, 0x4fd05a);
     });
-    drawStory(b, S, 'Where you are headed', MARGIN, 218, TONE.dim);
-    biomeThumb(b, S, scr.biome, MARGIN, 232, VIEW_W - 2 * MARGIN, 96, tick);
+    if (scr.biome >= 0) {
+      drawStory(b, S, 'Where you are headed', MARGIN, 218, TONE.dim);
+      biomeThumb(b, S, scr.biome, MARGIN, 232, VIEW_W - 2 * MARGIN, 96, tick);
+    } else {
+      // the party select that opens the game: how to join, and how to change the party later
+      const lines = ['Up to four can play. A pad or the keys join by pressing attack.', 'Between Writs, press R at the board to change who rides out.'];
+      drawPanel(b, S, MARGIN - 4, 226, VIEW_W - 2 * MARGIN + 8, 56, { fill: 'ink' });
+      lines.forEach((t, k) => drawStory(b, S, t, MARGIN + 12, 240 + k * 14, k === 0 ? TONE.normal : TONE.dim));
+    }
   } else if (scr.kind === 'board') {
     drawStory(b, S, scr.sub, MARGIN, 36, TONE.normal);
     drawStory(b, S, scr.mood, MARGIN, 47, TONE.dim);

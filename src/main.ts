@@ -152,7 +152,8 @@ let pendingCfg: RunConfig | undefined;
 /** Class picks carried from the lobby into the next sim (empty when the run skipped selection). */
 let picks: LobbySlot[] = [];
 
-function enterSelect(c: RunConfig): void {
+/** `c` is the run the party is choosing for (the dev path); without it this is the party select that opens the game and the board's R. */
+function enterSelect(c?: RunConfig): void {
   pendingCfg = c;
   lobby = Array.from({ length: MAX_PLAYERS }, () => ({ joined: false, ready: false, classId: 0 }));
   lobbyPrevX = new Array(MAX_PLAYERS).fill(0);
@@ -160,11 +161,11 @@ function enterSelect(c: RunConfig): void {
   // Drop stale presses, then let any held button re-claim its slot.
   input.reset(); input.sample(); input.reset();
   mode = 'select';
-  screen = selectScreen(c.writ, lobby);
+  screen = selectScreen(c?.writ, lobby);
 }
 
 function selectUpdate(): void {
-  if (input.restartRequested) { input.reset(); showBoard(); return; }
+  if (input.restartRequested) { input.reset(); if (pendingCfg || picks.length) showBoard(); return; } // backing out: to the board (the party stays as it was)
   const frames = input.sample();
   for (let k = 0; k < MAX_PLAYERS; k++) {
     const f = frames[k], l = lobby[k];
@@ -177,9 +178,16 @@ function selectUpdate(): void {
     if (!l.ready && dx !== 0) l.classId = (l.classId + dx + CLASSES.length) % CLASSES.length;
     if (atk) l.ready = !l.ready;
   }
-  screen = selectScreen(pendingCfg!.writ, lobby);
+  screen = selectScreen(pendingCfg?.writ, lobby);
   const joined = lobby.filter((l) => l.joined);
-  if (joined.length && joined.every((l) => l.ready)) { picks = lobby.map((l) => ({ ...l })); startRun(pendingCfg!, true); }
+  if (joined.length && joined.every((l) => l.ready)) {
+    picks = lobby.map((l) => ({ ...l }));
+    if (pendingCfg) { startRun(pendingCfg, true); return; }
+    // the party is set: the hub scenes and the board now speak to this party
+    ledger = { ...ledger, party: joined.map((l) => CLASSES[l.classId].name) };
+    persist();
+    enterHub();
+  }
 }
 
 function newSim(plan: LevelPlan): ReturnType<typeof createSim> {
@@ -359,7 +367,11 @@ function menuUpdate(): void {
   const { dx, ok } = input.consumeMenu();
   if (mode === 'board') {
     if (dx !== 0) { sel = (sel + dx + writs.length) % writs.length; screen = boardScreen(ledger, writs, sel, saveNote); }
-    if (ok) enterSelect(makeRunConfig(ledger, writs[sel]));
+    if (input.restartRequested) { enterSelect(); return; } // R: change the party
+    if (ok) {
+      const c = makeRunConfig(ledger, writs[sel]);
+      if (picks.some((p) => p.joined)) startRun(c, true); else enterSelect(c); // the party was chosen up front (a dev skip has none)
+    }
   } else if (mode === 'scene') {
     if (ok) {
       if (scenePage + 1 < scenePages(scenes[0], ledger.party).length) {
@@ -374,7 +386,7 @@ function menuUpdate(): void {
       }
     }
   } else if (mode === 'summary' && ok) enterHub();
-  else if (mode === 'title' && ok) enterHub();
+  else if (mode === 'title' && ok) enterSelect();
 }
 
 if (params.has('seed') || (__DEV__ && params.has('camp'))) {

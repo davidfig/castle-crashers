@@ -16,7 +16,7 @@ The game is about a bounty office and its books, and the repo's art direction al
 | Screen | Where | Needs (beyond the kit) | Status |
 |---|---|---|---|
 | Writ board | `render/menu.ts` (board) | Parchment notice per Writ, biome picture (done), milestone seal, the Registrar's desk | a vellum notice per Writ with its biome picture, a raised gold-edged selection, a wax seal on a milestone: **done**; the Registrar's desk planned |
-| Character select | menu (select) | Class portraits, ready stamp | framed player-coloured panels, hero on a pedestal, name, abilities, health: **done**; real portraits and a drawn ready stamp planned |
+| Character select | menu (select) | Class portraits, ready stamp | framed player-coloured panels, hero on a pedestal, name, abilities, health: **done**; real portraits and a drawn ready stamp planned. **It comes first**: title, then party select, then the hub scenes and the Writ board, which speak to that party (stored in `ledger.party`); the party stays for every run until R at the board reopens the select. The old per-run select (with a picture of where the Writ leads) remains only for dev skips that reach the board without a party (`?hub=1`) |
 | Hub scenes (tavern, map, board) | menu (scene) | A backdrop per scene, a figure for the speaker | **done**: eight drawn places, the party and the Registrar standing in them, one beat of talk at a time |
 | Run summary | menu (text) | Same page; the Registrar beside his remark | vellum page + story font + the Registrar: **done** |
 | Camp: spoils | menu (text) | Campfire backdrop | vellum page + story font: **done**; backdrop planned |
