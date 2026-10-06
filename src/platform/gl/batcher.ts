@@ -39,7 +39,7 @@ void main() {
   vec4 c = texture(u_tex, v_uv);
   if (c.a < 0.01) discard;
   c *= v_tint;
-  c.rgb = mix(c.rgb, vec3(1.0), v_flash);
+  c.rgb = v_flash < 0.0 ? v_tint.rgb : mix(c.rgb, vec3(1.0), v_flash); // flash -1: a flat silhouette in the tint colour
   o = c;
 }`;
 

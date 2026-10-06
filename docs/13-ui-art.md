@@ -25,7 +25,7 @@ The game is about a bounty office and its books, and the repo's art direction al
 | Camp: doors | menu (doors) | Door frames with node icons | framed panels, node icon, cursor: **done** |
 | Level-up panel (in the sky band) | `render/levelup.ts` | Card frames, upgrade icons, the pip | **done** (framed cards, icons, a star pip) |
 | Barks | `render/barks.ts` | Story font, speech bubble tail | vellum bubble with a tail, story font: **done** |
-| Title and logo | none yet | Everything | planned |
+| Title and logo | `render/titleArt.ts` | The name, a backdrop | **done**: dusk, the keep with lit windows and a waving banner, a horde crossing the field, the name on a gold plaque, a "Per Head" ribbon; shown on a fresh load (`?hub=1` skips it); the name is *The Final Tally: Per Head* |
 | Hub (the city) | none yet | The city at each chapter's mood | planned |
 
 ## The kit (built)
@@ -60,7 +60,7 @@ Each set is deterministic and animated from the clock (flames, rain, smoke, bunt
 
 ## Still to make
 
-More NPCs as the story needs them (the Elder, the mapmaker), a backdrop for the camp's spoils page (a campfire), the title and logo, the clan banners as pictures, the peddler's stall, and a proper icon set once the real upgrade and item pools exist (the 9x9 icons here are stand-ins for the five placeholder upgrades).
+More NPCs as the story needs them (the Elder, the mapmaker), a backdrop for the camp's spoils page (a campfire), the clan banners as pictures, the peddler's stall, and a proper icon set once the real upgrade and item pools exist (the 9x9 icons here are stand-ins for the five placeholder upgrades).
 
 ## How to work on it
 

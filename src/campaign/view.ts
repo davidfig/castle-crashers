@@ -34,6 +34,7 @@ export type Screen =
   | { kind: 'doors'; header: string; sub: string; doors: DoorView[]; sel: number; footer: string }
   | { kind: 'select'; header: string; sub: string; biome: number; slots: SelectSlot[]; footer: string }
   | { kind: 'board'; header: string; sub: string; mood: string; cards: Card[]; sel: number; footer: string }
+  | { kind: 'title' }
   | { kind: 'text'; header: string; body: Line[]; footer: string; figure?: Figure }
   | { kind: 'scene'; header: string; backdrop: Backdrop; lines: Line[]; speaker: 'narrator' | 'registrar' | 'party'; voices: ClassName[]; party: string[]; page: number; pages: number; footer: string };
 

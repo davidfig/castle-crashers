@@ -86,7 +86,7 @@ const SAVE_NOTE = { corrupt: 'SAVE UNREADABLE - THIS SESSION WONT BE SAVED', new
 const saveNote = loaded.status in SAVE_NOTE ? SAVE_NOTE[loaded.status as keyof typeof SAVE_NOTE] : undefined;
 function persist(): void { if (loaded.writable) saveLedger(store, ledger); }
 
-type Mode = 'run' | 'board' | 'scene' | 'summary' | 'select' | 'camp';
+type Mode = 'title' | 'run' | 'board' | 'scene' | 'summary' | 'select' | 'camp';
 let mode: Mode = 'board';
 let cfg: RunConfig = offLedgerConfig(seed);
 let retreated = false;
@@ -374,6 +374,7 @@ function menuUpdate(): void {
       }
     }
   } else if (mode === 'summary' && ok) enterHub();
+  else if (mode === 'title' && ok) enterHub();
 }
 
 if (params.has('seed') || (__DEV__ && params.has('camp'))) {
@@ -412,7 +413,8 @@ if (params.has('seed') || (__DEV__ && params.has('camp'))) {
     mode = 'scene';
     screen = sceneScreen(sc, ledger.party, scenePage);
   } else enterHub();
-} else enterHub();
+} else if (__DEV__ && params.has('hub')) enterHub();
+else { mode = 'title'; screen = { kind: 'title' }; }
 
 startLoop({
   tickRate: TICK_RATE,

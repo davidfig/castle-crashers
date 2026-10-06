@@ -13,6 +13,7 @@ import { drawBackdrop, SCENE_FLOOR } from './sceneArt';
 import { npcFrame } from './npcArt';
 import { drawCard, drawCursor, drawDivider, drawIcon, drawNpc, drawPanel, drawStory, PAGE_TONE } from './ui';
 import { GLASS } from './uiArt';
+import { drawTitle } from './titleArt';
 
 const TONE: Record<Tone, number> = { normal: 0xe8ecf4, dim: 0x93a0bc, gold: GLASS.G, red: 0xe88a7a };
 const MARGIN = 24;
@@ -67,6 +68,7 @@ function drawSeal(b: Batcher, S: Sprites, x: number, y: number): void {
 
 /** `tick` drives the footer blink only. */
 export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): void {
+  if (scr.kind === 'title') { drawTitle(b, S, tick); return; }
   backdrop(b, S);
   if (scr.kind !== 'text') drawStory(b, S, scr.header, MARGIN, 14, GLASS.G, 2, GLASS.lead);
   if (scr.kind === 'select') {

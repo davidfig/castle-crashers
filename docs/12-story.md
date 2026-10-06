@@ -361,4 +361,4 @@ Tracked in [open-questions](open-questions.md):
 - How many **Witness templates** are enough that a player doesn't see repeats in the first ten runs?
 - How many ordinary Writs should each chapter require before its milestone appears? (Starting targets are I = 2, II = 3, III = 3, IV = 3.)
 - Is a **second campaign** (escorts) worth scoping for v1, or a later release?
-- Final **title**, which is tied to the story and still undecided.
+- ~~Final **title**~~: decided, *The Final Tally: Per Head* (see [open questions](open-questions.md)).
