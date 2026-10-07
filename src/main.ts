@@ -28,7 +28,7 @@ import { buy } from './sim/shop';
 import { boardScreen, scenePages, sceneScreen, selectScreen, summaryScreen, type LobbySlot, type Screen } from './campaign/view';
 import { drawScreen } from './render/menu';
 import { Barks } from './render/barks';
-import { AFTERMATH, HUB_SCENES, type Scene } from './data/story/hub';
+import { AFTERMATH, HUB_SCENES, INTRO, type Scene } from './data/story/hub';
 import { dueScenes, markSceneSeen } from './campaign/scenes';
 
 function fail(msg: string): never {
@@ -416,7 +416,7 @@ if (params.has('seed') || (__DEV__ && params.has('camp'))) {
 } else if (__DEV__ && params.has('scene')) {
   // Dev aid: ?scene=R1:after (or R6, warlord:after ...) shows that hub scene without playing up to it; &page=N starts at a beat,
   // &party=archer,mage sets who stands in it. Nothing is saved.
-  const sc = [...Object.values(HUB_SCENES), ...Object.values(AFTERMATH)].find((s) => s.id === params.get('scene'));
+  const sc = [...INTRO, ...Object.values(HUB_SCENES), ...Object.values(AFTERMATH)].find((s) => s.id === params.get('scene'));
   if (sc) {
     loaded.writable = false;
     if (params.has('party')) ledger = { ...ledger, party: params.get('party')!.split(',') };

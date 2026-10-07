@@ -4,14 +4,12 @@ import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { VIEW_H, VIEW_W } from '../sim/constants';
 import { MOBS } from '../data/mobs';
+import { TITLE_TAG } from '../data/title';
 import { storyWidth } from '../data/storyFont';
 import type { Sprites } from './art';
 import { drawStory } from './ui';
 import { GLASS } from './uiArt';
 
-/** The game's title, on two lines: "The Final Tally: Per Head" (docs/open-questions.md). */
-export const TITLE_LINES = ['The Final', 'Tally'] as const;
-export const TITLE_TAG = 'Per Head';
 const HORIZON = 232;
 
 const h01 = (n: number): number => { let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16; return (x >>> 0) / 4294967296; };
@@ -87,34 +85,33 @@ function guards(b: Batcher, S: Sprites, tick: number): void {
   });
 }
 
-/** Enemies that walk across the field, by MobType (data/mobs.ts): goblins mostly, with orcs, archers, shield bearers, wolves and a troll. */
-const CROWD = [0, 0, 0, 1, 1, 2, 3, 6, 6, 7, 10];
+/** Who walks in each depth: small enemies far off at the foot of the keep, the big ones near (MobType, data/mobs.ts). Real sizes, 1x: depth is shade, rank and who is in it. */
+const POOLS = [[0, 0, 0, 6, 7, 2], [0, 1, 2, 3, 6, 1], [1, 10, 1, 3, 10, 1]];
 
-/** A horde crossing the field left to right, as the game's own walk cycles flattened to one colour per rank (batcher flash -1). */
+/** A horde crossing the field left to right, as the game's own walk cycles flattened to one colour per rank (batcher flash -1), all at 1x. */
 function horde(b: Batcher, S: Sprites, tick: number): void {
-  // ten ranks, back to front, the far ones right at the foot of the keep: size grows steadily with depth (0.6x at the keep to 2.2x at the bottom); nearer ranks are darker, walk faster (parallax, on top of each mob's own speed) and are thinner, so their silhouettes show
+  // ten ranks, back to front, the far ones right at the foot of the keep: nearer ranks are darker, walk faster (parallax, on top of each mob's own speed), thinner, and made of bigger enemies
   const ranks = Array.from({ length: 10 }, (_, k) => {
     const t = k / 9, ch = (hi: number, lo: number): number => Math.round(hi + (lo - hi) * t);
-    return { y: HORIZON + 5 + k * 12, col: (ch(0x2a, 0x06) << 16) | (ch(0x1e, 0x03) << 8) | ch(0x42, 0x0f), sc: 0.6 + t * 1.6, n: Math.round(40 - k * 3.5), speed: 0.7 + k * 0.1 };
+    return { y: HORIZON + 6 + k * 12, col: (ch(0x2a, 0x06) << 16) | (ch(0x1e, 0x03) << 8) | ch(0x42, 0x0f), pool: POOLS[Math.min(2, Math.floor(k / 3.4))], n: Math.round(40 - k * 3.5), speed: 0.7 + k * 0.1 };
   });
   ranks.forEach((rk, row) => {
     for (let i = 0; i < rk.n; i++) {
-      const type = CROWD[Math.floor(h01(row * 53 + i * 11) * CROWD.length)];
+      const type = rk.pool[Math.floor(h01(row * 53 + i * 11) * rk.pool.length)];
       const walk = S.mob[type];
       // each mob walks at its in-game speed (px/tick), times a rank factor for parallax; its steps follow the ground it covers
       const v = MOBS[type].speed * rk.speed;
       const f = walk[(Math.floor((tick * v) / 4.5) + i) % walk.length] ?? walk[0];
       const span = VIEW_W + 80;
       const x = ((h01(row * 99 + i) * span + tick * v) % span) - 40;
-      const w = Math.round(f.w * rk.sc), h = Math.round(f.h * rk.sc);
       const bob = Math.round(Math.abs(Math.sin(tick * 0.15 + i * 1.7)));
-      const top = rk.y - h - bob * rk.sc;
-      b.drawScaled(f, Math.round(x - w / 2), top, w, h, hex(rk.col), false, -1);
+      const top = rk.y - f.h - bob;
+      b.drawScaled(f, Math.round(x - f.w / 2), top, f.w, f.h, hex(rk.col), false, -1);
       if (h01(row * 17 + i * 5) < 0.05) { // a few carry a banner: a pole at the front hand and a cloth streaming back, both in the rank's silhouette shade
-        const th = Math.max(1, Math.round(rk.sc)), poleX = Math.round(x + w * 0.25), poleTop = Math.round(top - 11 * rk.sc), cw = Math.round(9 * rk.sc), ch = Math.round(5 * rk.sc);
-        b.drawScaled(S.px, poleX, poleTop, th, Math.round(top + h * 0.45 - poleTop), hex(rk.col));
+        const poleX = Math.round(x + f.w * 0.25), poleTop = top - 11, cw = 9, ch = 5;
+        b.drawScaled(S.px, poleX, poleTop, 1, Math.round(top + f.h * 0.45 - poleTop), hex(rk.col));
         for (let c = 0; c < cw; c++) { // the cloth, a column at a time, rippling more toward its free end
-          const ripple = Math.round(Math.sin(tick * 0.2 + c * 0.7 + i) * (c / cw) * 1.5 * rk.sc);
+          const ripple = Math.round(Math.sin(tick * 0.2 + c * 0.7 + i) * (c / cw) * 1.5);
           b.drawScaled(S.px, poleX - c - 1, poleTop + ripple, 1, Math.max(1, Math.round(ch * (1 - c / (cw * 1.6)))), hex(rk.col));
         }
       }
@@ -129,9 +126,9 @@ export function drawTitle(b: Batcher, S: Sprites, tick: number): void {
   guards(b, S, tick); // before the keep, so its wall and merlons are drawn over them
   keep(b, S, tick);
   horde(b, S, tick);
-  // the plaque
-  const pw = 300, ph = 102, px = (VIEW_W - pw) / 2, py = 10;
-  b.drawScaled(S.px, px - 6, py + 6, pw + 12, ph, hex(0x000000, 0.35));
+  // the plaque, fitted to the lettering (a sprite on the game's pixel grid, see uiArt buildLogo)
+  const logo = S.ui.logo, pw = logo.w + 30, ph = logo.h + 20, px = Math.round((VIEW_W - pw) / 2), py = 12;
+  b.drawScaled(S.px, px - 3, py + 4, pw + 6, ph, hex(0x000000, 0.35));
   // a thick gold-leaf frame: lead outline, a two-pixel gold band between darker gold rules, a lead line, then the ink face
   const ring = (inset: number, c: number): void => b.drawScaled(S.px, px + inset, py + inset, pw - inset * 2, ph - inset * 2, hex(c));
   ring(0, GLASS.lead); ring(1, GLASS.g); ring(2, GLASS.G); ring(4, GLASS.g); ring(5, GLASS.lead); ring(6, GLASS.ink);
@@ -141,15 +138,12 @@ export function drawTitle(b: Batcher, S: Sprites, tick: number): void {
     b.drawScaled(S.px, px + cx + 1, py + cy + 1, 5, 5, hex(GLASS.G));
     b.drawScaled(S.px, px + cx + 2, py + cy + 2, 3, 3, hex(GLASS.Y));
   }
-  TITLE_LINES.forEach((t, i) => {
-    const sc = i === 0 ? 4 : 5, y = py + 14 + (i === 0 ? 0 : 33);
-    drawStory(b, S, t, Math.round((VIEW_W - storyWidth(t) * sc) / 2), y, GLASS.G, sc, GLASS.lead);
-  });
+  b.draw(logo, px + Math.round((pw - logo.w) / 2), py + Math.round((ph - logo.h) / 2));
   const ribbon = Math.round(storyWidth(TITLE_TAG)) + 28, rx = Math.round((VIEW_W - ribbon) / 2);
-  b.drawScaled(S.px, rx, py + ph + 4, ribbon, 14, hex(GLASS.lead));
-  b.drawScaled(S.px, rx + 1, py + ph + 5, ribbon - 2, 12, hex(GLASS.r));
-  b.drawScaled(S.px, rx + 1, py + ph + 5, ribbon - 2, 1, hex(GLASS.R));
-  drawStory(b, S, TITLE_TAG, Math.round((VIEW_W - storyWidth(TITLE_TAG)) / 2), py + ph + 8, GLASS.W);
+  b.drawScaled(S.px, rx, py + ph + 3, ribbon, 14, hex(GLASS.lead));
+  b.drawScaled(S.px, rx + 1, py + ph + 4, ribbon - 2, 12, hex(GLASS.r));
+  b.drawScaled(S.px, rx + 1, py + ph + 4, ribbon - 2, 1, hex(GLASS.R));
+  drawStory(b, S, TITLE_TAG, Math.round((VIEW_W - storyWidth(TITLE_TAG)) / 2), py + ph + 7, GLASS.W);
   const prompt = 'Press attack to begin';
   if ((tick >> 5) % 2 === 0) {
     const w = storyWidth(prompt) + 24, x = Math.round((VIEW_W - w) / 2);

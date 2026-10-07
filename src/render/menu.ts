@@ -9,9 +9,9 @@ import { drawCrest, drawFog, drawGround, drawHaze, drawParallax, drawSky } from 
 import { PLAYER_COLORS, type Sprites } from './art';
 import { LINE_H, storyWidth } from '../data/storyFont';
 import { CLASSES } from '../data/classes';
-import { drawBackdrop, SCENE_FLOOR } from './sceneArt';
+import { drawBackdrop, SCENE_FLOOR, STAGE } from './sceneArt';
 import { npcFrame } from './npcArt';
-import { drawCard, drawCursor, drawDivider, drawIcon, drawNpc, drawPanel, drawStory, PAGE_TONE } from './ui';
+import { drawCard, drawCursor, drawDivider, drawIcon, drawNpc, drawPanel, drawShadow, drawStory, PAGE_TONE } from './ui';
 import { GLASS } from './uiArt';
 import { drawTitle } from './titleArt';
 
@@ -88,7 +88,7 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
       }
       const H = S.heroes[sl.classId] ?? S.heroes[0];
       const f = H.anims[i].idle.frames[(tick >> 4) % H.anims[i].idle.frames.length];
-      b.drawScaled(S.px, cx - 14, y + 62, 28, 3, hex(0x000000, 0.35)); // a pedestal shadow
+      drawShadow(b, S, cx, y + 62, 1, 1, col); // the hero's shadow, exactly as in the field
       b.draw(f, cx - H.pivotX, y + 62 - H.pivotY, false, 0xffffffff);
       const nm = sl.name[0] + sl.name.slice(1).toLowerCase();
       const nw = storyWidth(nm);
@@ -240,23 +240,35 @@ function drawPage(b: Batcher, S: Sprites, scr: Extract<Screen, { kind: 'text' }>
   if ((tick >> 5) % 2 === 0) drawText(b, S, scr.footer, Math.round(VIEW_W / 2 - scr.footer.length * 2), y + h - 16, hex(GLASS.b));
 }
 
+/** When the party's walk into the current scene began (in screen ticks), which scene it is, and when it was last drawn (a gap means a new visit). */
+let walkKey = '', walkStart = 0, walkLast = -1e9;
+/** How fast the party walks in, px a tick. */
+const WALK_SPEED = 0.7;
+/** How far apart the party stands, px: about a hero's width, so they read as a group. */
+const PARTY_GAP = 22;
+
 /** A hub scene: the place it happens, the party and the Registrar standing in it, and one beat of the talk in a panel below. */
 function drawScene(b: Batcher, S: Sprites, scr: Extract<Screen, { kind: 'scene' }>, tick: number): void {
   drawBackdrop(b, S, scr.backdrop, tick);
-  b.drawScaled(S.px, 0, 0, VIEW_W, 26, hex(0x000000, 0.35));
-  drawStory(b, S, scr.header, MARGIN, 7, GLASS.G, 2, GLASS.lead);
-  // the party, at left; whoever is speaking bobs a little
+  drawStory(b, S, scr.header, MARGIN - 8, 8, GLASS.G, 1, GLASS.lead);
+  // the party, where this set puts them, at the game's own size. Where a set says so they walk in from the left when the scene opens (once: the
+  // scene's later beats keep them standing), then idle; whoever is speaking bobs a little.
+  const stage = STAGE[scr.backdrop], feet = SCENE_FLOOR + 6;
+  const sceneKey = `${scr.backdrop}:${scr.header}`;
+  if (sceneKey !== walkKey || tick - walkLast > 20) { walkKey = sceneKey; walkStart = tick; }
+  walkLast = tick;
+  const walkIn = stage.walkIn ?? 0, elapsed = tick - walkStart, arrived = walkIn === 0 || elapsed * WALK_SPEED >= walkIn;
   scr.party.forEach((name, i) => {
     const id = Math.max(0, CLASSES.findIndex((c) => c.name === name));
     const H = S.heroes[id] ?? S.heroes[0];
-    const anim = H.anims[0].idle;
-    const f = npcFrame(anim, (tick * 1000) / 60 + i * 400);
-    const bob = scr.voices.includes(name as never) && (tick >> 3) % 2 === 0 ? -2 : 0;
-    const sc = 3, x = 110 + i * 86, y = SCENE_FLOOR + 6;
-    b.drawScaled(S.px, x - 9 * sc, y - sc, 18 * sc, 2 * sc, hex(0x000000, 0.3));
-    b.drawScaled(f, x - H.pivotX * sc, y - H.pivotY * sc + bob * sc / 2, f.w * sc, f.h * sc);
+    const A = H.anims[i % H.anims.length] ?? H.anims[0];
+    const f = arrived ? npcFrame(A.idle, (tick * 1000) / 60 + i * 400) : npcFrame(A.walk, (elapsed * 1000) / 60 + i * 130);
+    const bob = arrived && scr.voices.includes(name as never) && (tick >> 3) % 2 === 0 ? -1 : 0;
+    const x = Math.round(stage.party + i * PARTY_GAP - (arrived ? 0 : walkIn - elapsed * WALK_SPEED));
+    drawShadow(b, S, x, feet, 1, 1, PLAYER_COLORS[i % PLAYER_COLORS.length]);
+    b.draw(f, x - H.pivotX, feet - H.pivotY + bob);
   });
-  drawNpc(b, S, 'registrar', VIEW_W - 92, SCENE_FLOOR + 6, 4, scr.speaker === 'registrar', tick);
+  if (scr.registrar) drawNpc(b, S, 'registrar', stage.registrar, feet, 1, scr.speaker === 'registrar', tick);
   // the talk
   const px = 20, py = 262, pw = VIEW_W - 40, ph = 92;
   drawPanel(b, S, px, py, pw, ph, { fill: 'ink' });

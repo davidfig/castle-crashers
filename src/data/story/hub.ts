@@ -13,14 +13,14 @@ export interface SceneLine {
 }
 
 /** The place a hub scene happens: one drawn set each (src/render/sceneArt.ts). */
-export type Backdrop = 'tavern' | 'gates' | 'rain' | 'campfire' | 'smoke' | 'office' | 'market' | 'graves';
+export type Backdrop = 'notice' | 'tavern' | 'gates' | 'rain' | 'campfire' | 'smoke' | 'office' | 'market' | 'graves';
 
 export interface Scene {
   /** 'R6' for a hub beat, 'R1:after' for the scene that follows a beat played in a run. */
   id: string;
-  /** The beat this belongs to. A 'beat' scene IS the beat (seeing it plays it); an 'aftermath' scene follows a beat already played. */
+  /** The beat this belongs to ('' for an intro). A 'beat' scene IS the beat (seeing it plays it); an 'aftermath' scene follows a beat already played; an 'intro' scene opens the game and is remembered by id. */
   beat: string;
-  kind: 'beat' | 'aftermath';
+  kind: 'beat' | 'aftermath' | 'intro';
   backdrop: Backdrop;
   title: string;
   lines: SceneLine[];
@@ -29,6 +29,36 @@ export interface Scene {
 const R = (text: string): SceneLine => ({ who: 'registrar', text });
 const N = (text: string): SceneLine => ({ who: 'narrator', text });
 const P = (says: Partial<Record<ClassName, string>>): SceneLine => ({ who: 'party', says });
+
+/**
+ * The opening, shown once on a fresh save once the party is chosen and before the first board: what the Crown has done, who the
+ * Registrar is, and how the work goes. It is told in Chapter I's voice (the city's words, bright and a little silly), so it explains
+ * the game without giving the story away; the party's own stances are in how each class answers.
+ */
+export const INTRO: readonly Scene[] = [
+  {
+    id: 'intro:bounty', beat: '', kind: 'intro', backdrop: 'notice', title: 'The bounty',
+    lines: [
+      N('The notice went up on a Tuesday, nailed to every board in the realm. BY ORDER OF THE CROWN: A BOUNTY ON ALL VERMIN. PAID PER HEAD.'),
+      N('Vermin, in the Crown\'s usage, is anything past the walls that is not a person: goblins, orcs, wolves, the things in the marsh. There has always been a Wild out there. This spring the Crown decided to be done with it.'),
+      P({ warrior: 'My father held that wall. I will finish what he started.', cleric: 'The Order has blessed the Writs. If the Crown asks for peace, who am I to refuse it?', rogue: 'Paid per head. I have never needed a better reason.', mage: 'A bounty on an entire population. I would like to see how they count.', archer: 'I know that country. Nobody in this square has been past the tree line.' }),
+      N('You put your names down. The clerk did not look up. \'Tally Office,\' she said. \'Second door on the left. Mind the ledgers.\''),
+    ],
+  },
+  {
+    id: 'intro:office', beat: '', kind: 'intro', backdrop: 'office', title: 'The Tally Office',
+    lines: [
+      N('Behind the second door on the left: a long room of ledgers, lamps and clerks. At the far end a man in a grey coat rises as though you were exactly the people he had hoped for.'),
+      R('I am the Registrar. Welcome. The Tally Office keeps the count for the Crown, and the Crown pays by the count. You will find that clarifying.'),
+      R('Each Writ on that board names a place and a number. Go there. Fight through whatever stands between you and the far end of the field. Bring back the count.'),
+      P({ warrior: 'Understood. Hold the line and clear the field.', cleric: 'And anyone who is not fighting?', rogue: 'And the pay?', mage: 'And who audits the count?', archer: 'How far does the field run?' }),
+      R('Vermin is a broad category. The Writ will tell you what applies. And the pay is per head: every one goes in the book, and the book is settled on delivery.'),
+      R('Between battles you will rest at a camp. Spend your pay on gear, and on whatever the peddler is selling, and grow stronger for the next. Up to four of you may ride together.'),
+      R('When the book is full the Crown will give thanks. Until then: per head.'),
+      N('He turns the board toward you. Three notices, freshly inked. Choose one.'),
+    ],
+  },
+];
 
 /** The hub beats of the main story: the scene is the beat. */
 export const HUB_SCENES: Readonly<Record<string, Scene>> = {

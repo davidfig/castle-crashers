@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { AFTERMATH, HUB_SCENES } from '../data/story/hub';
+import { AFTERMATH, HUB_SCENES, INTRO } from '../data/story/hub';
 import { BACKDROPS, SCENE_FLOOR, SCENE_H, drawBackdrop } from './sceneArt';
 import type { Sprites } from './art';
 import type { Batcher } from '../platform/gl/batcher';
@@ -9,12 +9,12 @@ import type { Batcher } from '../platform/gl/batcher';
 function recorder() {
   const calls: number[][] = [];
   const b = { drawScaled: (_f: unknown, x: number, y: number, w: number, h: number, tint: number) => { calls.push([x, y, w, h, tint]); }, draw: () => {}, setClip: () => {}, clearClip: () => {} } as unknown as Batcher;
-  const S = { px: {} } as unknown as Sprites;
+  const S = { px: {}, ui: { story: {} } } as unknown as Sprites;
   return { b, S, calls };
 }
 
 test('every scene happens somewhere drawn, and every drawn place is used', () => {
-  const scenes = [...Object.values(HUB_SCENES), ...Object.values(AFTERMATH)];
+  const scenes = [...INTRO, ...Object.values(HUB_SCENES), ...Object.values(AFTERMATH)];
   for (const sc of scenes) assert.ok(BACKDROPS.includes(sc.backdrop), `${sc.id} -> ${sc.backdrop}`);
   for (const kind of BACKDROPS) assert.ok(scenes.some((s) => s.backdrop === kind), `${kind} is never used`);
 });

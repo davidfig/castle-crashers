@@ -36,7 +36,7 @@ export type Screen =
   | { kind: 'board'; header: string; sub: string; mood: string; cards: Card[]; sel: number; footer: string }
   | { kind: 'title' }
   | { kind: 'text'; header: string; body: Line[]; footer: string; figure?: Figure }
-  | { kind: 'scene'; header: string; backdrop: Backdrop; lines: Line[]; speaker: 'narrator' | 'registrar' | 'party'; voices: ClassName[]; party: string[]; page: number; pages: number; footer: string };
+  | { kind: 'scene'; header: string; backdrop: Backdrop; lines: Line[]; speaker: 'narrator' | 'registrar' | 'party'; voices: ClassName[]; party: string[]; /** Whether the Registrar is in the scene (he stands there only where he speaks). */ registrar: boolean; page: number; pages: number; footer: string };
 
 /** The bitmap font has 0-9, A-Z and : . - / ! + ? only. */
 export function fontSafe(text: string): string {
@@ -68,7 +68,7 @@ export function boardScreen(l: Ledger, writs: readonly Writ[], sel: number, save
   return {
     kind: 'board',
     header: chapterHeader(l.chapter),
-    sub: storySafe(boardGreeting(l.campaignSeed ^ Math.imul(l.runs + 1, 0x9e3779b1), l.chapter)),
+    sub: storySafe(l.runs === 0 ? 'Three notices, freshly inked.' : boardGreeting(l.campaignSeed ^ Math.imul(l.runs + 1, 0x9e3779b1), l.chapter)), // the very first board follows the opening scenes, which end on exactly this
     mood: storySafe(cityMood(l.chapter, Object.values(l.spared).reduce((a, b) => a + b, 0), Object.values(l.slain).reduce((a, b) => a + b, 0))),
     sel,
     cards: writs.map((w) => ({
@@ -120,7 +120,7 @@ export function sceneScreen(scene: Scene, party: readonly string[] = [], page = 
   const stand = party.length > 0 ? [...party] : ['warrior', 'cleric'];
   return {
     kind: 'scene', header: fontSafe(scene.title), backdrop: scene.backdrop, lines: p.lines, speaker: p.speaker, voices: p.voices,
-    party: stand.slice(0, 2), page, pages: pages.length, footer: page + 1 >= pages.length ? 'ATTACK TO FINISH' : 'ATTACK TO CONTINUE',
+    party: stand.slice(0, 2), registrar: scene.lines.some((l) => l.who === 'registrar'), page, pages: pages.length, footer: page + 1 >= pages.length ? 'ATTACK TO FINISH' : 'ATTACK TO CONTINUE',
   };
 }
 

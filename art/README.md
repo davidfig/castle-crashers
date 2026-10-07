@@ -5,6 +5,12 @@ npm run art        # http://localhost:5190 — rebuilds on save, live-reloads th
 npm run art:build  # one-shot build to art/out/
 ```
 
+**Screens page** — http://localhost:5190/screens.html (link in the header of the sprite page). The title, the party select, the Writ board and
+every story scene (the opening, the hub beats, the aftermaths) drawn by the game's own renderer, live: pick a screen, step through a scene's
+beats, choose the party that stands in it, and read the scene's words beside it. It is an esbuild bundle of `art/screens.ts` served from
+memory, so it reloads on any save under `src/` or `art/`; a new backdrop in `src/render/sceneArt.ts` or a new scene in `src/data/story/hub.ts`
+shows up in its list with no further wiring. Deep links: `?screen=scene:intro:bounty&page=2&party=archer,mage`, `?screen=title`, `?screen=board&chapter=3`.
+
 Characters are **paper-doll rigs** in `art/chars/*.mjs`: hand-pixeled ASCII parts + per-frame placements. No rotation or
 resampling of pixel art ever happens. Output per character: `art/out/<name>.png` (rows = animations), `<name>.json`
 (frames, anims, pivot, palette), plus palette-swap variants (`<name>.p1.png` …).

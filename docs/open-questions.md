@@ -3,7 +3,7 @@
 Track undecided items here. When resolved, move to an ADR in [decisions](decisions/README.md) and link it.
 
 ## Identity
-- [x] **Game title.** *The Final Tally: Per Head.* "The Final Tally" is the Chapter V name for the campaign's end; "Per Head" is how the bounty is paid. Cheerful on day one, damning after the turn. Set in `src/render/titleArt.ts` and `public/index.html`. (The repo and the dev docs still say "castle crashers", the game that inspired it, and that is not the title.)
+- [x] **Game title.** *The Final Tally: Per Head.* "The Final Tally" is the Chapter V name for the campaign's end; "Per Head" is how the bounty is paid. Cheerful on day one, damning after the turn. Set in `src/data/title.ts` and `public/index.html`. (The repo and the dev docs still say "castle crashers", the game that inspired it, and that is not the title.)
 - [ ] Tone: goofy-cartoon (Castle Crashers) vs. grim-ish (Dead Cells)? Affects art and humor.
 
 ## Story (see [12](12-story.md))

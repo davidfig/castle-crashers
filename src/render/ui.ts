@@ -86,11 +86,21 @@ export function drawDivider(b: Batcher, S: Sprites, x: number, y: number, w: num
   b.drawScaled(S.px, mid - 1, y - 1, 3, 5, hex(GLASS.Y));
 }
 
+/**
+ * A shadow exactly as the field draws one (draw.ts): the game's ellipse sprite, centred a pixel above the feet row, tinted by a player's colour
+ * (alpha .55) for a hero or plain black (.32) for anyone else. `scale` multiplies it like the figure standing on it, so the two stay in proportion.
+ */
+export function drawShadow(b: Batcher, S: Sprites, x: number, y: number, scale = 1, size = 1, playerColor?: number): void {
+  const sh = S.shadow[size];
+  const tint = playerColor === undefined ? hex(0x000000, 0.32) : hex(playerColor, 0.55);
+  b.drawScaled(sh, x - (sh.w * scale) / 2, y - (sh.h / 2 + 1) * scale, sh.w * scale, sh.h * scale, tint);
+}
+
 /** A story figure (the Registrar, the peddler) standing with their feet at (x, y), pixel-scaled by a whole number. */
 export function drawNpc(b: Batcher, S: Sprites, name: NpcName, x: number, y: number, scale: number, talking: boolean, tick: number): void {
   const set = S.npcs[name];
   const a = set.anims[talking ? 'talk' : 'idle'] ?? set.anims.idle;
   const f = npcFrame(a, (tick * 1000) / 60);
-  b.drawScaled(S.px, x - 8 * scale, y - scale, 16 * scale, 2 * scale, hex(0x000000, 0.3)); // a shadow on the floor
+  drawShadow(b, S, x, y, scale);
   b.drawScaled(f, x - set.pivotX * scale, y - set.pivotY * scale, f.w * scale, f.h * scale);
 }

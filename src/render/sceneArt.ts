@@ -6,16 +6,29 @@ import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { VIEW_W } from '../sim/constants';
 import type { Sprites } from './art';
+import { storyWidth } from '../data/storyFont';
+import { drawStory } from './ui';
+import { drawStreet } from './townArt';
+import { drawOffice } from './officeArt';
 import { GLASS } from './uiArt';
 
 /** Where figures' feet go, and the height of the area a backdrop fills. */
 export const SCENE_FLOOR = 250;
 export const SCENE_H = 262;
 
+/**
+ * Where figures stand in each set, at the game's own size (1x, so a hero is about 28 px tall against a town 262 px high): the left edge of the
+ * party (they stand 22 px apart) and the Registrar's feet. Placed to suit what the set shows.
+ */
+export const STAGE: Record<Backdrop, { party: number; registrar: number; /** The party walks in from this many px to the left when the scene opens, then stands. */ walkIn?: number }> = {
+  notice: { party: 196, registrar: 540, walkIn: 150 }, tavern: { party: 110, registrar: 520 }, gates: { party: 120, registrar: 520 }, rain: { party: 120, registrar: 520 },
+  campfire: { party: 230, registrar: 420 }, smoke: { party: 120, registrar: 520 }, office: { party: 170, registrar: 506, walkIn: 150 }, market: { party: 150, registrar: 520 }, graves: { party: 120, registrar: 520 },
+};
+
 /** A cheap deterministic hash in [0, 1). */
 const h01 = (n: number): number => { let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b); x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16; return (x >>> 0) / 4294967296; };
 
-class Pen {
+export class Pen {
   constructor(readonly b: Batcher, readonly S: Sprites, readonly tick: number) {}
   r(x: number, y: number, w: number, h: number, c: number, a = 1): void { this.b.drawScaled(this.S.px, x, y, w, h, hex(c, a)); }
   /** Horizontal bands from top to `to`, one colour each. */
@@ -158,30 +171,7 @@ const smoke: Draw = (p) => {
   p.r(0, SCENE_FLOOR, VIEW_W, SCENE_H - SCENE_FLOOR, 0x241d2a);
 };
 
-const office: Draw = (p) => {
-  p.r(0, 0, VIEW_W, SCENE_H, 0x2a2230);
-  const spines = [GLASS.r, GLASS.a, GLASS.n, GLASS.o, GLASS.g, 0x43394a, GLASS.b, 0x8a2a1c];
-  for (const [i, y] of [30, 88, 146].entries()) {
-    p.r(0, y + 46, VIEW_W, 5, 0x4a2e1e); p.r(0, y + 46, VIEW_W, 1, 0x6a4326);
-    for (let x = 0; x < VIEW_W; x += 9) {
-      if (x > 200 && x < 440 && i < 2) continue;                       // behind the big map
-      const hh = 28 + Math.round(h01(x + y) * 16);
-      p.r(x, y + 46 - hh, 8, hh, spines[Math.floor(h01(x * 7 + y) * spines.length)]);
-      p.r(x + 1, y + 46 - hh + 3, 6, 1, 0xefbd44, 0.6);
-    }
-  }
-  // the great map of the realm
-  p.r(206, 30, 228, 118, 0x1a1030); p.r(209, 33, 222, 112, 0xcfc09f); p.r(213, 37, 214, 104, 0xf4ead2);
-  for (let k = 0; k < 90; k++) { const a = k * 0.07; p.r(320 + Math.cos(a) * (44 + Math.sin(a * 3) * 10), 88 + Math.sin(a) * (30 + Math.cos(a * 2) * 6), 3, 2, 0xa8791f); }
-  for (const [x, y] of [[270, 70], [340, 100], [380, 66], [300, 110]] as const) { p.r(x, y, 6, 2, 0xc23458); p.r(x + 2, y - 2, 2, 6, 0xc23458); }
-  p.r(213, 37, 214, 1, 0xa8791f); p.r(213, 140, 214, 1, 0xa8791f);
-  // the desk, the lamp and the ink
-  p.r(0, 214, VIEW_W, 48, 0x3a2418); p.r(0, 214, VIEW_W, 3, 0x6a4326); p.r(0, 226, VIEW_W, 1, 0x2e1c12);
-  p.r(60, 200, 80, 14, 0xf4ead2); p.r(66, 203, 60, 1, 0x6a5a7a); p.r(66, 207, 50, 1, 0x6a5a7a); p.r(150, 196, 56, 18, 0xcfc09f);
-  p.r(500, 206, 10, 8, 0x1a1030); p.r(512, 188, 2, 26, 0xf4ead2); p.peak(513, 188, 6, 12, 0xf4ead2);
-  p.r(560, 186, 6, 28, 0x1a1030); p.peak(563, 186, 34, 16, 0x7a1a35); p.glow(563, 198, 80, 0xefbd44, 0.08 + 0.03 * Math.sin(p.tick * 0.2) + 0.02 * h01(p.tick >> 1));
-  p.r(0, SCENE_FLOOR + 6, VIEW_W, SCENE_H - SCENE_FLOOR - 6, 0x2a1810);
-};
+const office: Draw = (p) => { drawOffice(p); };
 
 const market: Draw = (p) => {
   p.bands([0x7f9ee8, 0x9fb8ee, 0xbfd0f2, 0xd4daf0, 0xe9e6dc], 120);
@@ -220,7 +210,76 @@ const graves: Draw = (p) => {
   for (const [x, y] of [[100, 60], [140, 80], [420, 50]] as const) { const f = (p.tick >> 4) & 1; p.r(x, y + f, 4, 1, 0x1b1720); p.r(x + 3, y - 1 + f, 4, 1, 0x1b1720); }
 };
 
-const SETS: Record<Backdrop, Draw> = { tavern, gates, rain, campfire, smoke, office, market, graves };
+/**
+ * The town square at dusk, drawn at the heroes' own scale (a hero is about 20 px of art): doors are 17 px tall, windows 7x9, the notice board
+ * three heroes high with the Crown's proclamation among older notices, a lantern on each post, and barrels, crates and a well for size.
+ */
+const notice: Draw = (p) => {
+  const GROUND = 214;
+  p.bands([0x2b2058, 0x4a2f6e, 0x8a4a78, 0xc9707a, 0xe8a060, 0xf0cf8e], GROUND);
+  p.glow(110, 150, 90, 0xffe0a0, 0.07);
+  drawStreet(p, GROUND);
+  // the cobbled square: stones about the size of a hand, rows staggered, a little lighter toward the front
+  p.r(0, GROUND, VIEW_W, SCENE_H - GROUND, 0x6e5f70);
+  for (let y = GROUND + 1, row = 0; y < SCENE_H; y += 5, row++) { p.r(0, y, VIEW_W, 1, 0x574a5c); for (let x = (row & 1) * 7; x < VIEW_W; x += 14) p.r(x, y, 1, 5, 0x574a5c); }
+  p.r(0, GROUND, VIEW_W, 1, 0x3a2e4a);
+  // the board, three heroes high: two posts, a cork panel under a little roof
+  const BX = 260, BY = 170, BW = 120, BH = 72, BASE = 246;
+  for (const x of [BX - 2, BX + BW - 2]) { p.r(x, BY - 6, 4, BASE - BY + 6, 0x4a2e1e); p.r(x, BY - 6, 1, BASE - BY + 6, 0x6a4430); }
+  p.r(BX - 4, BASE - 2, 8, 3, 0x33201a); p.r(BX + BW - 6, BASE - 2, 8, 3, 0x33201a);
+  p.r(BX, BY, BW, BH, 0x3a2418); p.r(BX + 3, BY + 3, BW - 6, BH - 6, 0x8a6a48);
+  p.peak(BX + BW / 2, BY, BW + 10, 8, 0x3a2418); p.r(BX - 3, BY - 1, BW + 6, 2, 0x2a190f);
+  for (const [nx, ny, nw, nh, col] of [[BX + 5, BY + 8, 13, 20, 0xe8dcc0], [BX + 7, BY + 34, 12, 21, 0xcfc09f], [BX + BW - 18, BY + 7, 13, 21, 0xcfc09f], [BX + BW - 19, BY + 33, 12, 20, 0xe8dcc0]] as const) {
+    p.r(nx, ny, nw, nh, col); p.r(nx, ny + nh - 1, nw, 1, 0xa8896a);
+    for (let l = 0; l < Math.floor((nh - 6) / 4); l++) p.r(nx + 2, ny + 4 + l * 4, nw - 5 - (h01(nx + l) > 0.5 ? 2 : 0), 1, 0x6a5a6a);
+    p.r(nx + nw / 2, ny, 1, 2, 0x7a1a35);
+  }
+  // the Crown's proclamation: the largest and newest, lines centred on one axis with even gaps, a wax seal hanging over its lower edge
+  const PW = 72, PH = 62, px = BX + Math.round((BW - PW) / 2), py = BY + 5, axis = px + PW / 2;
+  p.r(px + 1, py + 2, PW, PH, 0x2a190f, 0.45); p.r(px, py, PW, PH, 0xf4ead2);
+  p.r(px + 2, py + 2, PW - 4, 1, 0xa8791f); p.r(px + 2, py + PH - 3, PW - 4, 1, 0xa8791f); p.r(px + 2, py + 2, 1, PH - 4, 0xa8791f); p.r(px + PW - 3, py + 2, 1, PH - 4, 0xa8791f);
+  const line = (t: string, y: number, c: number, bold = false): void => {
+    const x = Math.round(axis - storyWidth(t) / 2);
+    drawStory(p.b, p.S, t, x, y, c);
+    if (bold) drawStory(p.b, p.S, t, x + 1, y, c); // a heavier face for the heading
+  };
+  const rule = (y: number): void => { p.r(axis - 22, y + 1, 18, 1, 0xa8791f); p.r(axis + 5, y + 1, 18, 1, 0xa8791f); p.r(axis - 1, y - 1, 3, 3, 0xa8791f); p.r(axis, y, 1, 1, GLASS.Y); };
+  line('THE CROWN', py + 6, 0x6a5a7a);
+  rule(py + 17);
+  line('BOUNTY', py + 21, GLASS.r, true);
+  line('ON ALL', py + 31, GLASS.lead);
+  line('VERMIN', py + 40, GLASS.lead);
+  line('PER HEAD', py + 50, 0x8a5a10);
+  [5, 7, 9, 9, 9, 7, 5].forEach((w, k) => p.r(px + PW - 9 - w / 2 + 4, py + PH - 10 + k, w, 1, k < 3 ? GLASS.R : GLASS.r)); // the wax seal, in the lower corner
+  p.r(px + PW - 5, py + PH - 7, 1, 2, GLASS.Y);
+  p.r(px + 3, py + 3, 1, 1, 0x4a526e); p.r(px + PW - 4, py + 3, 1, 1, 0x4a526e); // nails
+  // a lantern at the top of each post, each flickering at its own rate, its light a small pool kept on the board
+  const pool = (cx: number, cy: number, R: number, a: number): void => {
+    for (const [k, al] of [[1, 0.1], [0.66, 0.14], [0.34, 0.2]] as const) {
+      const r = Math.round(R * k);
+      for (let dy = -r; dy <= r; dy++) {
+        const half = Math.round(Math.sqrt(r * r - dy * dy)), x0 = Math.max(BX + 3, cx - half), x1 = Math.min(BX + BW - 3, cx + half);
+        if (x1 > x0 && cy + dy > BY + 2 && cy + dy < BY + BH - 2) p.r(x0, cy + dy, x1 - x0, 1, 0xffb050, al * a);
+      }
+    }
+  };
+  for (const [x, ph] of [[BX, 0], [BX + BW, 2.4]] as const) {
+    const fl = 0.5 + 0.3 * Math.sin(p.tick * 0.13 + ph) + 0.2 * Math.sin(p.tick * 0.41 + ph * 3);
+    pool(x, BY + 10, 20 + Math.round(fl * 2), 0.8 + fl * 0.5);
+    p.r(x - 1, BY - 12, 2, 3, 0x1a1030); p.r(x - 3, BY - 10, 6, 1, 0x1a1030);
+    p.r(x - 3, BY - 9, 6, 8, 0x1a1030); p.r(x - 2, BY - 8, 4, 6, fl > 0.55 ? 0xffd566 : 0xefbd44); p.r(x - 1, BY - 7, 2, 3, 0xfff0a0);
+    p.r(x - 3, BY - 1, 6, 1, 0x1a1030);
+    p.r(x - 7, BY - 14, 14, 18, 0xffb050, 0.05 + 0.05 * fl); // a faint halo about the lantern only
+  }
+  // things in the square, for size: barrels and crates at the board's foot, a well at the right
+  const barrel = (x: number, base: number): void => { p.r(x, base - 13, 10, 13, 0x6a4430); p.r(x + 1, base - 14, 8, 1, 0x6a4430); p.r(x, base - 10, 10, 1, 0x3a2418); p.r(x, base - 4, 10, 1, 0x3a2418); p.r(x + 2, base - 13, 1, 13, 0x8a5a3a); p.r(x, base, 10, 1, 0x000000, 0.25); };
+  barrel(120, 244); barrel(132, 248); barrel(396, 246);
+  p.r(410, 234, 14, 12, 0x7a5a3a); p.r(410, 234, 14, 2, 0x9a7a52); p.r(410, 240, 14, 1, 0x4a2e1e); p.r(416, 234, 1, 12, 0x4a2e1e); p.r(424, 238, 12, 8, 0x6a4a30); p.r(424, 238, 12, 2, 0x8a6a42); p.r(410, 246, 26, 1, 0x000000, 0.25);
+  p.r(522, 226, 36, 16, 0x7a7390); p.r(522, 226, 36, 3, 0x9a94b0); p.r(526, 229, 28, 4, 0x1a1030); for (let x = 522; x < 558; x += 9) p.r(x, 226, 1, 16, 0x5a5470);
+  p.r(526, 198, 3, 30, 0x4a2e1e); p.r(551, 198, 3, 30, 0x4a2e1e); p.peak(540, 198, 44, 10, 0x2a2044); p.r(538, 206, 1, 14, 0x6a5a6a); p.r(536, 220, 5, 4, 0x6a4430);
+};
+
+const SETS: Record<Backdrop, Draw> = { notice, tavern, gates, rain, campfire, smoke, office, market, graves };
 export const BACKDROPS = Object.keys(SETS) as Backdrop[];
 
 export function drawBackdrop(b: Batcher, S: Sprites, kind: Backdrop, tick: number): void {

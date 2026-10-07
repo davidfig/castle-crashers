@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CLASSES } from '../data/classes';
 import { BEATS } from '../data/story/beats';
-import { AFTERMATH, boardGreeting, cityMood, CLASS_ORDER, HUB_SCENES, registrarRemark, type Scene } from '../data/story/hub';
+import { AFTERMATH, boardGreeting, cityMood, CLASS_ORDER, HUB_SCENES, INTRO, registrarRemark, type Scene } from '../data/story/hub';
 import { makeRunConfig, offerWrits } from './board';
 import { campaignComplete, createLedger, hasSeen, type Ledger } from './ledger';
 import { dueScenes, markSceneSeen, SCENES_PER_VISIT } from './scenes';
@@ -34,7 +34,7 @@ test('every hub-tier beat has its scene, every played beat but the last two has 
 });
 
 test('scene text can be drawn in the story font', () => {
-  for (const sc of [...Object.values(HUB_SCENES), ...Object.values(AFTERMATH)]) {
+  for (const sc of [...INTRO, ...Object.values(HUB_SCENES), ...Object.values(AFTERMATH)]) {
     for (const t of texts(sc)) {
       assert.equal(storySafe(t), t, `${sc.id}: ${t}`);
     }
@@ -73,7 +73,7 @@ test('a scene is a run of beats: each names its speakers, the place is set, and 
     assert.equal(scr.speaker, 'registrar');
     assert.match(scr.footer, /CONTINUE/);
   }
-  for (const sc of [...Object.values(HUB_SCENES), ...Object.values(AFTERMATH)]) {
+  for (const sc of [...INTRO, ...Object.values(HUB_SCENES), ...Object.values(AFTERMATH)]) {
     for (const party of [[], ['rogue'], ['warrior', 'cleric', 'mage', 'archer']]) {
       const ps = scenePages(sc, party);
       assert.ok(ps.length >= 3, `${sc.id}: a scene has a few beats`);
@@ -86,6 +86,8 @@ test('a scene is a run of beats: each names its speakers, the place is set, and 
 
 test('dueScenes: aftermath of what played, then the pending hub beat, two at a time, each exactly once', () => {
   let l = createLedger(3);
+  assert.deepEqual(dueScenes(l).map((s) => s.id), INTRO.map((s) => s.id), 'a fresh save opens with the intro, both scenes in one visit');
+  l = INTRO.reduce(markSceneSeen, l);
   assert.deepEqual(dueScenes(l), []);
   l = playOnce(l); l = playOnce(l);                       // R1 plays in the second Writ
   assert.ok(hasSeen(l, 'R1'));
@@ -112,7 +114,7 @@ test('a whole campaign: every scene shows exactly once, in story order, and a hu
   assert.ok(campaignComplete(l));
   assert.equal(new Set(shown).size, shown.length, 'no repeats');
   const expected = BEATS.filter((b) => HUB_SCENES[b.id] || AFTERMATH[b.id]).map((b) => HUB_SCENES[b.id]?.id ?? AFTERMATH[b.id].id);
-  assert.deepEqual(shown, expected);
+  assert.deepEqual(shown, [...INTRO.map((s) => s.id), ...expected]);
 });
 
 test('the Registrar remarks differently by chapter and result, and notices mercy and betrayal from chapter II', () => {

@@ -194,6 +194,15 @@ Milestone Writs (below) are a special case of tier 2: a whole run built around o
 - Carry most of the talking: the Registrar, class voices at the tavern, Writ board text, city mood, codex entries. The hub is not a run, so short staged scenes the player walks into (and can walk away from) are fine here.
 - Can *acknowledge* missed tier 2 beats ("Rumor says the scouts found something at the crossing…") so the player is never left wondering.
 
+#### The opening (before Chapter I)
+
+A fresh save has nothing for the player to go on, so the game opens with an **explainer told in the story's own voice**: title, then the party select (so the class voices in the scenes are the real party's), then two short hub scenes, then the first Writ board. It is shown once, remembered by scene id, and is not a beat in the revelation chain.
+
+1. **The bounty** (the town square: the Crown's proclamation on the notice board, a crowd reading it). The cities live behind walls; the Wild beyond them holds "the vermin"; this spring the Crown posted a bounty on every one and pays by the head. Each class answers in its stance (the Warrior's duty, the Cleric's blessing, the Rogue's coin, the Mage's wish to see the numbers, the Archer's knowledge of the hills).
+2. **The Tally Office** (registry). The Registrar introduces himself and the job: a Writ names a place and a number; fight through everything between you and the far end and bring back the count; pay is per head; between battles the party rests at a camp to spend its pay on gear and the peddler's wares and grow stronger; up to four may ride together. He ends on the line the title answers: when the book is full the Crown will give thanks, and until then, per head.
+
+It explains what the player is doing (the loop and its stakes) using only Chapter I's words (*vermin*, *the Wild*), so it teaches the game without spoiling the turn; the Mage's and Cleric's lines are the first small seeds. Scenes live in `INTRO` in `src/data/story/hub.ts`; `dueScenes` shows them first on a fresh save.
+
 #### Tier 2: reserved run beats
 
 - When the pending revelation is a run beat, the campaign layer adds a **reserved beat** to the run's `RunConfig` (alongside the modifiers from [07](07-procgen.md)):

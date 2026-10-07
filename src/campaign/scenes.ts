@@ -1,7 +1,8 @@
 // Which hub scenes are due on returning to the hub (docs/12-story.md, tier 1). A hub beat IS its scene; any other beat that
-// played in a run gets an aftermath scene (tavern talk, the Registrar). At most two per visit, so the hub is not a cutscene reel.
+// played in a run gets an aftermath scene (tavern talk, the Registrar). On a fresh save the opening (INTRO) comes first. At most two
+// per visit, so the hub is not a cutscene reel.
 import { BEATS } from '../data/story/beats';
-import { AFTERMATH, HUB_SCENES, type Scene } from '../data/story/hub';
+import { AFTERMATH, HUB_SCENES, INTRO, type Scene } from '../data/story/hub';
 import { hasSeen, markBeatsSeen, pendingBeat, type Ledger } from './ledger';
 
 export const SCENES_PER_VISIT = 2;
@@ -20,6 +21,12 @@ export function markSceneSeen(l: Ledger, scene: Scene): Ledger {
 export function dueScenes(l: Ledger, limit = SCENES_PER_VISIT): Scene[] {
   const out: Scene[] = [];
   let cur = l;
+  for (const sc of INTRO) {
+    if (out.length >= limit) break;
+    if (cur.scenes.includes(sc.id)) continue;
+    out.push(sc);
+    cur = markSceneSeen(cur, sc);
+  }
   for (let guard = 0; out.length < limit && guard < 64; guard++) {
     const after = BEATS.find((b) => hasSeen(cur, b.id) && AFTERMATH[b.id] && !cur.scenes.includes(AFTERMATH[b.id].id));
     if (after) {
