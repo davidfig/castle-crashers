@@ -492,6 +492,7 @@ startLoop({
       return;
     }
     input.consumeHaptics(sim.events);
+    fx.camX = sim.camX;
     fx.consume(sim.events);
     fx.update(dt * 60);
 

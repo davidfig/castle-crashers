@@ -3,6 +3,7 @@
 import { EV_STRIDE, Ev, type EventBuf } from '../sim/events';
 import { hex } from '../platform/gl/batcher';
 import { isBossType } from '../data/mobs';
+import { VIEW_W, WORLD_H } from '../sim/constants';
 
 /** Blood/gib colors per MobType. */
 const KILL_COLORS = [
@@ -31,6 +32,7 @@ export const SLASH_TICKS = 8;
 /** Teleport: the wizard dissolves upward at the origin and re-forms at the destination over this many ticks. */
 export const BLINK_TICKS = 16;
 const MAX_BLINKS = 4;
+const BODY_MARGIN = 10;
 /** Boon pictures floating up over a hero when one of their boons fires. */
 const MAX_POPS = 12;
 export const POP_TICKS = 46;
@@ -441,6 +443,9 @@ export class Fx {
   }
 
   /** Advance by dt ticks (frame time * 60). */
+  /** The camera's left edge, set each frame: a killed mob's tumble is kept inside the screen. */
+  camX = 0;
+
   update(dt: number): void {
     for (let i = 0; i < this.n; ) {
       this.life[i] -= dt;
@@ -464,6 +469,10 @@ export class Fx {
       this.by[i] += this.bvy[i] * dt;
       this.bz[i] += this.bvz[i] * dt;
       this.bvz[i] -= 0.2 * dt;
+      // a body never leaves the play area: it hits the edge and drops there
+      const lo = this.camX + BODY_MARGIN, hi = this.camX + VIEW_W - BODY_MARGIN;
+      if (this.bx[i] < lo) { this.bx[i] = lo; this.bvx[i] = 0; } else if (this.bx[i] > hi) { this.bx[i] = hi; this.bvx[i] = 0; }
+      if (this.by[i] < BODY_MARGIN) { this.by[i] = BODY_MARGIN; this.bvy[i] = 0; } else if (this.by[i] > WORLD_H - BODY_MARGIN) { this.by[i] = WORLD_H - BODY_MARGIN; this.bvy[i] = 0; }
       const drag = Math.pow(0.96, dt);
       this.bvx[i] *= drag;
       this.bvy[i] *= drag;

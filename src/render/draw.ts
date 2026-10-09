@@ -394,13 +394,13 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       // Teleport arrival: re-form from a thin bright column into the full sprite.
       let arrive = -1;
       for (let k = 0; k < fx.blt.length; k++) {
-        if (fx.blt[k] >= 0 && Math.abs(fx.blx1[k] - e.x[i]) < 3 && Math.abs(fx.bly1[k] - e.y[i]) < 3) arrive = Math.min(1, fx.blt[k] / (BLINK_TICKS * 0.6));
+        if (fx.blt[k] >= 0 && Math.abs(fx.blx1[k] - e.x[i]) < 3 && Math.abs(fx.bly1[k] - e.y[i]) < 3) arrive = Math.min(1, fx.blt[k] / (BLINK_TICKS * 0.2));
       }
       if (arrive >= 0 && arrive < 1) {
         const e1 = 1 - (1 - arrive) * (1 - arrive);
-        const w = f.w * (0.15 + 0.85 * e1), h = f.h * (1.5 - 0.5 * e1);
+        const w = f.w * (0.45 + 0.55 * e1), h = f.h * (1.2 - 0.2 * e1);
         const x0 = sx - (flip ? f.w - 1 - H.pivotX : H.pivotX) + (f.w - w) / 2;
-        b.drawScaled(f, x0, sy - H.pivotY - (h - f.h), w, h, hex(0xd8c4ff, 0.4 + 0.6 * e1), flip, 0.7 * (1 - e1));
+        b.drawScaled(f, x0, sy - H.pivotY - (h - f.h), w, h, hex(0xd8c4ff, 0.7 + 0.3 * e1), flip, 0.7 * (1 - e1));
       } else {
         b.draw(f, place(f), sy - H.pivotY, flip, tint, flash);
       }

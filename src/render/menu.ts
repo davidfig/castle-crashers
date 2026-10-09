@@ -13,7 +13,7 @@ import { drawBackdrop, SCENE_FLOOR, STAGE } from './sceneArt';
 import { npcFrame } from './npcArt';
 import { TIER_BORDER, drawCard, drawCursor, drawDivider, drawIcon, drawNpc, drawPanel, drawShadow, drawStory, PAGE_TONE } from './ui';
 import { GLASS } from './uiArt';
-import { drawTitle } from './titleArt';
+import { drawTitle, promptOn } from './titleArt';
 
 const TONE: Record<Tone, number> = { normal: 0xe8ecf4, dim: 0x93a0bc, gold: GLASS.G, red: 0xe88a7a };
 const MARGIN = 24;
@@ -83,7 +83,7 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
       drawStory(b, S, `P${i + 1}`, x + 10, y + 9, sl.joined ? col : TONE.dim);
       if (!sl.joined) {
         const t = 'Press attack to join';
-        if ((tick >> 5) % 2 === 0) drawStory(b, S, t, cx - Math.floor(storyWidth(t) / 2), y + 58, TONE.dim);
+        if (promptOn(tick)) drawStory(b, S, t, cx - Math.floor(storyWidth(t) / 2), y + 58, TONE.dim);
         return;
       }
       const H = S.heroes[sl.classId] ?? S.heroes[0];
@@ -219,7 +219,7 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
     drawPage(b, S, scr, tick);
     return;
   }
-  if ((tick >> 5) % 2 === 0) drawText(b, S, scr.footer, Math.round(VIEW_W / 2 - scr.footer.length * 2), VIEW_H - 18, hex(TONE.normal));
+  if (promptOn(tick)) drawText(b, S, scr.footer, Math.round(VIEW_W / 2 - scr.footer.length * 2), VIEW_H - 18, hex(TONE.normal));
 }
 
 /** A read-it screen: a vellum page, a crimson header over a gold rule, ink text in the story font. */
@@ -239,7 +239,7 @@ function drawPage(b: Batcher, S: Sprites, scr: Extract<Screen, { kind: 'text' }>
     b.drawScaled(S.px, fx - 40, fy + 1, 80, 1, hex(GLASS.g));
     drawNpc(b, S, scr.figure.name, fx, fy, 4, scr.figure.talking, tick);
   }
-  if ((tick >> 5) % 2 === 0) drawText(b, S, scr.footer, Math.round(VIEW_W / 2 - scr.footer.length * 2), y + h - 16, hex(GLASS.b));
+  if (promptOn(tick)) drawText(b, S, scr.footer, Math.round(VIEW_W / 2 - scr.footer.length * 2), y + h - 16, hex(GLASS.b));
 }
 
 /** When the party's walk into the current scene began (in screen ticks), which scene it is, and when it was last drawn (a gap means a new visit). */
@@ -277,5 +277,5 @@ function drawScene(b: Batcher, S: Sprites, scr: Extract<Screen, { kind: 'scene' 
   let ty = py + 13;
   for (const l of scr.lines) { drawStory(b, S, l.text, px + 16, ty, TONE[l.tone]); ty += LINE_H; }
   for (let i = 0; i < scr.pages; i++) b.drawScaled(S.px, px + 16 + i * 7, py + ph - 14, 4, 4, hex(i === scr.page ? GLASS.G : GLASS.z));
-  if ((tick >> 5) % 2 === 0) drawText(b, S, scr.footer, px + pw - 16 - scr.footer.length * 4, py + ph - 15, hex(TONE.normal));
+  if (promptOn(tick)) drawText(b, S, scr.footer, px + pw - 16 - scr.footer.length * 4, py + ph - 15, hex(TONE.normal));
 }
