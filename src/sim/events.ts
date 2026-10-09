@@ -34,12 +34,15 @@ export const Ev = {
   Rally: 28,      // a drummer's beat; a = radius
   Blink: 29,      // a = destination x, b = destination y
   Beam: 30,       // a,b = direction * length, c = width
-  Beat: 22,       // the party reached a staged story beat
-  Surrender: 23,  // a mob lays down its arms; a = mob type
-  LevelUp: 24,    // a hero gained a level; a = slot
+  Beat: 35,       // the party reached a staged story beat
+  Surrender: 36,  // a mob lays down its arms; a = mob type
+  LevelUp: 37,    // a hero gained a level; a = slot
   Potion: 31,     // a hero drank a potion; a = slot
   Proc: 34,       // a boon fired; a = slot, b = upgrade index (x, y = the hero)
-  Pick: 25,       // a hero chose an upgrade; a = slot, b = upgrade index
+  Holy: 39,       // the next Kill was by a holy (aura) hero, the cleric
+  Pick: 38,       // a hero chose an upgrade; a = slot, b = upgrade index
+  Reroll: 40,     // a hero dealt a fresh level-up hand (a = slot, b = 0) or banished a boon (b = 1, c = upgrade index)
+  Site: 41,       // a shrine or chest did something: a = what (SiteEv), b = site sub-kind or value
 } as const;
 
 export const EV_STRIDE = 7;

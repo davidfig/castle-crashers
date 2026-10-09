@@ -197,16 +197,20 @@ test('mage dash teleports a set distance at once and is invulnerable after', () 
   assert.ok(s.players[0].invuln > 0);
 });
 
-test('rogue dash vanishes: mobs keep heading for where he vanished, and attacking breaks it', () => {
-  const { s, e, me, dash } = dashSetup(3);
-  step(s, dash);
+test('the rogue stays hidden until he attacks, then hides again after the cooldown', () => {
+  const { s } = dashSetup(3);
+  step(s, idle());
   assert.ok(s.players[0].vanishT > 0);
-  for (let k = 0; k < 10; k++) step(s, idle());
-  assert.ok(s.players[0].vanishT > 0, 'still unseen');
+  for (let k = 0; k < 300; k++) step(s, idle());
+  assert.ok(s.players[0].vanishT > 0, 'still unseen, with no time limit');
   const atk = idle(); atk[0].buttons = Btn.Attack;
   step(s, atk);
   assert.equal(s.players[0].vanishT, 0);
-  void me; void e;
+  const wait = CLASSES[3].hideCooldown!;
+  for (let k = 0; k < wait - 5; k++) step(s, idle());
+  assert.equal(s.players[0].vanishT, 0, 'still seen while the cooldown runs');
+  for (let k = 0; k < 10; k++) step(s, idle());
+  assert.ok(s.players[0].vanishT > 0, 'hidden again');
 });
 
 test('cleric dash heals nearby allies, not distant ones', () => {
@@ -263,7 +267,7 @@ test("the cleric's attack button toggles a pulsing aura that drains stamina and 
   assert.ok(!s.players[0].auraOn, 'runs dry');
 });
 
-test('the rogue hits a mob from behind (or out of a vanish) much harder than head-on', () => {
+test('the rogue hits a mob from behind (or from hiding) much harder than head-on', () => {
   const hitFor = (faceAway: boolean, vanished = false): number => {
     const s = createSim(1);
     s.players[0].classId = 3; // rogue
@@ -276,7 +280,7 @@ test('the rogue hits a mob from behind (or out of a vanish) much harder than hea
     e.hp[m] = e.maxhp[m] = 1000;
     e.flags[m] = 1;
     e.face[m] = faceAway ? 1 : -1;
-    if (vanished) p.vanishT = 50;
+    p.vanishT = vanished ? 1 : 0; p.revealT = vanished ? 0 : 9999;
     f[0].buttons = Btn.Attack;
     step(s, f);
     return 1000 - e.hp[m];
@@ -346,20 +350,33 @@ test("the archer's first ability rains arrows once his fury is full", () => {
   assert.ok(zones > 0, 'a rain zone appears');
 });
 
-test('mobs keep walking to where the rogue vanished, and one that runs into him attacks', () => {
-  const { s, e, me, dash } = dashSetup(3);
+test('a hidden rogue is passed by until a mob runs into him, which reveals him', () => {
+  const { s, e, me } = dashSetup(3);
   const far = allocEntity(e, Kind.Mob, MobType.Goblin, 330, 100, 5000);
   e.flags[far] = 1;
   e.face[far] = -1;
-  step(s, dash);
-  e.x[me] = e.px[me] = 60; // he slips away; the mob still heads for the spot he vanished from
-  const vx = s.players[0].vanishX;
-  const x0 = e.x[far];
-  for (let k = 0; k < 20; k++) step(s, idle());
+  step(s, idle());
   assert.ok(s.players[0].vanishT > 0);
-  assert.ok(e.x[far] < x0 - 5 && e.x[far] > vx - 40, 'it carries on toward the vanish spot, not stopping');
+  for (let k = 0; k < 20; k++) step(s, idle());
+  assert.ok(s.players[0].vanishT > 0, 'still unseen with the mob nearby');
   e.x[me] = e.px[me] = e.x[far] - 8; e.y[me] = e.y[far]; // now he stands right in its path
+  step(s, idle());
+  assert.equal(s.players[0].vanishT, 0, 'bumped, so seen');
   const hp = e.hp[me];
   for (let k = 0; k < 60; k++) step(s, idle());
-  assert.ok(e.hp[me] < hp, 'it found him and struck, vanished or not');
+  assert.ok(e.hp[me] < hp, 'it found him and struck');
+});
+
+test('a rogue ambush from hiding sweeps mobs far out and wide in front of him', () => {
+  const { s, e, me } = dashSetup(3);
+  const p = s.players[0];
+  p.faceX = 1; p.faceY = 0;
+  const m = allocEntity(e, Kind.Mob, 0, e.x[me] + 45, e.y[me] + 20, 1);
+  e.hp[m] = e.maxhp[m] = 1000;
+  e.flags[m] = 1;
+  step(s, idle());
+  assert.ok(p.vanishT > 0);
+  const atk = idle(); atk[0].buttons = Btn.Attack;
+  step(s, atk);
+  assert.ok(1000 - e.hp[m] >= 20, 'hit well outside a normal 30 px jab, off to the side');
 });

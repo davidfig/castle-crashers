@@ -4,24 +4,63 @@ import { lerp } from '../engine/math';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { RAIN_FLIGHT, RAIN_HEIGHT, RAIN_SPREAD, rainLaunchTick, rainOffset } from '../sim/rain';
-import { TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
-import { Kind, ZoneKind } from '../sim/entities';
+import { LEVEL_CAM_END, STORE_CAM_END, STORE_X, TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
+import { Kind, ShrineKind, ZoneKind } from '../sim/entities';
+import { CHANNEL, chargeFrac, chestCost, SiteState } from '../sim/sites';
+import { HEAT_NAMES } from '../data/heat';
 import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abilities';
 import { Phase, type GameState } from '../sim/state';
 import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, MobType, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
+import { drawWeather } from './weather';
 import { drawAmbient, drawCrest, drawFog, drawGround, drawHaze, drawParallax, drawRidge, drawSky, FIELD_Y0, GROUND_TOP } from './background';
-import { makeBlendedMood, moodAt, sceneryFor } from '../data/biomes';
+import { makeBlendedMood, moodAt, sceneryFor, type BiomeDef } from '../data/biomes';
 import { BLINK_TICKS, SLASH_TICKS, type Fx } from './fx';
-import { drawCamps } from './camp';
+import { drawCamps, drawStore, drawStoreHints } from './camp';
 import { drawLevelUp } from './levelup';
 import { drawBoonPops, drawBoonStrip } from './boonHud';
 import { drawMercy } from './mercy';
 import { heroFrame } from './hero';
 import { mobPose } from './mobArt';
 import type { FrameStats } from '../platform/perf';
+import type { RoadCast } from './roadCast';
 
 const mood = makeBlendedMood();
+const moodNext = makeBlendedMood();
+
+/**
+ * The scenery of the store between levels: the old biome (drawn as the end of the level it follows, so the cut from the level is
+ * invisible) up to the peddler, the next biome (drawn as the start of the level it leads into) past him. Each side is the whole
+ * backdrop clipped to its half of the screen, so the seam is wherever the peddler stands and it scrolls with the field.
+ * `layer`: 0 sky to fog, 1 foreground ridge and ambient specks, 2 weather.
+ */
+function drawStoreScenery(b: Batcher, S: Sprites, s: GameState, layer: number, camXf: number, camX: number, shx: number, oy: number, ft: number): void {
+  const seam = Math.max(0, Math.min(VIEW_W, Math.round(STORE_X - camX)));
+  for (let side = 0; side < 2; side++) {
+    const [x0, x1] = side === 0 ? [0, seam] : [seam, VIEW_W];
+    if (x1 <= x0) continue;
+    const biome = sceneryFor(side === 0 ? s.biome : s.nextBiome);
+    const md = side === 0 ? mood : moodNext;
+    const progress = side === 0 ? 1 : 0;
+    const shift = side === 0 ? LEVEL_CAM_END : -STORE_CAM_END;
+    moodAt(biome, progress, md);
+    b.setClip(x0, 0, x1, VIEW_H);
+    if (layer === 0) {
+      drawSky(b, S, biome, md, camXf + shift, ft, -shx, oy);
+      drawParallax(b, S, biome, md, camXf + shift, progress, -shx, oy, ft);
+      drawHaze(b, S, biome, md, oy);
+      drawGround(b, S, biome, md, camX + shift, oy, ft);
+      drawCrest(b, S, biome, md, camX + shift, oy);
+      drawFog(b, S, biome, md, camX + shift, oy, ft, progress);
+    } else if (layer === 1) {
+      drawRidge(b, S, biome, md, camX + shift, oy, ft);
+      drawAmbient(b, S, biome, md, camX + shift, oy, ft);
+    } else {
+      drawWeather(b, S, biome, md, camX + shift, oy, ft, progress, s.seed, side);
+    }
+    b.clearClip();
+  }
+}
 
 /** Shadow size (0 small, 1 medium, 2 large) by MobType. */
 const SHADOW_FOR = [0, 2, 0, 1, 0, 2, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 2, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 2, 0, 0, 0, 1, 2, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 1, 1, 2, 0, 0, 0, 0, 1, 2, 0, 1, 1, 0, 1, 2];
@@ -88,6 +127,12 @@ export interface DebugInfo {
   routeLabel?: string;
   /** Per player slot: the key or button that opens the level-up panel on that player's device. */
   levelKeys?: string[];
+  /** In the store: per player slot, the key or button that trades, for a hero standing beside the peddler ('' for one who is not). */
+  storeHints?: string[];
+  /** No "BATTLE WON" banner: the level was won and the road goes straight on. */
+  hideEndBanner?: boolean;
+  /** The road scene on this level, whose figures stand among the creatures (see roadCast.ts). */
+  cast?: RoadCast;
 }
 
 export function drawText(b: Batcher, S: Sprites, text: string, x: number, y: number, color: number, scale = 1, shadow = true): number {
@@ -122,12 +167,16 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   const ft = s.tick + alpha; // fractional tick: the drifting scenery moves every frame, not once per sim tick
 
   // --- sky + parallax layers (the light changes with how far the party has advanced)
-  const biome = sceneryFor(s.biome);
+  const biome: BiomeDef = sceneryFor(s.biome);
   const progress = Math.min(1, Math.max(0, camXf / (WORLD_W - VIEW_W)));
-  moodAt(biome, progress, mood);
-  drawSky(b, S, biome, mood, camXf, ft, -shx, oy);
-  drawParallax(b, S, biome, mood, camXf, progress, -shx, oy, ft);
-  drawHaze(b, S, biome, mood, oy);
+  if (s.store) {
+    drawStoreScenery(b, S, s, 0, camXf, camX, shx, oy, ft);
+  } else {
+    moodAt(biome, progress, mood);
+    drawSky(b, S, biome, mood, camXf, ft, -shx, oy);
+    drawParallax(b, S, biome, mood, camXf, progress, -shx, oy, ft);
+    drawHaze(b, S, biome, mood, oy);
+  }
 
   // --- enemies coming over the top: they climb up from behind the hill (head first, the hill hiding their
   // lower body along its curved crest), stand on the crest, then walk down the near slope onto the field.
@@ -145,10 +194,13 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   }
 
   // --- ground, then the hill's crest in front of the climbers
-  drawGround(b, S, biome, mood, camX, oy, ft);
-  drawCrest(b, S, biome, mood, camX, oy);
-  drawFog(b, S, biome, mood, camX, oy, ft, progress);
+  if (!s.store) {
+    drawGround(b, S, biome, mood, camX, oy, ft);
+    drawCrest(b, S, biome, mood, camX, oy);
+    drawFog(b, S, biome, mood, camX, oy, ft, progress);
+  }
   drawCamps(b, S, s, camX, oy);
+  if (s.store) drawStore(b, S, s, camX, oy);
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);
@@ -192,7 +244,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const ix = lerp(e.px[i], e.x[i], alpha);
     const sx = ix - camX;
     if (sx < -20 || sx > VIEW_W + 20) continue;
-    if (e.kind[i] === Kind.Coin || e.kind[i] === Kind.Potion || e.kind[i] === Kind.Zone) continue; // pickups and ground zones are drawn in their own passes
+    if (e.kind[i] === Kind.Coin || e.kind[i] === Kind.Potion || e.kind[i] === Kind.Zone || e.kind[i] === Kind.Chest || e.kind[i] === Kind.Shrine) continue; // pickups and ground zones are drawn in their own passes
     if (e.kind[i] === Kind.Mob && (e.flags[i] & 2) && e.y[i] < 0) continue; // climbing the far side of the hill: drawn earlier
     const yb = Math.min(WORLD_H, Math.max(0, Math.floor(e.y[i]))) + 1;
     bucket[yb]++;
@@ -248,6 +300,57 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     if (ph < 6) b.drawScaled(S.px, sx + 2, sy - e.z[i] - f.h - bob - 1 - (ph >> 1), 1, 1, hex(0x7dffa0, 0.9));
   }
 
+  // --- chests and shrines: props on the ground with a price or a name over them and a ring that fills while a hero stands close
+  for (let i = 0; i < e.highWater; i++) {
+    const kind = e.kind[i];
+    if (!e.alive[i] || (kind !== Kind.Chest && kind !== Kind.Shrine)) continue;
+    const sx = Math.round(e.x[i] - camX);
+    if (sx < -60 || sx > VIEW_W + 60) continue;
+    const sy = Math.round(FIELD_Y0 + e.y[i] + oy);
+    const st = e.elite[i];
+    const spent = st === SiteState.Spent;
+    const pulse = 0.5 + 0.5 * Math.sin((s.tick + i * 9) * 0.1);
+    b.draw(S.shadow[1], sx - S.shadow[1].w / 2, sy - 3, false, hex(0x000000, 0.35));
+    let top = sy;
+    if (kind === Kind.Chest) {
+      const f = S.chest[spent ? 1 : 0];
+      const y0 = sy - f.h - Math.max(0, e.z[i]);
+      b.draw(f, sx - f.w / 2, y0, false, spent ? hex(0xc0c0c0) : 0xffffffff);
+      top = y0;
+      if (!spent) {
+        const free = st === SiteState.Free;
+        const cost = chestCost(s);
+        const label = free ? 'FREE' : String(cost);
+        drawText(b, S, label, sx - label.length * 2, y0 - 8, hex(free || s.gold >= cost ? 0xffd35a : 0xe0503a), 1, true);
+        if (free && (s.tick + i) % 50 < 6) b.drawScaled(S.px, sx + 3, y0 - 1, 2, 2, hex(0xffffff, 0.9));
+      }
+    } else {
+      const sub = e.sub[i];
+      const f = S.shrine[sub];
+      const y0 = sy - f.h;
+      b.draw(f, sx - f.w / 2, y0, false, spent ? hex(0x777777) : 0xffffffff);
+      top = y0;
+      const col = [0xe0442e, 0x4aa0ff, 0xffc02a, 0xe8ecff][sub];
+      if (st === SiteState.Waiting) drawText(b, S, ['CURSE', 'CHARGE', 'GREED', 'MERCY'][sub], sx - ['CURSE', 'CHARGE', 'GREED', 'MERCY'][sub].length * 2, y0 - 8, hex(col), 1, true);
+      if (st === SiteState.Running) {
+        groundRing(b, S, sx, sy, 10 + 3 * pulse, 14, hex(col, 0.9));
+        if (sub === ShrineKind.Charge) {
+          // the field of the charge: a ring that fills clockwise as the meter climbs
+          const frac = chargeFrac(s, i), dots = 48;
+          for (let d = 0; d < dots; d++) {
+            const a = (d / dots) * Math.PI * 2 - Math.PI / 2;
+            b.drawScaled(S.px, sx + Math.cos(a) * 60 - 1, sy + Math.sin(a) * 60 * 0.7 - 1, 2, 2, hex(col, d / dots < frac ? 0.95 : 0.28));
+          }
+        }
+      }
+    }
+    if (e.buff[i] > 0 && st !== SiteState.Running) {
+      const w = 18, f = Math.min(1, e.buff[i] / CHANNEL);
+      b.drawScaled(S.px, sx - w / 2 - 1, top - 5, w + 2, 4, hex(0x000000, 0.7));
+      b.drawScaled(S.px, sx - w / 2, top - 4, Math.round(w * f), 2, hex(0xffd35a));
+    }
+  }
+
   // --- the cleric's aura: while it is on, a ring of holy light turns steadily on the ground around her (the damage is continuous, see sim/step.ts)
   for (const pl of s.players) {
     if (!pl.active || pl.downed || !pl.auraOn) continue;
@@ -288,8 +391,13 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     b.draw(sh, sx - sh.w / 2, sy - sh.h / 2 - 1, false, tint);
   }
 
+  // the road scene's figures stand among the creatures, in depth order (they are sorted by field y)
+  const cast = dbg.cast;
+  let nextFig = 0;
+  const figCount = cast ? cast.figures.length : 0;
   for (let k = 0; k < n; k++) {
     const i = sorted[k];
+    while (cast && nextFig < figCount && cast.figures[nextFig].y <= e.y[i]) cast.drawFigure(b, S, nextFig++, camX, oy, s.tick);
     const sx = lerp(e.px[i], e.x[i], alpha) - camX;
     const sy = feetY(e, i, alpha) + oy;
     const flip = e.face[i] < 0;
@@ -459,6 +567,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       b.drawScaled(S.px, fx0 + 18, fy, 2, 2, hex(spReady ? 0xffd35a : 0x6a5a30));
     }
   }
+  while (cast && nextFig < figCount) cast.drawFigure(b, S, nextFig++, camX, oy, s.tick);
 
   // --- teleport: the wizard's afterimage dissolves upward at the origin, with a light column at each end
   for (let k = 0; k < fx.blt.length; k++) {
@@ -540,8 +649,12 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   }
 
   // --- foreground ridge along the bottom of the field
-  drawRidge(b, S, biome, mood, camX, oy, ft);
-  drawAmbient(b, S, biome, mood, camX, oy, ft);
+  if (s.store) {
+    drawStoreScenery(b, S, s, 1, camXf, camX, shx, oy, ft);
+  } else {
+    drawRidge(b, S, biome, mood, camX, oy, ft);
+    drawAmbient(b, S, biome, mood, camX, oy, ft);
+  }
 
   // --- launched bodies: tumbling mobs knocked out of the pack
   for (let i = 0; i < fx.nb; i++) {
@@ -602,10 +715,14 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     b.drawScaled(S.px, sx, FIELD_Y0 + fx.y[i] - fx.z[i] + oy, sz, sz, c >>> 0);
   }
 
+  if (s.store) drawStoreScenery(b, S, s, 2, camXf, camX, shx, oy, ft);
+  else drawWeather(b, S, biome, mood, camX, oy, ft, progress, s.seed);
+
   drawBoonPops(b, S, fx, camX, oy);
   drawMercy(b, S, s, camX, alpha, oy);
   drawHud(b, S, s, fx, dbg);
   drawLevelUp(b, S, s, dbg.levelKeys);
+  if (s.store) drawStoreHints(b, S, s, camX, oy, dbg.storeHints);
 }
 
 function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): void {
@@ -616,7 +733,7 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
   b.drawScaled(S.px, bx, 6, bw, 3, hex(0x2a3340));
   for (const p of s.players) {
     if (!p.active) continue;
-    const t = Math.min(1, Math.max(0, e.x[p.ent] / WORLD_W));
+    const t = Math.min(1, Math.max(0, e.x[p.ent] / s.worldW));
     b.drawScaled(S.px, bx + Math.round(t * (bw - 2)), 4, 2, 7, hex(PLAYER_COLORS[e.sub[p.ent]]));
   }
   drawText(b, S, 'GOAL', bx + bw + 6, 5, hex(0xffd35a));
@@ -661,6 +778,7 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
   const popY = fx.goldPop > 0.3 ? -1 : 0;
   b.draw(S.coin[0][0], 6, 8 + row * 11 + 1 + popY);
   drawText(b, S, String(s.gold), 13, 8 + row * 11 + popY, hex(fx.goldPop > 0.3 ? 0xffffff : 0xffd84a));
+  if (s.heat > 0) drawText(b, S, `HEAT ${s.heat} ${HEAT_NAMES[s.heat]}`, 13 + String(s.gold).length * 4 + 8, 8 + row * 11 + popY, hex(0xff8a4a));
   drawBoonStrip(b, S, s);
 
   let mobs = 0;
@@ -691,7 +809,7 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
 
   drawText(b, S, `MOVE WASD/ARROWS/L-STICK  AIM R-STICK  J/RT ATTACK  I/X BIG SWING  K/A NOVA  L/B DASH  O/PAD-LB LEVEL UP${s.surrender ? '  U/PAD-B STAND DOWN' : ''}  R RESTART`, 6, VIEW_H - 10, hex(0xffffff, 0.8));
 
-  if (s.phase !== Phase.Playing) {
+  if (s.phase !== Phase.Playing && !dbg.hideEndBanner) {
     b.drawScaled(S.px, 0, VIEW_H / 2 - 30, VIEW_W, 60, hex(0x000000, 0.6));
     const msg = s.phase === Phase.Won ? 'BATTLE WON' : 'ROUTED';
     drawText(b, S, msg, VIEW_W / 2 - msg.length * 6, VIEW_H / 2 - 14, hex(s.phase === Phase.Won ? 0xffd35a : 0xe05050), 3);
@@ -700,7 +818,7 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
   }
 }
 
-/** Windup tells: a "!" over heavy attackers, an aim line for archers, a blast-radius ring for lit bombers. */
+/** Windup tells: a "!" over heavy attackers, an aim line for archers and a charge lane (bosses only: ordinary mobs don't show where they'll go), a blast-radius ring for lit bombers. */
 function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, def: (typeof MOBS)[number], sx: number, top: number, feetY: number, tick: number): void {
   if (e.mode[i] === SP_WIND && def.special) {
     drawSpecialTelegraph(b, S, e, i, def.special, sx, top, feetY, tick);
@@ -715,11 +833,12 @@ function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, 
     }
     return;
   }
-  if (def.behavior === Behavior.Ranged) {
+  const boss = isBossType(e.sub[i]);
+  if (boss && def.behavior === Behavior.Ranged) {
     const col = hex(0xff4a3a, 0.65);
     for (let d = 10; d < 160; d += 6) b.drawScaled(S.px, sx + e.ax[i] * d, feetY - 6 + e.ay[i] * d, 1, 1, col);
   }
-  if (def.charge !== undefined && e.mode[i] === 1) {
+  if (def.charge !== undefined && e.mode[i] === 1 && boss) {
     // the charge lane: a dotted red path along the locked direction, with an arrowhead
     // shortened to where the charge would hit the edge of the world
     let len = def.charge.distance;
@@ -733,6 +852,10 @@ function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, 
     const col = hex(0xff3a2a, blink);
     for (let d = 12; d <= len; d += 7) b.drawScaled(S.px, sx + e.ax[i] * d - 1, feetY - 2 + e.ay[i] * d, 2, 2, col);
     for (let k = -2; k <= 2; k++) b.drawScaled(S.px, sx + e.ax[i] * (len + 4) - e.ay[i] * k * 2, feetY - 2 + e.ay[i] * (len + 4) + e.ax[i] * k * 2, 2, 2, col);
+    drawText(b, S, '!!', Math.round(sx - 3), Math.round(top - 8), hex(0xff5a3a), 1);
+    return;
+  }
+  if (def.charge !== undefined && e.mode[i] === 1) {
     drawText(b, S, '!!', Math.round(sx - 3), Math.round(top - 8), hex(0xff5a3a), 1);
     return;
   }
@@ -1163,7 +1286,16 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
     const a = tick * 0.05 + i;
     b.drawScaled(S.px, Math.round(sx + Math.cos(a) * def.aura.radius * 0.7), Math.round(sy + Math.sin(a) * def.aura.radius * 0.55 - 3), 1, 1, hex(ICE.light, 0.8));
   }
-  b.draw(f, x0, y0, flip, tint, flash);
+  if (e.elite[i] > 0) {
+    // an elite: half again as tall, standing in a ring (gold for a mini-boss, blood red when a curse called it), with a bar for its health
+    const gold = e.elite[i] === 1, ring = gold ? 0xffc02a : 0xe0442e;
+    groundRing(b, S, sx, sy, 11 + 1.5 * f.w / 10, 22, hex(ring, 0.55 + 0.25 * (((tick >> 3) + i) & 1)));
+    const w = f.w * 1.45, h = f.h * 1.45;
+    b.drawScaled(f, sx - w / 2 + ox, sy - h + oy, w, h, gold ? hex(0xffe8b0) : hex(0xffb8a8), flip, flash);
+    const bw = Math.max(16, Math.round(w)), bx = Math.round(sx - bw / 2), by = Math.round(sy - h + oy - 5);
+    b.drawScaled(S.px, bx - 1, by - 1, bw + 2, 4, hex(0x000000, 0.75));
+    b.drawScaled(S.px, bx, by, Math.max(0, Math.round(bw * e.hp[i] / e.maxhp[i])), 2, hex(ring));
+  } else b.draw(f, x0, y0, flip, tint, flash);
   if (isWarded(e, i) && ((tick + i) & 5) === 0) b.drawScaled(S.px, sx + ((i * 11) % 9) - 4, y0 + ((tick * 3 + i) % Math.max(2, f.h)), 1, 1, hex(0xffffff, 0.9));
   if (e.buff[i] > 0 && ((tick + i) & 7) === 0) b.drawScaled(S.px, sx + ((i * 7) % 5) - 2, y0 - 1, 1, 2, hex(0xff8a40, 0.9));
   if (dazed) {

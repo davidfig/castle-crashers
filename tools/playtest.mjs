@@ -1,7 +1,7 @@
 // Headless balance playtest: a scripted bot plays several seeds; prints how each run went.
 //   npm run playtest                       the baseline warrior on seeds 1-6
 //   npm run playtest -- 3 4 5              given seeds
-//   npm run playtest -- --class=1 --boons=kegs:2,spark:1     a build (class index, boon id:rank)
+//   npm run playtest -- --class=1 --boons=spark:2,lust:1     a build (class index, boon id:rank)
 //   npm run playtest -- --sweep [--seeds=8]   every boon at its top rank against its class's bare run: does it fire, does it help, is it slow
 import * as esbuild from 'esbuild';
 import { mkdirSync } from 'node:fs';

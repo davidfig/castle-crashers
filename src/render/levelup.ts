@@ -1,6 +1,7 @@
 // The level-up panel, drawn in the sky band at the top of the screen (docs/06-ui.md). Each player has a fixed lane,
 // a quarter of the width, so up to four can choose at once without covering the action or each other. Reads state only.
-import { cardFor, OFFER_SIZE, offerFor, rarityOf, UPGRADES } from '../data/upgrades';
+import { cardFor, OFFER_SIZE, rarityOf, UPGRADES } from '../data/upgrades';
+import { heroOffer } from '../sim/offers';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { VIEW_W } from '../sim/constants';
@@ -31,10 +32,10 @@ export function drawLevelUp(b: Batcher, S: Sprites, s: GameState, keys: string[]
       continue;
     }
     // the panel: three cards over a solid backing in the player's colour
-    const h = 66;
+    const h = 74;
     drawPanel(b, S, x0 + 1, LANE_Y - 1, LANE_W - 2, h + 2, { fill: 'ink', accent: col, ornaments: false });
     drawText(b, S, `P${slot + 1} LEVEL ${p.level - p.pending + 1}`, x0 + 6, LANE_Y + 3, hex(col), 1, false);
-    const offer = offerFor(s.offerSeed, slot, p.level - p.pending + 1, p.ranks, p.classId, { party: s.players.filter((q) => q.active).length });
+    const offer = heroOffer(s, slot);
     for (let k = 0; k < OFFER_SIZE; k++) {
       const up = offer[k];
       if (up === undefined) continue;
@@ -43,7 +44,8 @@ export function drawLevelUp(b: Batcher, S: Sprites, s: GameState, keys: string[]
       const cx = x0 + 3 + k * (CARD_W + 1), cy = LANE_Y + 13;
       drawCard(b, S, cx, cy, CARD_W, 50, TIER_BORDER[rarityOf(def)], k === p.cursor);
       drawText(b, S, String(k + 1), cx + 4, cy + 4, hex(0xffd35a), 1, false);
-      if (p.ranks[up] > 0) drawText(b, S, `R${p.ranks[up]}`, cx + 4, cy + 11, hex(0x93a0bc), 1, false);
+      if (def.evolve) drawText(b, S, 'FUSION', cx + 4, cy + 11, hex(0xffd35a), 1, false);
+      else if (p.ranks[up] > 0) drawText(b, S, `R${p.ranks[up]}`, cx + 4, cy + 11, hex(0x93a0bc), 1, false);
       drawIcon(b, S, def.icon, cx + CARD_W - 19, cy + 3, 1);
       drawText(b, S, card.name, cx + 4, cy + 21, hex(0xffffff), 1, false);
       card.text.forEach((t, j) => drawText(b, S, t, cx + 4, cy + 29 + j * 6, hex(0xa8b4d8), 1, false));
@@ -51,5 +53,8 @@ export function drawLevelUp(b: Batcher, S: Sprites, s: GameState, keys: string[]
       const tags = def.tags.length > 1 && def.tags[0].length + def.tags[1].length < 11 ? `${def.tags[0]} ${def.tags[1]}` : def.tags[0];
       drawText(b, S, tags, cx + 4, cy + 43, hex(def.kind === 'trigger' ? 0xc9a4ff : 0x7d8aa8), 1, false);
     }
+    // the deal can be changed: stick up for a fresh hand, stick down to banish the highlighted boon for good
+    drawText(b, S, `UP: REROLL X${p.rerolls}`, x0 + 6, LANE_Y + 67, hex(p.rerolls > 0 ? 0xa8b4d8 : 0x5a6480), 1, false);
+    drawText(b, S, `DOWN: BANISH X${p.banishes}`, x0 + 78, LANE_Y + 67, hex(p.banishes > 0 ? 0xa8b4d8 : 0x5a6480), 1, false);
   }
 }

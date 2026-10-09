@@ -41,6 +41,9 @@ export function hashState(s: GameState): number {
   for (let i = 0; i < s.spared.length; i++) h = mixNum(h, s.spared[i]);
   h = mixNum(h, e0(s));
   h = mixNum(h, s.gold);
+  h = mixNum(h, s.heat);
+  h = mixNum(h, s.chestsOpened);
+  h = mixNum(h, s.chestMiss);
   h = mixNum(h, s.coinCount);
   h = mixNum(h, s.potionCount);
   h = mixNum(h, s.potionBudget);
@@ -71,6 +74,7 @@ export function hashState(s: GameState): number {
   h = mix(h, u8(e.rem));
   h = mix(h, u8(e.by));
   h = mix(h, u8(e.flags));
+  h = mix(h, u8(e.elite));
   for (const p of s.players) {
     h = mixNum(h, p.active ? 1 : 0);
     h = mixNum(h, p.ent);
@@ -80,8 +84,7 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.dashT);
     h = mixNum(h, p.vanishT);
     h = mixNum(h, p.cursor);
-    h = mixNum(h, p.vanishX);
-    h = mixNum(h, p.vanishY);
+    h = mixNum(h, p.revealT);
     h = mixNum(h, p.auraOn ? 1 : 0);
     h = mixNum(h, p.cdAttack);
     h = mixNum(h, p.cdAbility1);
@@ -121,6 +124,10 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.pullT);
     h = mixNum(h, p.pullX);
     h = mixNum(h, p.pullY);
+    h = mixNum(h, p.rerolls);
+    h = mixNum(h, p.banishes);
+    h = mixNum(h, p.salt);
+    h = mix(h, p.banned);
   }
   return h >>> 0;
 }

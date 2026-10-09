@@ -66,3 +66,32 @@ export function summarizeRun(s: GameState, cfg: RunConfig, retreated: boolean, s
     party: s.players.filter((p) => p.active).map((p) => CLASSES[p.classId].name),
   };
 }
+
+/** How the road ended, for the screen after it: a plain tally, no story. The sim's own tallies already cover every level of the route. */
+export interface RunEnd {
+  outcome: Outcome;
+  /** Levels won, and how many the road has. */
+  cleared: number;
+  total: number;
+  kills: number;
+  gold: number;
+  slain: Record<string, number>;
+  spared: Record<string, number>;
+  betrayed: number;
+  party: string[];
+}
+
+export function summarizeEnd(s: GameState, retreated: boolean, index: number, total: number): RunEnd {
+  const outcome = outcomeOf(s, retreated);
+  return {
+    outcome,
+    cleared: index + (outcome === 'won' ? 1 : 0),
+    total,
+    kills: s.kills,
+    gold: s.gold,
+    slain: slainByName(s),
+    spared: sparedByName(s),
+    betrayed: s.betrayed,
+    party: s.players.filter((p) => p.active).map((p) => CLASSES[p.classId].name),
+  };
+}

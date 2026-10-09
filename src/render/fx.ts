@@ -38,6 +38,12 @@ const MAX_POPS = 12;
 export const POP_TICKS = 46;
 
 export class Fx {
+  /** Crossing into the next field: what lies on the ground (corpses, spent arrows) keeps its place on screen, so the world coordinates move by `dx`. */
+  shift(dx: number): void {
+    for (let i = 0; i < this.cx.length; i++) this.cx[i] += dx;
+    for (let i = 0; i < this.ax.length; i++) this.ax[i] += dx;
+  }
+
   // particles (ground-plane x,y plus height z)
   n = 0;
   x = new Float32Array(MAX_P);
@@ -397,6 +403,18 @@ export class Fx {
           if (q === -2 || q < 0) break;
           this.ppx[q] = x; this.ppy[q] = y; this.pslot[q] = a; this.pboon[q] = b; this.pt[q] = 0;
           for (let j = 0; j < 8; j++) this.spawn(x, y, 22, (this.rand() - 0.5) * 1.4, (this.rand() - 0.5) * 0.6, 0.4 + this.rand() * 0.7, 20 + this.rand() * 10, hex(this.rand() < 0.5 ? 0xffe9a8 : 0xffffff, 0.95), 0);
+          break;
+        }
+        case Ev.Reroll: // a fresh deal (b = 0) or a boon banished for good (b = 1)
+          this.addRing(x, y - 14, 18, hex(b === 1 ? 0xe0442e : 0xc9a4ff), 0);
+          for (let j = 0; j < 10; j++) this.spawn(x, y, 14, (this.rand() - 0.5) * 2, -this.rand() * 1.2, 0.4 + this.rand() * 0.6, 22, hex(b === 1 ? 0xe0442e : 0xffe9a8, 0.95), 0);
+          break;
+        case Ev.Site: {
+          // a = what (SiteEv), b = kind. Open/Done: gold and light; Start: a big coloured ring; Deny: a small red puff; Spawn: a thud of dust
+          const col = a === 3 ? 0xe0503a : a === 1 ? [0xe0442e, 0x4aa0ff, 0xffc02a, 0xe8ecff][b] ?? 0xffffff : 0xffd35a;
+          this.addRing(x, y, a === 1 ? 70 : a === 3 ? 12 : 36, hex(col), a === 1 ? 1 : 0);
+          if (a === 0 || a === 2) { this.goldPop = 1; for (let j = 0; j < 22; j++) this.spawn(x + (this.rand() - 0.5) * 10, y, 4 + this.rand() * 10, (this.rand() - 0.5) * 2.4, (this.rand() - 0.5) * 1.2, 0.8 + this.rand() * 2, 26 + this.rand() * 14, hex(this.rand() < 0.6 ? 0xffd35a : 0xffffff, 0.95), 1); }
+          if (a === 1) this.trauma = Math.max(this.trauma, 0.5);
           break;
         }
         case Ev.Revive:

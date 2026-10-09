@@ -3,9 +3,10 @@
 // for the party that is playing at that moment (docs/03: difficulty scales with party size).
 import { createRng, rngFloat, rngInt, rngRange, Stream, type Rng } from '../../engine/rng';
 import { cosTurns, sinTurns } from '../../engine/math';
-import { MOBS, MobType } from '../../data/mobs';
+import { Behavior, MOBS, MobType } from '../../data/mobs';
 import { ROSTERS } from '../../data/roster';
 import { pickMobType, pickSupport } from './mix';
+import { heatElites } from '../../data/heat';
 import { VIEW_W, WORLD_H, WORLD_W } from '../constants';
 import { allocEntity, BYSTANDER, Kind, SURRENDERED } from '../entities';
 import type { GameState } from '../state';
@@ -28,7 +29,30 @@ export interface ClumpPlan {
   gate?: boolean;
   /** Random stream number of this encounter, so inserting one never changes the others. Defaults to its index. */
   rid?: number;
+  /** A road scene (docs/12-story.md, "Delivery without stopping the action"): the stretch of field around it is cleared of enemies, and the render side stages the scene there. */
+  scene?: string;
+  /** A mini-boss: a hulking elite of the biome and the crowd that follows it. The gate behind it holds the camera until the elite is dead. */
+  elite?: boolean;
 }
+
+/** A road scene the level was told to leave room for. */
+export interface SimScene {
+  id: string;
+  /** How far along the field (0..1, same scale as an encounter's `t`) it stands. */
+  t: number;
+}
+
+/**
+ * Room kept around a road scene (px): no enemy encounter within `SCENE_CLEARING` to its left or `SCENE_AHEAD` to its right, so the party can
+ * stand and listen. The right side is wider because the road ahead streams in far past the screen (`STREAM_AHEAD`).
+ */
+export const SCENE_CLEARING = 230;
+export const SCENE_AHEAD = 620;
+/** The encounters beyond a scene wait (and so do reinforcements and flank waves, see `sceneHold`) until the camera centre is this far past it. */
+export const SCENE_RELEASE = 210;
+/** Reinforcements and flank waves pause while the camera centre is this far before a scene (and until the release). */
+const SCENE_HOLD_BEFORE = 330;
+const SCENE_STREAM = 5001;
 
 /** A story beat the run was told to place. Mirrors the campaign layer's ReservedBeat; the sim knows nothing else about the campaign. */
 export interface SimBeat {
@@ -67,7 +91,7 @@ export function activePlayers(s: GameState): number {
 }
 
 /** Plan options. A level that is not the last of a route has no boss: it is won by reaching the far end. */
-export interface PlanOptions { boss?: boolean }
+export interface PlanOptions { boss?: boolean; scene?: SimScene; /** Enemy count multiplier (default 1). */ scale?: number; /** The party's chosen heat: higher heat plans more mini-bosses. */ heat?: number }
 
 export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}): ClumpPlan[] {
   const r = createRng(seed, Stream.level);
@@ -76,14 +100,22 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
   for (let c = 0; c < clumps; c++) {
     const t = c / (clumps - 1);
     const x = 760 + t * (WORLD_W - 1100) + rngRange(r, -40, 40);
-    const size = Math.floor(16 + t * 26 + rngRange(r, 0, 10));
+    const size = Math.floor((16 + t * 26 + rngRange(r, 0, 10)) * (opts.scale ?? 1));
     const line = c % 4 === 3;
     const y = rngRange(r, 8, WORLD_H - 8); // anywhere from the very top to the very bottom
     plan.push({ x, y, size, line, t, gate: line, rid: c });
   }
   // Final stand: a wall across the field, then the boss with its retinue at the very end.
-  plan.push({ x: WORLD_W - 440, y: WORLD_H / 2, size: 38, line: true, t: 1, rid: clumps });
+  plan.push({ x: WORLD_W - 440, y: WORLD_H / 2, size: Math.floor(38 * (opts.scale ?? 1)), line: true, t: 1, rid: clumps });
   if (opts.boss !== false) plan.push({ x: WORLD_W - 250, y: WORLD_H / 2, size: 0, line: false, t: 1, boss: true, rid: clumps + 1 });
+  if (opts.scene) {
+    // A clearing in the road: no crowd within earshot of the scene. Later encounters keep their own streams (`rid`), so nothing else changes.
+    const x = 760 + opts.scene.t * (WORLD_W - 1100);
+    for (let k = plan.length - 1; k >= 0; k--) if (!plan[k].boss && plan[k].rid! < clumps && plan[k].x > x - SCENE_CLEARING && plan[k].x < x + SCENE_AHEAD) plan.splice(k, 1);
+    let at = 0;
+    while (at < plan.length && plan[at].x <= x) at++;
+    plan.splice(at, 0, { x, y: WORLD_H / 2 + 10, size: 0, line: false, t: opts.scene.t, scene: opts.scene.id, rid: SCENE_STREAM });
+  }
   if (beat && STAGED_BEATS.includes(beat.id)) {
     // Placed at a fixed point of the field (there is one route), never rolled; the other encounters keep their own streams.
     const t = beat.early ? BEAT_T_EARLY : BEAT_T;
@@ -92,8 +124,19 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
     while (at < plan.length && plan[at].x <= x) at++;
     plan.splice(at, 0, { x, y: WORLD_H / 2 + 10, size: 0, line: false, t, beat: beat.id, rid: BEAT_STREAM });
   }
+  // Mini-bosses: one around the middle of every field, and (with heat) a second later on. Placed after everything else, in a spot the scene and the beat have not cleared for themselves.
+  const minis: number[] = [0.5];
+  if (rngFloat(createRng(seed, ELITE_STREAM)) < heatElites(opts.heat ?? 0)) minis.push(0.78);
+  for (const t of minis) {
+    const x = 760 + t * (WORLD_W - 1100);
+    if (plan.some((c) => (c.scene || c.beat) && Math.abs(c.x - x) < 320)) continue;
+    let at = 0;
+    while (at < plan.length && plan[at].x <= x) at++;
+    plan.splice(at, 0, { x, y: WORLD_H / 2, size: 10, line: false, t, elite: true, gate: true, rid: ELITE_STREAM + Math.round(t * 100) });
+  }
   return plan;
 }
+const ELITE_STREAM = 3000;
 
 /** A barrier that holds the camera: it stands `GATE_PAST` px beyond the wall of enemies it guards, and opens once the wall has been dealt with. */
 export interface Gate {
@@ -155,6 +198,40 @@ function spawnBoss(s: GameState, plan: ClumpPlan, index: number, scale: number):
   }
 }
 
+/** The sturdy fighters of a biome (its melee brutes): what a mini-boss or a curse shrine's elites are drawn from. */
+export function eliteTypes(biome: number): number[] {
+  const out = ROSTERS[biome].entries.map((en) => en.type).filter((ty) => MOBS[ty].behavior === Behavior.Melee && MOBS[ty].hp >= 30);
+  return out.length > 0 ? out : [ROSTERS[biome].entries[ROSTERS[biome].entries.length - 1].type];
+}
+
+/** Elite health: a mini-boss soaks this many times an ordinary one's, a curse shrine's elite a bit less; a bigger party makes it tougher still. */
+export const ELITE_HP = [1, 6, 4] as const;
+
+/** Spawn one elite (`kind` 1 mini-boss, 2 cursed) of `type` at (x, y). Returns its slot or -1. */
+export function spawnElite(s: GameState, type: number, kind: 1 | 2, x: number, y: number): number {
+  const n = Math.max(1, Math.min(4, activePlayers(s)));
+  const hp = MOBS[type].hp * ELITE_HP[kind] * (1 + 0.35 * (n - 1));
+  const i = allocEntity(s.ents, Kind.Mob, type, x, y < 8 ? 8 : y > WORLD_H - 8 ? WORLD_H - 8 : y, hp);
+  if (i < 0) return -1;
+  s.ents.flags[i] = 1;
+  s.ents.elite[i] = kind;
+  s.ents.face[i] = -1;
+  return i;
+}
+
+/** The mini-boss and its crowd: the brute stands in front, ordinary fighters of the level's mix fan out behind it. */
+function spawnMiniBoss(s: GameState, plan: ClumpPlan, index: number, scale: number): void {
+  const r = createRng(s.seed, 1000 + (plan.rid ?? index));
+  const types = eliteTypes(s.biome);
+  spawnElite(s, types[rngInt(r, types.length)], 1, plan.x, plan.y);
+  const count = Math.round(plan.size * scale);
+  for (let k = 0; k < count; k++) {
+    const ang = rngFloat(r);
+    const rad = 30 + rngFloat(r) * 70;
+    if (!addMob(s, r, plan.x + cosTurns(ang) * rad * 1.3, plan.y + sinTurns(ang) * rad * 0.8, plan.t)) return;
+  }
+}
+
 /** R1: a few goblins around a cookfire. They do not attack, and they do not chase. */
 function spawnCamp(s: GameState, plan: ClumpPlan): void {
   const r = createRng(s.seed, 1000 + (plan.rid ?? 0));
@@ -193,6 +270,8 @@ function spawnSurrendered(s: GameState, plan: ClumpPlan): void {
 export function spawnClump(s: GameState, index: number, scale: number): void {
   const plan = s.plan[index];
   if (plan.boss) { spawnBoss(s, plan, index, scale); return; }
+  if (plan.elite) { spawnMiniBoss(s, plan, index, scale); return; }
+  if (plan.scene) return; // the road scene is staged by the renderer; the sim only keeps the road clear
   if (plan.beat === 'R1') { spawnCamp(s, plan); return; }
   if (plan.beat === 'R3') { spawnSurrendered(s, plan); return; }
   // Each encounter has its own random stream, so its contents do not depend on when it was streamed in.
@@ -215,6 +294,19 @@ export function spawnClump(s: GameState, index: number, scale: number): void {
   }
 }
 
+/** The scene's x on this level, or -1. */
+export function sceneX(s: GameState): number {
+  return s.sceneIndex >= 0 ? s.plan[s.sceneIndex].x : -1;
+}
+
+/** True while the party is at a road scene (its camera centre between the lead-in and the release): no new enemies come, so the scene can be heard in peace. */
+export function sceneHold(s: GameState): boolean {
+  const x = sceneX(s);
+  if (x < 0) return false;
+  const c = s.camX + VIEW_W / 2;
+  return c > x - SCENE_HOLD_BEFORE && c < x + SCENE_RELEASE;
+}
+
 /** Called every tick: spawn the encounters the camera is about to reach, sized for the current party. */
 export function streamLevel(s: GameState): void {
   if (s.tick < STREAM_DELAY_TICKS) return;
@@ -224,6 +316,8 @@ export function streamLevel(s: GameState): void {
     const next = s.plan[s.nextClump];
     // The boss does not stream in 500 px ahead: it would take a minute to walk to the party. It appears just offscreen.
     if (next.x >= (next.boss ? s.camX + VIEW_W + 90 : horizon)) break;
+    // Whatever lies beyond a road scene waits until the party has gone past it.
+    if (s.sceneIndex >= 0 && s.nextClump > s.sceneIndex && s.camX + VIEW_W / 2 < sceneX(s) + SCENE_RELEASE) break;
     if (s.ents.capacity - s.ents.count < 400) return; // entity budget: try again once things have been cleared
     spawnClump(s, s.nextClump, scale);
     s.nextClump++;

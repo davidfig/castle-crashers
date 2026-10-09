@@ -1,4 +1,5 @@
 // What the board, the hub scenes and the run summary say, as plain data the renderer draws. No drawing here.
+import { HEAT_NAMES } from '../data/heat';
 import { BEAT_BY_ID } from '../data/story/beats';
 import { chapterDef, FINAL_CHAPTER } from '../data/story/chapters';
 import { writLines, type Writ } from '../data/story/writs';
@@ -9,6 +10,7 @@ import { biomeIndex } from '../data/roster';
 import type { RunConfig } from './board';
 import type { Ledger } from './ledger';
 import type { RunSummary } from './summary';
+import type { RunEnd } from './run';
 
 export type Tone = 'normal' | 'dim' | 'gold' | 'red';
 export interface Line { text: string; tone: Tone }
@@ -175,7 +177,7 @@ export const BLURB: Record<string, string[]> = {
   warrior: ['HOLDS THE LINE', 'MOST HP', 'DODGE PLOWS A LANE', 'ABILITY: QUAKE'],
   mage: ['AREA DAMAGE', 'SPLASH FIREBALLS', 'DODGE TELEPORTS', 'ABILITY: BIG FIREBALL'],
   cleric: ['KEEPS ALLIES ALIVE', 'ATTACK TOGGLES AURA', 'AURA HURTS ALL NEAR', 'DODGE HEALS PARTY'],
-  rogue: ['BURST FROM BEHIND', 'BACKSTAB: 2.5X DAMAGE', 'VANISH, THEN STRIKE', 'WEAK HEAD-ON'],
+  rogue: ['BURST FROM BEHIND', 'UNSEEN UNTIL HE STRIKES', 'AMBUSH: HUGE SWEEP', 'BACKSTAB: 2.5X'],
   archer: ['SNIPER', 'FAR SHOTS HIT HARDER', 'ARROW FAN AND RAIN', 'STAY BACK'],
 };
 
@@ -185,16 +187,33 @@ export interface LobbySlot { joined: boolean; ready: boolean; classId: number }
  * Character select: one panel per player slot; a device joins by pressing attack. With a Writ (the dev path) it shows where the
  * run is headed; without one it is the party select that opens the game, before the board, and says how to change the party later.
  */
-export function selectScreen(w: Writ | undefined, lobby: readonly LobbySlot[]): Screen {
+export function selectScreen(w: Writ | undefined, lobby: readonly LobbySlot[], heat = 0): Screen {
   return {
     kind: 'select',
     header: w ? 'CHOOSE YOUR HERO' : 'CHOOSE YOUR PARTY',
-    sub: storySafe(w ? w.title : 'Who rides out for the Tally Office?'),
+    sub: storySafe(heat > 0 || !w ? `HEAT ${heat} - ${HEAT_NAMES[heat]}${heat > 0 ? `: HORDE +${Math.round(heat * 15)}%  REWARDS +${heat * 20}%` : ''}` : w.title),
     biome: w ? biomeIndex(w.seed) : -1,
     slots: lobby.map((l) => {
       const c = CLASSES[l.classId];
       return { joined: l.joined, ready: l.ready, classId: l.classId, name: fontSafe(c.name), blurb: BLURB[c.name] ?? [], hp: c.hp, speed: c.speed };
     }),
-    footer: w ? 'LEFT/RIGHT CHOOSE    ATTACK READY    ALL READY STARTS' : 'LEFT/RIGHT CHOOSE    ATTACK READY    ALL READY CONTINUES',
+    footer: 'LEFT/RIGHT CHOOSE    UP/DOWN HEAT    ATTACK READY',
   };
+}
+
+
+/** The end of the road: how far the party got and what it tallied. A plain page; the story is told in the field. */
+export function runEndScreen(end: RunEnd, chapter: number): Screen {
+  const lex = chapterDef(chapter).lexicon;
+  const header = end.outcome === 'won' ? 'THE ROAD ENDS' : end.outcome === 'retreat' ? 'RETREAT' : 'ROUTED';
+  const spared = Object.values(end.spared).reduce((a, b) => a + b, 0);
+  const body: Line[] = [
+    ln(`Levels cleared: ${end.cleared} of ${end.total}`, 'dim'),
+    ln(`${lex.tally}: ${end.kills}`, 'gold'),
+    ln(Object.keys(end.slain).map((k) => `${k} ${end.slain[k]}`).join('   ') || 'Nothing slain.', 'dim'),
+    ln(`Gold: ${end.gold}`),
+  ];
+  if (spared > 0) body.push(ln(`Spared: ${spared}`, 'gold'));
+  if (end.betrayed > 0) body.push(ln(`${end.betrayed} had surrendered. They were killed anyway.`, 'red'));
+  return { kind: 'text', header, body, footer: 'ATTACK TO CONTINUE' };
 }

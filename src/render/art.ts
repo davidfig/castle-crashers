@@ -104,6 +104,10 @@ export interface Sprites {
   coin: Frame[][];
   /** The red health potion mobs drop. */
   potion: Frame;
+  /** A treasure chest: [shut, open]. */
+  chest: Frame[];
+  /** Shrines by ShrineKind (curse, charge, greed, mercy): a stone pillar with a glowing crystal. */
+  shrine: Frame[];
   /** Player sprites from the art workbench: one set per class (CLASSES order), each with a sheet per player slot (see hero.ts). */
   heroes: HeroSet[];
   /** Enemy art from the art workbench: walk cycles, the raised-bow archer, rotated weapons (see mobArt.ts). */
@@ -159,6 +163,15 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   ];
   // a corked flask of red: dark glass rim, bright liquid, a glint
   const potion = add(bitmap(['..kk..', '..cc..', '.gwwg.', 'gRRRRg', 'gRWRRg', 'gRRRRg', '.gggg.'], { k: 0x6b4a2a, c: 0xc9a46a, g: 0x5a1020, w: 0xe8f0f0, R: 0xe02848, W: 0xffb0c0 }, 'potion'));
+
+  const chp = { k: 0x2a1608, B: 0x9a5a22, b: 0x6e3c14, Y: 0xffd84a, W: 0xfff6b0 };
+  const chest = [
+    add(bitmap(['.kkkkkkkkkk.', 'kBBBBBBBBBBk', 'kBbBBBBBBbBk', 'kkkkkYYkkkkk', 'kBBBBYYBBBBk', 'kBbBBYkBBbBk', 'kBBBBBBBBBBk', 'kkkkkkkkkkkk'], chp, 'chestShut')),
+    add(bitmap(['.kkkkkkkkkk.', 'kbbbbbbbbbbk', 'kbBBBBBBBBbk', '.kYYWYYWYYk.', 'kYYWYYYWYYYk', 'kBBBBBBBBBBk', 'kBbBBBBBBbBk', 'kkkkkkkkkkkk'], chp, 'chestOpen')),
+  ];
+  // crystal [dark, mid, light] per shrine kind: blood red, storm blue, gold, pale mercy white
+  const crystals: [number, number, number][] = [[0x8a1a18, 0xe0442e, 0xffa090], [0x1a56c8, 0x4aa0ff, 0xb8e0ff], [0xb87a10, 0xffc02a, 0xfff0a0], [0x9aa0c8, 0xe8ecff, 0xffffff]];
+  const shrine = crystals.map(([d, m, l], k) => add(bitmap(['....mm....', '...mLLm...', '..mLLWLm..', '...mLLm...', '....dd....', '..sSSSSs..', '..sSSSSt..', '...sSSt...', '...sSSt...', '...sSSt...', '..sSSSSt..', '.sSSSSSSt.', '.tttttttt.'], { d, m, L: l, W: 0xffffff, s: 0x8a8f9c, S: 0xb4b9c6, t: 0x4a4e5a }, `shrine${k}`)));
 
   const groundSets = {
     grass: [0, 1, 2, 3, 4, 5].map((v) => add(makeGround(v))),
@@ -433,5 +446,5 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   // Corpses (the boss's too) are the authored `dead` frame of each enemy sheet (the first walk frame laid on its side, built by tools/art.mjs).
   const corpse = mobArt.anims.map((a) => a.dead[0]);
 
-  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, heroes, mobArt, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, chest, shrine, heroes, mobArt, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
 }

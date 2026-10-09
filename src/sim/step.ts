@@ -8,7 +8,7 @@ import { TOP_ENTRY_DEPTH, VIEW_W, WORLD_H, WORLD_W } from './constants';
 import { allocEntity, BERSERK, BYSTANDER, freeEntity, Kind, SURRENDERED, ZoneKind } from './entities';
 import { rainLandTick, rainOffset } from './rain';
 import { ARC_PER_RANK, costMul, DODGE_CHAIN_COOLDOWN, DODGE_CHAIN_WINDOW, DODGE_POWER, DODGE_QUICK, DODGE_REACH, LANE_TURN, NOVA_ECHO_POWER, NOVA_ECHO_TICKS, NOVA_QUICK, NOVA_SIZE, novaCost, POWER_PER_RANK, RAIN_PER_COUNT, QUICK_MELEE, QUICK_RANGED, rankOf, SIZE_MELEE, SIZE_RANGED, type AbilityKind } from './abilityMods';
-import { damageMul, goldMul, MAX_LEVEL, OFFER_SIZE, offerFor, speedMul, takenMul, UPGRADE_INDEX, UPGRADES, xpToNext } from '../data/upgrades';
+import { damageMul, goldMul, MAX_LEVEL, OFFER_SIZE, speedMul, takenMul, UPGRADE_INDEX, UPGRADES, xpToNext } from '../data/upgrades';
 import { STAND_RADIUS, STAND_SLOW, STAND_TICKS, SURRENDER_FLEE, SURRENDER_HOLD, surrenderChance } from '../data/surrender';
 import { Ev, emit } from './events';
 import { pickMobType, pickSupport } from './gen/mix';
@@ -16,15 +16,23 @@ import { BOSS_SPECIAL, BurstStyle, clingStep, dropMud, leapStep, SP_LEAP, fireSp
 import { cellX, cellY, gatherCircle, rebuildGrid } from './grid';
 import { activatePlayer, BLAST_CAP, Phase, type GameState, type PlayerState } from './state';
 import { bannerMul, burstAt, executeMul, flushProcs, frenzyTick, onAura, onDodge, onDown, onExplode, onHit, onHurt, onKill, onSpecial, pop, rebirth, tickBoons, vigilBonus, wardMul } from './boons';
-import { activePlayers, hasBoss, partyScale, streamLevel } from './gen/level';
+import { activePlayers, hasBoss, partyScale, sceneHold, streamLevel } from './gen/level';
+import { heatDamage, heatReward, heatSpeed } from '../data/heat';
+import { heroOffer } from './offers';
+import { onEliteDown, updateSites } from './sites';
 
 export const REVIVE_TICKS = 600;
 const INPUT_BUFFER = 6;
 export const PIERCE = 1;
+/** How far past a mob's own radius still counts as touching the hero (the cleric's innermost aura ring). */
+const TOUCH_PAD = 5;
+
 /** A chip hit (the cleric's aura, landing every few ticks): damage and a small shove, but no stun and no interrupting a wind-up, or it would lock everything in reach in place. */
 const CHIP = 2;
 /** damage flag: dealt by a boon's effect, so it does not set off hit triggers again (a kill it causes still can, within the tick's budget). */
 export const PROC = 4;
+/** Elites bite this much harder than their kind. */
+const ELITE_BITE = 1.3;
 const BLAST_DAMAGE = 8;
 const BLAST_KNOCK = 4;
 /** Reinforcement and flank triggers are spaced in px of forward progress (the camera), not in time: a party that stands still faces no growing horde. */
@@ -81,8 +89,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
     e.py[i] = e.y[i];
   }
   s.prevCamX = s.camX;
-  if (s.phase === Phase.Lost) { retreatMobs(s); return; }
-  if (s.phase !== Phase.Playing) return;
+  if (s.phase !== Phase.Playing) { retreatMobs(s); return; } // a won or lost field empties the way it filled
 
   if (s.hitStop > 0) {
     s.hitStop--;
@@ -101,16 +108,16 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   updateMobs(s);
   updateCoins(s);
   updatePotions(s);
+  updateSites(s);
   // A blast can kill something that queues a boon effect, and an effect can kill a bomber: settle both queues before the tick ends.
   for (let pass = 0; pass < 4; pass++) {
     flushBlasts(s);
     flushProcs(s);
     if (s.blastN === 0 && s.procN === 0) break;
   }
-  const advance = Math.max(0, s.camX - s.trigCamX);
+  const advance = sceneHold(s) ? 0 : Math.max(0, s.camX - s.trigCamX);
   s.trigCamX = Math.max(s.trigCamX, s.camX);
-  runDirector(s, advance);
-  runFlanks(s, advance);
+  if (!s.store) { runDirector(s, advance); runFlanks(s, advance); }
   updateCamera(s);
   streamLevel(s);
   checkGate(s);
@@ -171,10 +178,10 @@ export function pickCard(p: PlayerState, dir: number, edge: number): number {
 /** Spend one pending level on offer card `card`. */
 export function choosePick(s: GameState, slot: number, card: number): void {
   const p = s.players[slot];
-  const levelNumber = p.level - p.pending + 1;
-  const up = offerFor(s.offerSeed, slot, levelNumber, p.ranks, p.classId, { party: activePlayers(s) })[card];
+  const up = heroOffer(s, slot)[card];
   if (up === undefined) return;
   if (p.ranks[up] < UPGRADES[up].maxRank) p.ranks[up]++;
+  p.salt = 0; // the next pick starts with a fresh deal
   if (up === UPGRADE_INDEX.wind) s.ents.hp[p.ent] = CLASSES[p.classId].hp;
   p.pending--;
   p.panel = false;
@@ -196,8 +203,19 @@ function levelUpInput(s: GameState, p: PlayerState, inp: InputFrame): InputFrame
   if (p.downed) p.panel = false;
   else if (edge & Btn.Level) { p.panel = p.panel ? false : p.pending > 0; p.cursor = 0; p.stickPrev = 0; }
   else if (p.panel) {
+    const slot = s.players.indexOf(p);
+    // Stick up deals a fresh hand; stick down banishes the highlighted boon for the rest of the run (and deals a fresh hand).
+    const dirY = inp.moveY < -60 ? -1 : inp.moveY > 60 ? 1 : 0;
+    if (dirY !== p.stickPrevY) {
+      p.stickPrevY = dirY;
+      if (dirY < 0 && p.rerolls > 0) { p.rerolls--; p.salt++; emit(s.events, Ev.Reroll, s.ents.x[p.ent], s.ents.y[p.ent], slot, 0); }
+      else if (dirY > 0 && p.banishes > 0) {
+        const banned = heroOffer(s, slot)[p.cursor];
+        if (banned !== undefined) { p.banned[banned] = 1; p.banishes--; p.salt++; emit(s.events, Ev.Reroll, s.ents.x[p.ent], s.ents.y[p.ent], slot, 1, banned); }
+      }
+    }
     const card = pickCard(p, inp.moveX > 60 ? 1 : inp.moveX < -60 ? -1 : 0, edge);
-    if (card >= 0) { choosePick(s, s.players.indexOf(p), card); p.cursor = 0; }
+    if (card >= 0) { choosePick(s, slot, card); p.cursor = 0; }
   }
   if (!p.panel && !wasOpen) {
     if (p.lock) { if (raw & PICK_BUTTONS) { panelInput.moveX = inp.moveX; panelInput.moveY = inp.moveY; panelInput.aimX = inp.aimX; panelInput.aimY = inp.aimY; panelInput.buttons = raw & ~PICK_BUTTONS; return panelInput; } p.lock = false; }
@@ -210,7 +228,8 @@ function levelUpInput(s: GameState, p: PlayerState, inp: InputFrame): InputFrame
 }
 
 /** Everybody in the party gains XP from a kill; heroes level together. */
-function grantXp(s: GameState, amount: number, x: number, y: number): void {
+export function grantXp(s: GameState, amount: number, x: number, y: number): void {
+  amount *= heatReward(s.heat);
   for (let k = 0; k < s.players.length; k++) {
     const p = s.players[k];
     if (!p.active) continue;
@@ -256,7 +275,11 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   if (p.cdDash > 0) p.cdDash--;
   if (p.cdSpecial > 0) p.cdSpecial--;
   if (p.invuln > 0) p.invuln--;
-  if (p.vanishT > 0 && --p.vanishT === 0) p.invuln = Math.min(p.invuln, 8);
+  // The rogue is hidden from the moment he is up until he strikes, is hurt or is bumped; after that he waits out a cooldown to hide again.
+  if (cls.hideCooldown) {
+    if (p.revealT > 0) p.revealT--;
+    else if (p.vanishT === 0) p.vanishT = 1;
+  }
   if (p.silenceT > 0) p.silenceT--;
   if (p.poisonT > 0) {
     p.poisonT--;
@@ -336,13 +359,9 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
     else { p.dashX = p.faceX; p.dashY = p.faceY; }
     const kind = cls.dashKind;
     const fromX = e.x[i], fromY = e.y[i];
-    emit(s.events, Ev.Dash, e.x[i], e.y[i], p.dashX, p.dashY, kind === 'charge' ? 1 : kind === 'vanish' ? 2 : kind === 'teleport' ? 3 : kind === 'heal' ? 4 : 0);
+    emit(s.events, Ev.Dash, e.x[i], e.y[i], p.dashX, p.dashY, kind === 'charge' ? 1 : kind === 'teleport' ? 3 : kind === 'heal' ? 4 : 0);
     onDodge(s, slot, e.x[i], e.y[i]);
-    if (kind === 'vanish') {
-      p.vanishT = Math.round((cls.dashPower ?? 90) * dodgeReach);
-      p.vanishX = e.x[i];
-      p.vanishY = e.y[i];
-    } else if (kind === 'teleport') {
+    if (kind === 'teleport') {
       const nx = clamp(e.x[i] + p.dashX * (cls.dashPower ?? 80) * dodgeReach, s.camX + 10, heroMaxX(s));
       const ny = clamp(e.y[i] + p.dashY * (cls.dashPower ?? 80) * dodgeReach, 2, WORLD_H - 2);
       emit(s.events, Ev.Teleport, e.x[i], e.y[i], nx, ny);
@@ -357,6 +376,11 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   }
 
   if (p.dashT > 0) {
+    // A charge keeps going while the dodge button is held, bleeding stamina, until released or out of breath.
+    if (cls.dashKind === 'charge' && cls.dashDrain && p.dashT === 1 && inp.buttons & Btn.Dodge && !p.winded) {
+      spendStamina(s, slot, cls.dashDrain);
+      if (!p.winded) { p.dashT++; p.invuln = Math.max(p.invuln, 6); }
+    }
     e.x[i] += p.dashX * cls.dashSpeed * dodgeReach;
     e.y[i] += p.dashY * cls.dashSpeed * dodgeReach;
     p.dashT--;
@@ -406,11 +430,8 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
         p.cdAttack = cls.shot.cooldown;
       } else cleave(s, slot, cls);
     }
-    // Striking from the shadows ends a vanish.
-    if (p.vanishT > 0 && p.cdAttack + p.cdSpecial + p.cdAbility1 > acted) {
-      p.vanishT = 0;
-      p.invuln = Math.min(p.invuln, 8);
-    }
+    // Striking from the shadows gives him away.
+    if (p.vanishT > 0 && p.cdAttack + p.cdSpecial + p.cdAbility1 > acted) revealRogue(s, p);
   }
 
   if (p.pullT > 0) {
@@ -504,8 +525,14 @@ function cleave(s: GameState, slot: number, cls: ClassDef): void {
   swing(s, slot, cls, sw, false);
 }
 
+/** The rogue steps out of hiding and must wait out his cooldown before he can slip away again. */
+function revealRogue(s: GameState, p: PlayerState): void {
+  p.vanishT = 0;
+  p.revealT = CLASSES[p.classId].hideCooldown ?? 0;
+}
+
 /**
- * The rogue's damage multiplier against `m` (`dx` = the mob's x offset from him): a strike out of a vanish always lands as an ambush;
+ * The rogue's damage multiplier against `m` (`dx` = the mob's x offset from him): a strike from hiding always lands as an ambush;
  * otherwise it is a backstab when the mob faces the same way as the line from him to it, i.e. away from him.
  */
 function flankMul(s: GameState, p: PlayerState, cls: ClassDef, m: number, dx: number): number {
@@ -522,9 +549,12 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
   // Ability scaling (sim/abilityMods.ts): the basic attack and the special each grow along size, count, speed and power.
   const ab: AbilityKind = heavy ? 1 : 0;
   const reach = 1 + SIZE_MELEE * rankOf(p.ranks, ab, 0);
-  const range = sw.range * reach, wave = sw.wave * reach, waveWidth = sw.waveWidth * reach;
+  // An ambush from hiding sweeps far wider and farther than a normal blow: everything in front of him pays.
+  const ambushing = p.vanishT > 0 && !!cls.ambush && !sw.aoe;
+  const wide = ambushing ? cls.ambushReach ?? 1 : 1;
+  const range = sw.range * reach * wide, wave = sw.wave * reach * wide, waveWidth = sw.waveWidth * reach * wide;
   const split = rankOf(p.ranks, ab, 1);
-  const dot = sw.aoe ? sw.dot : Math.max(-1, sw.dot - ARC_PER_RANK * split);
+  const dot = sw.aoe ? sw.dot : Math.max(-1, (ambushing ? Math.min(sw.dot, -0.3) : sw.dot) - ARC_PER_RANK * split);
   const damage = sw.damage * (1 + POWER_PER_RANK * rankOf(p.ranks, ab, 3));
   const cooldown = Math.max(Math.ceil(sw.cooldown / 2), Math.round(sw.cooldown * (1 - QUICK_MELEE * rankOf(p.ranks, ab, 2))));
   p.cdAttack = cooldown;
@@ -537,15 +567,17 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
 
   const n = gatherCircle(s.grid, e, cx, cy, range, s.scratch);
   let hits = 0;
+  let bitten = 0; // the cleric's price: the worst mob touching her still bites, even if her aura kills it this very hit
   for (let k = 0; k < n; k++) {
     const m = s.scratch[k];
     if (!isLiveMob(e, m)) continue;
     const dx = e.x[m] - cx, dy = e.y[m] - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
+    if (sw.touchMul && dist <= MOBS[e.sub[m]].radius + TOUCH_PAD) bitten = Math.max(bitten, MOBS[e.sub[m]].damage);
     if (!sw.aoe && dist > 6 && dx * p.faceX + dy * p.faceY < dot * dist) continue;
     const inv = dist > 0.001 ? 1 / dist : 0;
     const flank = flankMul(s, p, cls, m, dx);
-    const ring = sw.inner && sw.innerMul && dist <= range * sw.inner ? sw.innerMul : 1;
+    const ring = sw.touchMul && dist <= MOBS[e.sub[m]].radius + TOUCH_PAD ? sw.touchMul : sw.inner && sw.innerMul && dist <= range * sw.inner ? sw.innerMul : 1;
     const r = damageMob(s, m, damage * flank * ring, dist > 0.001 ? dx * inv : p.faceX, dist > 0.001 ? dy * inv : p.faceY, sw.knock, slot, (sw.pierce ? PIERCE : 0) | (sw.aoe && !heavy ? CHIP : 0));
     if (r === 1) { hits++; if (flank > 1) s.gold += p.ranks[UPGRADE_INDEX.pick]; } // Pickpocket
   }
@@ -578,6 +610,7 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
     }
   }
 
+  if (bitten > 0 && !heavy) hurtPlayer(s, slot, bitten); // (the invulnerability window after a hit paces it)
   destroyArrows(s, cx, cy, range, p.faceX, p.faceY, sw.aoe ? -2 : dot);
   if (sw.aoe && !heavy) onAura(s, slot, hits);
   if (hits > 0) {
@@ -616,7 +649,7 @@ function radialBlast(s: GameState, slot: number, cls: ClassDef, big: boolean, sc
   const e = s.ents;
   const cx = e.x[p.ent], cy = e.y[p.ent];
   const radius = (big ? cls.novaBigRadius : cls.novaRadius) * (1 + NOVA_SIZE * rankOf(p.ranks, 2, 0));
-  // A nova let off out of a vanish is an ambush like any other strike from the shadows.
+  // A nova let off from hiding is an ambush like any other strike from the shadows.
   const ambush = p.vanishT > 0 && cls.ambush ? cls.ambush + 0.5 * p.ranks[UPGRADE_INDEX.keen] : 1;
   const damage = (big ? cls.novaBigDamage : cls.novaDamage) * (1 + POWER_PER_RANK * rankOf(p.ranks, 2, 3)) * scale * ambush;
   emit(s.events, Ev.Nova, cx, cy, radius, big ? 1 : 0);
@@ -863,7 +896,9 @@ export function damageMob(s: GameState, m: number, dmg: number, dirX: number, di
     emit(s.events, Ev.Burst, e.x[m], e.y[m], 22, BurstStyle.Bones);
     return 1;
   }
+  const holy = (who: number) => who >= 0 && !!CLASSES[s.players[who].classId].auraDrain; // the cleric's light (presentation only: it picks the sound)
   if (e.hp[m] <= 0) {
+    if (holy(owner >= 0 ? owner : e.by[m])) emit(s.events, Ev.Holy, e.x[m], e.y[m]);
     emit(s.events, Ev.Kill, e.x[m], e.y[m], e.sub[m], (owner >= 0 || e.by[m] >= 0) ? 1 : 0, dirX * knock * def.knockResist, dirY * knock * def.knockResist);
     if (owner < 0) owner = e.by[m]; // a chain reaction credits whoever started it
     if (def.behavior === Behavior.Bomber) queueBlast(s, e.x[m], e.y[m], owner, 0);
@@ -881,9 +916,10 @@ export function damageMob(s: GameState, m: number, dmg: number, dirX: number, di
     if (def.onDeath) onMobDeath(s, m, def.onDeath, dirX, dirY);
     if (def.behavior === Behavior.Boss) bossDeath(s, m);
     else { dropLoot(s, m, dirX, dirY); dropPotion(s, m, dirX, dirY); }
+    if (e.elite[m] === 1) onEliteDown(s, m);
     freeEntity(e, m);
   } else {
-    emit(s.events, Ev.Hit, e.x[m], e.y[m], dmg);
+    emit(s.events, Ev.Hit, e.x[m], e.y[m], dmg, 0, 0, holy(owner) ? 1 : 0);
     if (owner >= 0 && !(flags & PROC)) onHit(s, owner, m, dmg);
   }
   return 1;
@@ -894,13 +930,14 @@ export function hurtPlayer(s: GameState, slot: number, dmg: number, slow = 0, fl
   const e = s.ents;
   const dot = (flags & HURT_DOT) !== 0;
   if (p.downed || (p.invuln > 0 && !dot)) return;
-  dmg *= takenMul(p.ranks) * wardMul(s, slot) * (p.hexT > 0 ? HEX_TAKEN : 1);
+  dmg *= takenMul(p.ranks) * wardMul(s, slot) * (p.hexT > 0 ? HEX_TAKEN : 1) * (dot ? 1 : heatDamage(s.heat));
   if (slow > p.slowT) p.slowT = slow;
   const i = p.ent;
   const cls = CLASSES[p.classId];
   e.hp[i] -= dmg;
   e.hurt[i] = 8;
   if (!dot) p.invuln = 24;
+  if (p.vanishT > 0) revealRogue(s, p); // a hit gives him away
   p.fury = Math.min(cls.furyMax, p.fury + 3); // pain feeds the rage
   if (!dot) stop(s, 2);
   emit(s.events, Ev.PlayerHurt, e.x[i], e.y[i], slot);
@@ -1288,7 +1325,7 @@ function bossStep(s: GameState, i: number, def: MobDef, target: number, dist: nu
 }
 
 /** How far along the level the camera is (0 at the start, 1 once the last screen before the boss is reached): drives the enemy mix. */
-function levelProgress(s: GameState): number {
+export function levelProgress(s: GameState): number {
   return clamp(s.camX / (WORLD_W - VIEW_W), 0, 1);
 }
 
@@ -1398,15 +1435,21 @@ function trySurrender(s: GameState, i: number, def: MobDef): boolean {
     const dx = standX[k] - e.x[i], dy = standY[k] - e.y[i];
     if (dx * dx + dy * dy > STAND_RADIUS * STAND_RADIUS) continue;
     if (rngFloat(s.rngCombat) >= chance) return false;
-    e.flags[i] = (e.flags[i] | SURRENDERED) & ~1;
-    e.wind[i] = 0; e.mode[i] = 0; e.stun[i] = 0;
-    e.vx[i] = 0; e.vy[i] = 0;
-    e.rem[i] = SURRENDER_HOLD;
-    s.surrenders++;
-    emit(s.events, Ev.Surrender, e.x[i], e.y[i], e.sub[i]);
+    laySurrender(s, i);
     return true;
   }
   return false;
+}
+
+/** Mob `i` lays down its arms: it kneels for a while, then runs. */
+export function laySurrender(s: GameState, i: number): void {
+  const e = s.ents;
+  e.flags[i] = (e.flags[i] | SURRENDERED) & ~1;
+  e.wind[i] = 0; e.mode[i] = 0; e.stun[i] = 0;
+  e.vx[i] = 0; e.vy[i] = 0;
+  e.rem[i] = SURRENDER_HOLD;
+  s.surrenders++;
+  emit(s.events, Ev.Surrender, e.x[i], e.y[i], e.sub[i]);
 }
 
 /** A surrendered mob kneels (until the staged beat has played, if it belongs to one), then runs from the party and is gone. */
@@ -1436,7 +1479,7 @@ function surrenderedStep(s: GameState, i: number, def: MobDef): void {
   }
 }
 
-/** Px within which a mob notices a vanished rogue standing right on it. */
+/** Px within which a mob bumps into a hidden rogue and gives him away. */
 const VANISH_CONTACT = 14;
 
 let vanishedN = 0;
@@ -1463,6 +1506,11 @@ function confusedStep(s: GameState, i: number, def: MobDef): void {
   e.vx[i] *= 0.8;
   e.vy[i] *= 0.8;
 }
+
+/** Mobs walk this much faster than their listed speed, so they keep up with the heroes. */
+const MOB_SPEED_MUL = 1.6;
+/** How far from a hero (px) a melee mob's flanking spot sits. */
+const FLANK_RADIUS = 60;
 
 function updateMobs(s: GameState): void {
   const e = s.ents;
@@ -1529,8 +1577,8 @@ function updateMobs(s: GameState): void {
 
     if (e.flags[i] & SURRENDERED) { surrenderedStep(s, i, def); continue; }
 
-    // Nearest standing player. A vanished rogue is not seen: mobs carry on to the spot he vanished from, and only a mob that runs
-    // into him (within VANISH_CONTACT) finds him. With nobody else to go for, mobs that reach the empty spot mill about.
+    // Nearest standing player. A hidden rogue is not seen: only a mob that runs into him (within VANISH_CONTACT) finds him, and he is
+    // revealed. With nobody else to go for, mobs mill about.
     let target = -1;
     let best = Infinity;
     let aimX = 0, aimY = 0;
@@ -1540,11 +1588,8 @@ function updateMobs(s: GameState): void {
       let px = e.x[p.ent], py = e.y[p.ent];
       if (p.vanishT > 0) {
         const cx = px - x, cy = py - y;
-        if (cx * cx + cy * cy > VANISH_CONTACT * VANISH_CONTACT) {
-          px = p.vanishX; py = p.vanishY;
-          const gx = px - x, gy = py - y;
-          if (gx * gx + gy * gy < VANISH_CONTACT * VANISH_CONTACT) continue; // reached the empty spot
-        }
+        if (cx * cx + cy * cy > VANISH_CONTACT * VANISH_CONTACT) continue; // unseen
+        revealRogue(s, p); // ran into him
       }
       const dx = px - x, dy = py - y;
       const d2 = dx * dx + dy * dy;
@@ -1670,7 +1715,7 @@ function updateMobs(s: GameState): void {
       for (let k = 0; k < n && mates < 3; k++) { const m = s.scratch[k]; if (m !== i && e.alive[m] === 1 && e.kind[m] === Kind.Mob && e.sub[m] === e.sub[i]) mates++; }
       packMul = 1 + def.pack.bonus * mates;
     }
-    const speed = def.speed * packMul * (0.85 + (Math.imul(i, 2654435761) >>> 28) / 15 * 0.3) * (e.buff[i] > 0 ? RALLY_SPEED : 1);
+    const speed = def.speed * MOB_SPEED_MUL * heatSpeed(s.heat) * packMul * (0.85 + (Math.imul(i, 2654435761) >>> 28) / 15 * 0.3) * (e.buff[i] > 0 ? RALLY_SPEED : 1);
     let mvX = 0, mvY = 0;
     let detonated = false;
 
@@ -1716,7 +1761,7 @@ function updateMobs(s: GameState): void {
           if (dist <= def.reach + 4 && Math.hypot(e.x[hpe] - e.x[i], e.y[hpe] - e.y[i]) <= def.reach + 4) { // (a swing at a decoy spot hits nothing)
             const hp = players[target];
             const open = hp.invuln === 0 && !hp.downed;
-            hurtPlayer(s, target, def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1), def.slowOnHit ?? 0);
+            hurtPlayer(s, target, def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1) * (e.elite[i] ? ELITE_BITE : 1), def.slowOnHit ?? 0);
             if (def.launch && open) shovePlayer(s, target, dirX, dirY, def.launch);
             if (open && def.poisonOnHit) poisonPlayer(s, target, def.poisonOnHit);
             if (open && def.witherOnHit) hp.witherT = Math.max(hp.witherT, def.witherOnHit);
@@ -1729,8 +1774,18 @@ function updateMobs(s: GameState): void {
       } else if (dist <= def.reach && e.atk[i] === 0) {
         e.wind[i] = def.windup;
       } else if (dist > def.reach * 0.9) {
-        mvX = dirX * speed;
-        mvY = dirY * speed;
+        // Far out, each walks to its own spot on a ring round the hero (front, flanks, behind) and only then closes in, so a column fans out.
+        const a = (Math.imul(i, 2654435761) >>> 16) / 65536 * 6.283185307;
+        const ox = Math.cos(a) * FLANK_RADIUS, oy = Math.sin(a) * FLANK_RADIUS * 0.9;
+        const fx = tx - ox, fy = ty - oy;
+        const fd = Math.sqrt(fx * fx + fy * fy);
+        if (dist > FLANK_RADIUS * 1.25 && fd > 1) {
+          mvX = fx / fd * speed;
+          mvY = fy / fd * speed;
+        } else {
+          mvX = dirX * speed;
+          mvY = dirY * speed;
+        }
       }
     } else if (def.behavior === Behavior.Caster) {
       // Keeps a standoff like an archer and lets its special do the work; walks into view first.
@@ -1822,6 +1877,23 @@ function dropLoot(s: GameState, m: number, dirX: number, dirY: number): void {
   s.coinCount++;
 }
 
+/** Fling coins worth `total` gold in all out of (x, y), in handfuls of about `chunk`. */
+export function scatterCoins(s: GameState, x: number, y: number, total: number, chunk = 5): void {
+  const e = s.ents;
+  let left = Math.round(total);
+  while (left > 0) {
+    const value = Math.min(left, chunk);
+    left -= value;
+    const i = s.coinCount >= COIN_CAP ? -1 : allocEntity(e, Kind.Coin, value, x, y, 1);
+    if (i < 0) { s.gold += value; emit(s.events, Ev.Coin, x, y, value); continue; }
+    e.vx[i] = rngRange(s.rngLoot, -2.2, 2.2);
+    e.vy[i] = rngRange(s.rngLoot, -1.5, 1.5);
+    e.z[i] = 4;
+    e.vz[i] = rngRange(s.rngLoot, 2, 3.8);
+    s.coinCount++;
+  }
+}
+
 /** Tougher mobs are likelier to carry a potion; the budget then decides whether the drop actually happens. */
 function dropPotion(s: GameState, m: number, dirX: number, dirY: number): void {
   const e = s.ents;
@@ -1831,7 +1903,7 @@ function dropPotion(s: GameState, m: number, dirX: number, dirY: number): void {
   spawnPotion(s, e.x[m], e.y[m], dirX * 0.6 + rngRange(s.rngLoot, -1.1, 1.1), dirY * 0.4 + rngRange(s.rngLoot, -0.8, 0.8));
 }
 
-function spawnPotion(s: GameState, x: number, y: number, vx: number, vy: number): void {
+export function spawnPotion(s: GameState, x: number, y: number, vx: number, vy: number): void {
   const e = s.ents;
   const i = allocEntity(e, Kind.Potion, 0, x, y, 1);
   if (i < 0) return;
@@ -1920,7 +1992,7 @@ function updateCoins(s: GameState): void {
     if (target < 0 || e.atk[i] < 10) continue;
     const dist = Math.sqrt(best);
     if (dist < COIN_PICKUP) {
-      const value = Math.round(e.sub[i] * goldMul(s.players[target].ranks));
+      const value = Math.round(e.sub[i] * goldMul(s.players[target].ranks) * heatReward(s.heat));
       s.gold += value;
       s.players[target].coins += value;
       emit(s.events, Ev.Coin, e.x[i], e.y[i], value);
@@ -1974,7 +2046,7 @@ function frontOfParty(s: GameState): number {
   return front;
 }
 
-function spawnFlankPack(s: GameState, top: boolean, size: number, t: number, lo: number, hi: number): void {
+export function spawnFlankPack(s: GameState, top: boolean, size: number, t: number, lo: number, hi: number): void {
   const r = s.rngSpawn;
   const e = s.ents;
   const packX = rngRange(r, lo, hi);
@@ -2033,7 +2105,7 @@ function updateCamera(s: GameState): void {
   if (n === 0) return;
   // A closed gate is the end of the world until the screen is clear.
   const gate = s.gates[s.gateIdx];
-  const target = clamp(sum / n - VIEW_W / 2 + 24, 0, gate ? gate.x - VIEW_W + GATE_INSET : WORLD_W - VIEW_W);
+  const target = clamp(sum / n - VIEW_W / 2 + 24, 0, gate ? gate.x - VIEW_W + GATE_INSET : s.worldW - VIEW_W);
   // The camera only ever scrolls forward, so ground you have cleared stays behind you.
   if (target > s.camX) s.camX += (target - s.camX) * 0.1;
 }
@@ -2095,7 +2167,7 @@ function checkEnd(s: GameState): void {
     if (!p.downed) {
       allDown = false;
       // With a boss, the run is won by killing it, not by reaching the end.
-      if (!bossFight && e.x[p.ent] >= WORLD_W - 70) { s.phase = Phase.Won; return; }
+      if (!bossFight && e.x[p.ent] >= s.exitX) { s.phase = Phase.Won; return; }
     }
   }
   if (anyActive && allDown) { s.phase = Phase.Lost; return; }

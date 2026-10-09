@@ -53,6 +53,8 @@ export class InputManager {
   private menuOk = false;
   private menuAny = false;
   private menuBack = false;
+  private menuSound = false;
+  private menuMusic = false;
   private padMenuPrev = new Map<number, number>();
   /** Keys / pad buttons held when the slots were reset (the press that confirmed a menu): they do nothing until released, so they are not the player's first action. */
   private heldKeys = new Set<string>();
@@ -91,12 +93,12 @@ export class InputManager {
   }
 
   /** Left/right (-1, 0, 1) and confirm pressed since the last call, from any keyboard or pad. Clears them. */
-  consumeMenu(): { dx: number; ok: boolean; any: boolean; back: boolean } {
+  consumeMenu(): { dx: number; ok: boolean; any: boolean; back: boolean; sound: boolean; music: boolean } {
     for (const p of navigator.getGamepads()) {
       if (!p) continue;
       const down = (i: number) => !!p.buttons[i]?.pressed;
       const x = p.axes[0] ?? 0;
-      const mask = (down(14) || x < -0.6 ? 1 : 0) | (down(15) || x > 0.6 ? 2 : 0) | (p.buttons.some((bt, i) => i < 12 && i !== 9 && bt.pressed) ? 4 : 0) | (p.buttons.some((bt) => bt.pressed) ? 8 : 0) | (down(1) ? 16 : 0);
+      const mask = (down(14) || x < -0.6 ? 1 : 0) | (down(15) || x > 0.6 ? 2 : 0) | (p.buttons.some((bt, i) => i < 12 && i !== 9 && i !== 4 && i !== 5 && bt.pressed) ? 4 : 0) | (p.buttons.some((bt, i) => i !== 4 && i !== 5 && bt.pressed) ? 8 : 0) | (down(1) ? 16 : 0) | (down(4) ? 32 : 0) | (down(5) ? 64 : 0); // the bumpers are the sound / music switches, not 'any button'
       const fresh = mask & ~(this.padMenuPrev.get(p.index) ?? 0);
       this.padMenuPrev.set(p.index, mask);
       if (fresh & 1) this.menuLeft = true;
@@ -104,9 +106,11 @@ export class InputManager {
       if (fresh & 4) this.menuOk = true;
       if (fresh & 8) this.menuAny = true;
       if (fresh & 16) this.menuBack = true;
+      if (fresh & 32) this.menuSound = true;
+      if (fresh & 64) this.menuMusic = true;
     }
-    const out = { dx: (this.menuRight ? 1 : 0) - (this.menuLeft ? 1 : 0), ok: this.menuOk, any: this.menuAny, back: this.menuBack };
-    this.menuLeft = this.menuRight = this.menuOk = this.menuAny = this.menuBack = false;
+    const out = { dx: (this.menuRight ? 1 : 0) - (this.menuLeft ? 1 : 0), ok: this.menuOk, any: this.menuAny, back: this.menuBack, sound: this.menuSound, music: this.menuMusic };
+    this.menuLeft = this.menuRight = this.menuOk = this.menuAny = this.menuBack = this.menuSound = this.menuMusic = false;
     return out;
   }
 
@@ -256,6 +260,15 @@ export class InputManager {
     if (id.startsWith('pad')) return 'LB';
     const code = SCHEMES[Number(id.slice(2))]?.level ?? '';
     return code.replace(/^Key/, '').replace('BracketLeft', '[');
+  }
+
+  /** What to press to trade with the peddler on the device that holds `slot` ("U", "B"), or '' while the slot is unclaimed. */
+  interactHint(slot: number): string {
+    const id = this.slots[slot];
+    if (!id) return '';
+    if (id.startsWith('pad')) return 'B';
+    const code = SCHEMES[Number(id.slice(2))]?.standDown ?? '';
+    return code.replace(/^Key/, '').replace('Quote', 'QUOTE');
   }
 
   /** Release all slots (on restart) so devices can re-join. `keep[k]` keeps slot k's device bound to it (the lobby's party carrying into the run). */

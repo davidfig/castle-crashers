@@ -19,6 +19,8 @@ export interface Swing {
   /** An aoe's inner ring: within this fraction of `range` each hit does `innerMul` times the damage (the cleric's aura grinds harder up close). */
   inner?: number;
   innerMul?: number;
+  /** An aoe's innermost ring: a mob whose body touches the hero takes `touchMul` times the damage (instead of `innerMul`). */
+  touchMul?: number;
 }
 
 /**
@@ -117,14 +119,20 @@ export interface ClassDef {
   attackMove?: number;
   /** The rogue's edge: melee hits on a mob that faces away from him deal this many times damage (absent = none). */
   backstab?: number;
-  /** Same, for the first strike thrown out of a vanish (the mob never saw it coming). */
+  /** Same, for a strike thrown from hiding (the mob never saw it coming). */
   ambush?: number;
+  /** An ambush swings this many times wider and farther than usual: a sweep across everything in front of him. */
+  ambushReach?: number;
+  /** The rogue is unseen until he strikes or a mob runs into him; this many ticks after being revealed before he can hide again. */
+  hideCooldown?: number;
   /** The archer's edge: a shot's damage grows with the distance it flew, up to 1 + this at full range (absent = flat). */
   longShot?: number;
   /** What the dodge does; absent = a plain invulnerable roll. Upgrades tune `dashPower` / `dashRadius`. */
-  dashKind?: 'charge' | 'vanish' | 'teleport' | 'heal';
-  /** vanish: ticks unseen; teleport: distance; heal: hp restored. */
+  dashKind?: 'charge' | 'teleport' | 'heal';
+  /** teleport: distance; heal: hp restored. */
   dashPower?: number;
+  /** charge: stamina drained per tick while the dodge button is held past `dashTicks`; the charge runs until released or winded. */
+  dashDrain?: number;
   /** charge: plow radius; heal: pulse radius. */
   dashRadius?: number;
 }
@@ -167,6 +175,8 @@ export const CLASSES: ClassDef[] = [
     dashCooldown: 60,
     dashDamage: 7,
     dashKind: 'charge',
+    // Held charge: after the 22 start cost the rest of the 100 stamina lasts ~104 ticks at 4.6/tick, i.e. ~480px (3/4 of the 640 view).
+    dashDrain: 0.75,
     dashRadius: 15,
     dashKnock: 5,
   },
@@ -198,7 +208,7 @@ CLASSES.push(
     // No mace swing: a point-blank burst of holy light around the cleric hits everything close, in every direction.
     auraDrain: 0.12,
     // The aura is continuous: a small hit every 8 ticks all round her that barely nudges mobs (each hit slides one about 1.5 px) (the old pulse was 3 dmg / 22 ticks).
-    combo: [swing({ range: 40, dot: -1, damage: 1, knock: 0.3, cooldown: 8, hitStop: 0, aoe: true, inner: 0.5, innerMul: 2 })],
+    combo: [swing({ range: 40, dot: -1, damage: 1, knock: 0.3, cooldown: 8, hitStop: 0, aoe: true, inner: 0.5, innerMul: 2, touchMul: 4 })],
     furyPerHit: 0.5,
     special: swing({ range: 62, dot: -1, damage: 7, knock: 9, cooldown: 28, hitStop: 2, pierce: true, aoe: true }),
     specialCost: 30, specialCooldown: 140,
@@ -207,13 +217,14 @@ CLASSES.push(
   },
   {
     ...WARRIOR, name: 'rogue', hp: 75, speed: 1.9, attackMove: 1,
-    // Front-on he is no better than anyone (4 dmg a quick jab); from behind or out of a vanish he is the hardest hitter in the game.
-    backstab: 2.5, ambush: 3.5,
+    // Unseen until he strikes or a mob bumps into him. Front-on he is no better than anyone (4 dmg a quick jab); from behind he hits 2.5x,
+    // and the strike out of hiding is a huge sweep across everything in front of him (then he is seen, and must wait to hide again).
+    backstab: 2.5, ambush: 6, ambushReach: 1.8, hideCooldown: 240,
     combo: [swing({ range: 30, dot: 0.1, damage: 4, knock: 2, cooldown: 14, lunge: 4 }), swing({ range: 32, dot: 0.1, damage: 4, knock: 2.2, cooldown: 14, lunge: 4 })],
     special: swing({ range: 38, dot: -0.2, damage: 8, knock: 4, cooldown: 18, hitStop: 2, pierce: true, lunge: 8, wave: 80, waveWidth: 14 }),
     specialCost: 30, specialCooldown: 120,
     novaRadius: 55, novaDamage: 8, novaBigRadius: 85, novaBigDamage: 12,
-    dashSpeed: 4.2, dashTicks: 7, dashCost: 14, dashCooldown: 30, dashDamage: 0, dashKind: 'vanish', dashPower: 100,
+    dashSpeed: 4.2, dashTicks: 7, dashCost: 14, dashCooldown: 30, dashDamage: 0,
   },
   {
     ...WARRIOR, name: 'archer', hp: 70, speed: 1.6, attackMove: 0.2,

@@ -50,9 +50,6 @@ export function tickBoons(s: GameState): void {
 /** A mob dies to hero `slot` at (x, y). */
 export function onKill(s: GameState, slot: number, x: number, y: number): void {
   const p = s.players[slot];
-  const kegs = rank(s, slot, 'kegs');
-  // Powder Kegs: a share of kills burst, wider and harder with rank.
-  if (kegs > 0 && rngFloat(s.rngCombat) < 0.12 + 0.06 * kegs) { queue(s, Fx.Burst, x, y, slot, 22 + 4 * kegs, 3 + 1.5 * kegs); pop(s, slot, 'kegs'); }
   // Blood Tithe: every tenth kill heals a share of health.
   const tithe = rank(s, slot, 'tithe');
   if (tithe > 0 && p.kills % 10 === 0) {
@@ -60,7 +57,13 @@ export function onKill(s: GameState, slot: number, x: number, y: number): void {
     s.ents.hp[p.ent] = Math.min(hp, s.ents.hp[p.ent] + hp * 0.05 * tithe);
     pop(s, slot, 'tithe');
   }
-  // Death Dance: a kill thrown out of a vanish frees the dodge to vanish again at once.
+  // Bloodmoon (Blood Tithe + Executioner): every kill mends a little.
+  if (rank(s, slot, 'bloodmoon') > 0) {
+    const hp = CLASSES[p.classId].hp;
+    s.ents.hp[p.ent] = Math.min(hp, s.ents.hp[p.ent] + hp * 0.006);
+    if (p.kills % 8 === 0) pop(s, slot, 'bloodmoon');
+  }
+  // Death Dance: a kill thrown from hiding frees the dodge.
   if (rank(s, slot, 'dance') > 0 && p.vanishT > 0) { p.cdDash = 0; pop(s, slot, 'dance'); }
   // Bloodlust: each kill takes ticks off the special and the dodge.
   const lust = rank(s, slot, 'lust');
@@ -129,6 +132,12 @@ export function onExplode(s: GameState, slot: number, x: number, y: number, radi
 export function onDodge(s: GameState, slot: number, x: number, y: number): void {
   const gift = rank(s, slot, 'gift');
   if (gift > 0) { queue(s, Fx.Burst, x, y, slot, 30 + 5 * gift, 5 + 2 * gift); pop(s, slot, 'gift'); }
+  // Wildfire (Farewell + Swift Feet): the dodge lays two more blasts behind the first.
+  if (rank(s, slot, 'wildfire') > 0) {
+    queue(s, Fx.Burst, x - 20, y - 8, slot, 26, 6);
+    queue(s, Fx.Burst, x + 20, y + 8, slot, 26, 6);
+    pop(s, slot, 'wildfire');
+  }
   // Holy Wrath: the cleric's healing pulse smites too.
   const wrath = rank(s, slot, 'wrath');
   if (wrath > 0) { queue(s, Fx.Burst, x, y, slot, 40 + 6 * wrath, 4 + 3 * wrath); pop(s, slot, 'wrath'); }
@@ -171,8 +180,9 @@ export function onHurt(s: GameState, slot: number): void {
   const last = rank(s, slot, 'last');
   const i = UPGRADE_INDEX.last;
   if (last > 0 && p.boonCd[i] === 0 && !p.downed && s.ents.hp[p.ent] <= CLASSES[p.classId].hp * 0.3) {
-    p.boonCd[i] = 1800 - 300 * last;
-    p.invuln = Math.max(p.invuln, 30);
+    const undying = rank(s, slot, 'undying') > 0; // Undying (Last Stand + Thick Skin): it comes back in half the time, with a longer breath of safety
+    p.boonCd[i] = (1800 - 300 * last) / (undying ? 2 : 1);
+    p.invuln = Math.max(p.invuln, undying ? 90 : 30);
     queue(s, Fx.Shockwave, s.ents.x[p.ent], s.ents.y[p.ent], slot, 70 + 12 * last, 8 + 3 * last);
     pop(s, slot, 'last');
   }
@@ -198,6 +208,7 @@ export function flushProcs(s: GameState): void {
         const dist = Math.sqrt(dx * dx + dy * dy);
         emit(s.events, Ev.Beam, x, y, dx, dy, 2);
         damageMob(s, m, a, dist > 0.001 ? dx / dist : 1, dist > 0.001 ? dy / dist : 0, 1.5, owner, PROC);
+        if (rank(s, owner, 'tempest') > 0) queue(s, Fx.Burst, e.x[m], e.y[m], owner, 20, a * 0.6); // Tempest: each spark goes off where it lands
         left--;
       }
       continue;
@@ -233,12 +244,14 @@ function nearbyRank(s: GameState, slot: number, id: string, reach: number): numb
 
 /** War Banner: damage dealt by hero `slot` while a banner-bearer (itself or an ally) is close. */
 export function bannerMul(s: GameState, slot: number): number {
-  return 1 + 0.12 * nearbyRank(s, slot, 'banner', PARTY_REACH);
+  const cry = nearbyRank(s, slot, 'rallycry', PARTY_REACH * 2) > 0; // War Cry (War Banner + Warding): auras reach twice as far and hit half again as hard
+  return 1 + 0.12 * (cry ? 1.5 : 1) * nearbyRank(s, slot, 'banner', cry ? PARTY_REACH * 2 : PARTY_REACH);
 }
 
 /** Warding: damage taken by hero `slot` while a warder is close. */
 export function wardMul(s: GameState, slot: number): number {
-  return 1 - 0.1 * nearbyRank(s, slot, 'ward', PARTY_REACH);
+  const cry = nearbyRank(s, slot, 'rallycry', PARTY_REACH * 2) > 0;
+  return 1 - 0.1 * (cry ? 1.5 : 1) * nearbyRank(s, slot, 'ward', cry ? PARTY_REACH * 2 : PARTY_REACH);
 }
 
 /** Phoenix: a hero who would fall rises once at half health in a burst of flame (once per level; the cooldown outlasts it). Returns true if it saved them. */

@@ -36,6 +36,24 @@ BiomeDef
 - `src/render/bgArt.ts`: the procedural builders for everything the background draws (ground tiles and patches, mountain, tree and ruin strips, clouds, moon, fog, the landmark and its bluff). `buildSprites` in `art.ts` packs their output into the atlas.
 - `src/render/pix.ts`: the pixel-buffer helpers they share (`Pix`, `setPix`, `hash2`, `darken`, `makeEllipse`, `silhouette`).
 
+## Weather (done)
+
+Rain, snow, fog and lightning drawn over the world. Render-only, like everything else here: a pure function of `(biome weather, level progress, level seed, camera x, tick)`.
+
+- **Data:** `BiomeDef.weather` is a list of `WeatherDef { kind, curve?, wind?, swing? }` (`'rain' | 'snow' | 'fog' | 'lightning' | 'sandstorm'`); several run at once (a storm is rain plus lightning).
+- **Strength over a biome (`weatherLevel`, `biomes.ts`):** a route plays several levels in each biome (`LEVELS_PER_BIOME`), and the weather runs across **all of them**: each level draws its own slice of one shared span (`weatherSpan` in `route.ts`: one seed per biome, plus the level's `from`..`to` of the biome's progress), so a storm that is raging as one level ends is still raging in the store and in the next level, and clears only at the end of the biome's last level. `setWeatherRoute` (called from `main.ts` whenever a level or store begins) hands `drawWeather` the current level's span and the next one's (the store shows the end of one level and the start of the next). A one-level dev run is its own whole span. Strength is the product of three things:
+  - the authored `curve` (the shape of the biome, e.g. a storm that builds; flat by default);
+  - **random surges**: smooth noise from the biome's seed (knots about every 0.11 of a level's length, each kind on its own rhythm), so the weather swells, eases and returns at different points every biome, deep lulls included (`swing`, default 0.85), identical on every client and replay;
+  - **the ends**: it eases in over the first 5% of the biome and is gone by `WEATHER_END` (0.92 of the biome), so the biome finishes in clear air before the next one's weather begins.
+- **Drawing (`src/render/weather.ts`, `drawWeather`, after the particles and before the HUD):**
+  - *Rain:* up to 340 slanted streaks (`wind` leans them), each at its own depth: nearer ones fall faster, land lower on the field and are brighter; each splashes for five ticks on landing. Heavy rain also dims the whole view.
+  - *Snow:* up to 190 swaying flakes at several depths; white ones for the sky, blue-grey ones so they show on snow.
+  - *Fog:* a veil that thickens toward the horizon (in the mood's horizon color) plus big mist banks drifting nearer the camera than the ground fog.
+  - *Sandstorm:* a tan veil over everything (heavier toward the horizon), fast dust banks, and up to 520 streaks of grain racing along the wind (`wind`'s sign sets the direction), with a slow gust that swells and slackens it all.
+  - *Lightning:* one strike at most per 240-tick window (`strikeAt`, a pure function of the tick): a jagged forked bolt from the clouds to the horizon for the first few ticks and a screen flash that goes hard, flickers, flashes again and fades. Strike odds follow the strength, so lulls are quiet. No thunder yet (the sim and audio never see it).
+- **Assigned:** Meadow, showers across all three levels (drizzle, then settling in, heaviest in the third); Haunted Keep, a storm that builds with lightning; Frozen Pass, snowfall and a late whiteout; Sunken Marsh, drizzle and fog. Scorched Dunes, a sandstorm that gathers toward the end.
+- **Preview:** in dev builds `?weather=rain,lightning:0.5,fog,sandstorm` forces weather on any level, held steady (no surges or fades; the number after the colon is its strength), and `?weather=none` turns it off. Combine with `?biome=N`.
+
 ## Phases
 
 1. **Data-driven (done).** `BiomeDef` + `background.ts`, Meadow ported, time-of-day timeline working (day → golden hour → dusk).

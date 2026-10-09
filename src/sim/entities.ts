@@ -3,7 +3,7 @@ import { MOBS } from '../data/mobs';
 import { MAX_ENTS } from './constants';
 
 /** A Zone is a patch of ground that something is about to happen to (a lobbed rock) or that stays dangerous (a poison pool). */
-export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5, Potion: 6 } as const;
+export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5, Potion: 6, Shrine: 7, Chest: 8 } as const;
 
 /** Zone looks (the `sub` of a Kind.Zone entity). */
 export const ZoneKind = { Rock: 0, Poison: 1, Frost: 2, Trap: 3, Storm: 4, Rain: 5, Pit: 6, Mud: 7, Spore: 8 } as const;
@@ -14,6 +14,9 @@ export const BYSTANDER = 16;
 export const SURRENDERED = 64;
 /** Mob flag: it has gone berserk (below its `berserk` health): frenzied, harder-hitting, never staggered. */
 export const BERSERK = 128;
+
+/** Shrine looks (the `sub` of a Kind.Shrine entity). */
+export const ShrineKind = { Curse: 0, Charge: 1, Greed: 2, Mercy: 3 } as const;
 
 export interface Entities {
   capacity: number;
@@ -67,6 +70,8 @@ export interface Entities {
   by: Int8Array;
   /** bit0: aggro */
   flags: Uint8Array;
+  /** Mobs: 0 ordinary, 1 a mini-boss (tougher, drops a free chest), 2 summoned by a curse shrine (tougher; the shrine pays out when all are dead). Shrines and chests: 0 waiting, 1 free (chest), 2 running (shrine), 3 spent. */
+  elite: Uint8Array;
   free: Int32Array;
   freeCount: number;
 }
@@ -107,6 +112,7 @@ export function createEntities(capacity = MAX_ENTS): Entities {
     face: new Int8Array(capacity).fill(1),
     by: new Int8Array(capacity).fill(-1),
     flags: new Uint8Array(capacity),
+    elite: new Uint8Array(capacity),
     free,
     freeCount: capacity,
   };
@@ -127,6 +133,7 @@ export function allocEntity(e: Entities, kind: number, sub: number, x: number, y
   e.hurt[i] = 0; e.stun[i] = 0; e.atk[i] = 0; e.wind[i] = 0; e.mode[i] = 0; e.cool[i] = 0; e.buff[i] = 0; e.shieldHp[i] = kind === Kind.Mob ? (MOBS[sub]?.shieldHp ?? 0) : 0; e.rem[i] = 0; e.ax[i] = 0; e.ay[i] = 0;
   e.face[i] = 1;
   e.flags[i] = 0;
+  e.elite[i] = 0;
   e.by[i] = -1;
   e.count++;
   if (i + 1 > e.highWater) e.highWater = i + 1;

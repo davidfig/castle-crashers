@@ -1,8 +1,12 @@
 // The NPC sprite sheets built by tools/art.mjs, bundled as data URLs (see npcArt.ts for the metadata). Order: NPC_NAMES.
 import registrarPng from '../../art/out/registrar.png';
 import peddlerPng from '../../art/out/peddler.png';
+import kingPng from '../../art/out/king.png';
+import heraldPng from '../../art/out/herald.png';
+import captainPng from '../../art/out/captain.png';
+import elderPng from '../../art/out/elder.png';
 
-const SHEETS = [registrarPng, peddlerPng];
+const SHEETS = [registrarPng, peddlerPng, kingPng, heraldPng, captainPng, elderPng];
 
 export function loadNpcImages(): Promise<HTMLImageElement[]> {
   return Promise.all(SHEETS.map((src) => new Promise<HTMLImageElement>((resolve, reject) => {

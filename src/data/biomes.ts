@@ -37,6 +37,80 @@ export interface Destination {
   aura: number;
 }
 
+/** The kinds of weather a level can have; see `render/weather.ts`. */
+export type WeatherKind = 'rain' | 'snow' | 'fog' | 'lightning' | 'sandstorm';
+
+/**
+ * One weather effect on a level. Several can run at once (a storm is rain plus lightning). Render-only: nothing here may
+ * be read by the sim.
+ */
+export interface WeatherDef {
+  kind: WeatherKind;
+  /** The authored shape of the level, as strength (0..1) at points along its progress, blended linearly and held flat past the ends (default: full strength). Random surges and the clear ending are applied on top, see `weatherLevel`. */
+  curve?: readonly (readonly [at: number, level: number])[];
+  /** Skip the random surges and the clear start and end, holding the curve's strength (the `?weather=` dev preview). */
+  steady?: boolean;
+  /** How deep the random lulls go, 0 (steady) to 1 (it can clear entirely); default 0.85. */
+  swing?: number;
+  /** Sideways push on rain and snow, px per tick (right is positive; default none). A sandstorm blows right at this speed's sign and scale (default 1). */
+  wind?: number;
+}
+
+/** Progress by which all weather has died away, so a level ends in clear air before the next biome (see `weatherLevel`). */
+export const WEATHER_END = 0.92;
+/** Weather eases in over this much progress at the start of a level. */
+const WEATHER_FADE_IN = 0.05;
+/** Random knots of the surge noise sit this far apart in progress. */
+const SURGE_SPAN = 0.11;
+
+function surgeHash(seed: number, salt: number, k: number): number {
+  let h = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(salt + 1, 0xc2b2ae35) ^ Math.imul(k + 1, 0x27d4eb2f);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; h = Math.imul(h, 0x297a2d39); h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/**
+ * The strength (0..1) of a weather effect at level `progress`. Three things multiply:
+ *  - the authored `curve` (the shape of the level, e.g. a storm that builds; default flat at full strength);
+ *  - random surges: smooth noise from the level `seed`, so the weather swells, eases and returns at points that differ
+ *    every level but are the same on every client and replay. `swing` is how deep the lulls go (default 0.85: it can
+ *    nearly clear), and each kind of weather gets its own rhythm;
+ *  - the ends: it eases in over the first few percent and is gone by `WEATHER_END`.
+ * `progress` runs over the whole biome (a route has several levels in each, see `weatherSpan`), so weather carries from one
+ * level into the next and clears only at the end of the biome; `span` is how many levels that is, so the surges keep their
+ * per-level rhythm.
+ */
+export function weatherLevel(w: WeatherDef, progress: number, seed = 0, span = 1): number {
+  let base = 1;
+  const c = w.curve;
+  if (c && c.length > 0) {
+    if (progress <= c[0][0]) base = c[0][1];
+    else if (progress >= c[c.length - 1][0]) base = c[c.length - 1][1];
+    else {
+      for (let i = 1; i < c.length; i++) {
+        if (progress <= c[i][0]) {
+          const [a0, v0] = c[i - 1], [a1, v1] = c[i];
+          base = a1 > a0 ? v0 + (v1 - v0) * ((progress - a0) / (a1 - a0)) : v1;
+          break;
+        }
+      }
+    }
+  }
+  if (w.steady) return base;
+  const salt = WEATHER_KINDS.indexOf(w.kind);
+  // knots jitter off the even grid so the rhythm is not regular
+  const pos = (progress * span) / SURGE_SPAN, k = Math.floor(pos);
+  const t = pos - k, e = t * t * (3 - 2 * t);
+  const n = surgeHash(seed, salt, k) * (1 - e) + surgeHash(seed, salt, k + 1) * e;
+  const swing = w.swing ?? 0.85;
+  const surge = 1 - swing + swing * Math.min(1, n * 1.25); // the top quarter of the noise holds full strength
+  const fadeIn = Math.min(1, Math.max(0, progress / WEATHER_FADE_IN));
+  const fadeOut = Math.min(1, Math.max(0, (WEATHER_END - progress) / 0.1));
+  return base * surge * fadeIn * fadeOut;
+}
+
+const WEATHER_KINDS: readonly WeatherKind[] = ['rain', 'snow', 'fog', 'lightning', 'sandstorm']; // append only: a kind's index seeds its surges
+
 export interface ParallaxLayer {
   /** Key into `Sprites.layers`: the 256px strip this layer repeats. */
   sprite: string;
@@ -171,6 +245,8 @@ export interface BiomeDef {
   ambient?: AmbientDef;
   /** How far grass and decals sway in the wind, px (default none). */
   wind?: number;
+  /** Rain, snow, fog and lightning over the level, each with its own strength along the way (default none). */
+  weather?: readonly WeatherDef[];
   /** Where the party is headed; drawn at the `DESTINATION_LAYER` entry in `layers`. */
   destination?: Destination;
   /** Haze gathered at the horizon, in front of the far layers: its height in px and peak opacity (in the horizon sky's color). */
@@ -213,6 +289,8 @@ const BASE_BIOMES: readonly BiomeDef[] = [
       { k: 0.1, drift: 0.04, count: 3, y0: 26, y1: 66, alpha: 0.95 },
     ],
     haze: { height: 28, alpha: 0.45 },
+    // showers across all three levels: a light drizzle from the first, settling in by the second, heaviest in the third (the curve spans the whole biome, see `weatherLevel`)
+    weather: [{ kind: 'rain', curve: [[0, 0.5], [0.4, 0.8], [0.8, 1], [1, 0.8]], wind: 0.25 }],
     ground: {
       floor: { kind: 'tiles', set: 'grass' },
       path: { half: 14, fill: 0x8c6c44, edge: 0x6a4e30, lip: 0xa07f54, speck: 0x7a5c38, speck2: 0x9c7c52, ruts: 0x765836, fringe: [0x4b8039, 0x5fa04a, 0x3f7a33] },
@@ -254,6 +332,11 @@ const BASE_BIOMES: readonly BiomeDef[] = [
       { k: 0.1, drift: 0.05, count: 3, y0: 24, y1: 62, alpha: 0.7, tint: 0x505870 },
     ],
     haze: { height: 36, alpha: 0.5 },
+    // a storm that builds: rain thickens and the lightning starts as the night deepens
+    weather: [
+      { kind: 'rain', curve: [[0, 0], [0.25, 0.5], [0.6, 0.9], [1, 0.7]], wind: 0.5 },
+      { kind: 'lightning', curve: [[0, 0], [0.3, 0.3], [0.65, 1], [1, 0.8]] },
+    ],
     fog: [
       { k: 0.5, drift: 0.03, count: 6, y0: 112, y1: 158, alpha: 0.34, color: 0xb4b2dc },
       { k: 1, drift: 0.06, count: 8, y0: 150, y1: 320, alpha: 0.2, color: 0xa8a6d0 },
@@ -300,6 +383,11 @@ export const FROZEN_PASS: BiomeDef = {
     { k: 0.1, drift: 0.06, count: 4, y0: 24, y1: 68, alpha: 0.9 },
   ],
   haze: { height: 34, alpha: 0.5 },
+  // snowfall that thickens to a whiteout toward the end
+  weather: [
+    { kind: 'snow', curve: [[0, 0.3], [0.5, 1], [1, 0.8]], wind: -0.35 },
+    { kind: 'fog', curve: [[0, 0], [0.6, 0], [0.85, 0.7], [1, 0.9]] },
+  ],
   // spindrift lying low over the snow
   fog: [
     { k: 0.5, drift: 0.07, count: 4, y0: 108, y1: 150, alpha: 0.3, color: 0xffffff, big: true },
@@ -351,6 +439,11 @@ export const SUNKEN_MARSH: BiomeDef = {
     { k: 0.1, drift: 0.04, count: 12, y0: 16, y1: 74, alpha: 0.95, tint: 0x788a78 },
   ],
   haze: { height: 36, alpha: 0.55 },
+  // steady drizzle and a fog that never quite lifts
+  weather: [
+    { kind: 'rain', curve: [[0, 0.25], [0.5, 0.5], [1, 0.35]], wind: 0.2 },
+    { kind: 'fog', curve: [[0, 0.4], [1, 0.6]] },
+  ],
   // heavy low bands of mist, hanging on the water all day
   fog: [
     { k: 0.5, drift: 0.03, count: 5, y0: 104, y1: 150, alpha: 0.32, color: 0xa4b498, big: true },
@@ -408,6 +501,8 @@ export const SCORCHED_DUNES: BiomeDef = {
   moonScale: 2.4,
   // heat shimmer at the horizon
   haze: { height: 44, alpha: 0.62 },
+  // blowing sand that comes and goes in gusts
+  weather: [{ kind: 'sandstorm', curve: [[0, 0.3], [0.5, 0.8], [1, 1]], wind: 1 }],
   // low bands of blown sand instead of mist
   fog: [
     { k: 0.5, drift: 0.28, count: 4, y0: 110, y1: 152, alpha: 0.26, color: 0xe8cf9c, big: true },
@@ -418,8 +513,6 @@ export const SCORCHED_DUNES: BiomeDef = {
   wind: 1,
   ground: {
     floor: { kind: 'tiles', set: 'sand' },
-    // a worn caravan track: packed, darker sand with wheel and hoof ruts, fringed with dry scrub
-    path: { half: 12, fill: 0xc9a572, edge: 0xad8856, lip: 0xdcc08a, speck: 0xa88458, speck2: 0xdac290, ruts: 0xa38052, fringe: [0xa89450, 0xc0ac66] },
     patches: { sprites: ['sandripple', 'sandripple2', 'sandripple3', 'drypatch'], cell: 160, chance: 0.55 },
     mottle: { light: 0xf0dcaa, dark: 0xb89868, alpha: 0.2 },
     decor: {
@@ -499,3 +592,21 @@ export function moodAt(biome: BiomeDef, progress: number, out: BlendedMood): Ble
   out.aurora = (a.aurora ?? 0) + ((b.aurora ?? 0) - (a.aurora ?? 0)) * t;
   return out;
 }
+
+/**
+ * The weather for a level's biome. In dev builds `?weather=rain,lightning:0.5` replaces it (kinds from `rain`, `snow`, `fog`,
+ * `lightning`, `sandstorm`, each with an optional strength after a colon; `?weather=none` clears it), to preview an effect anywhere.
+ */
+export function weatherFor(biome: BiomeDef): readonly WeatherDef[] {
+  const want = typeof __DEV__ !== 'undefined' && __DEV__ ? (globalThis as { __weather?: string }).__weather : undefined;
+  if (want === undefined) return biome.weather ?? NO_WEATHER;
+  const out: WeatherDef[] = [];
+  for (const part of want.split(',')) {
+    const [name, lvl] = part.trim().split(':');
+    const kind = WEATHER_KINDS.find((k) => k === name);
+    if (kind) out.push({ kind, steady: true, curve: [[0, lvl === undefined ? 1 : Math.min(1, Math.max(0, Number(lvl) || 0))]], wind: kind === 'snow' ? -0.3 : kind === 'rain' ? 0.3 : kind === 'sandstorm' ? 1 : 0 });
+  }
+  return out;
+}
+
+const NO_WEATHER: readonly WeatherDef[] = [];

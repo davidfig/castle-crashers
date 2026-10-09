@@ -143,6 +143,19 @@ Hub (meta) → choose class(es) + modifiers → Run:
 - **Daze:** afterwards it is winded and helpless for about a second (stars circle its head), then has a ~7 second cooldown. That is the window to punish it.
 - All numbers are in `src/data/mobs.ts` (`charge`). Any mob type can get a `charge` entry.
 
+## Risk and reward on the field
+
+Borrowed from Megabonk's best idea: the party chooses how hard a run is, and the field offers gambles. All of it is seeded and deterministic (`src/sim/sites.ts`, `src/data/heat.ts`).
+
+- **Chests** (two a level, `Kind.Chest`): stand next to one until its ring fills (no button, so nothing fights with Stand Down) and pay the gold. Each one opened makes the next dearer (`chestCost`, capped, and dearer with heat). A chest gives a free level (a boon pick), a purse (1.5x its price) or three draughts; two non-picks in a row and the next is a pick (`chestMiss`).
+- **Shrines** (two a level, `Kind.Shrine`; the kind is `sub`): *Curse* summons elites out of the hill (the usual arrival, flag 3) and pays a free level to every hero once all are dead; *Charge* fills while a hero stands in its ring, packs keep coming, and a full ring mends the party and gives XP; *Greed* trades nearly half your health for gold (it refuses to kill); *Mercy* (only on the road where Stand Down exists) makes everything hostile on screen lay down its arms through the normal surrender path, mends the party and gives each hero a reroll.
+- **Mini-boss** (one a level at the midpoint, a second with heat; `ClumpPlan.elite`): a hulking brute of the biome with its crowd, behind a gate, 6x health. Its death leaves a free chest, two draughts and a purse. Elites (`Entities.elite`: 1 mini-boss, 2 curse-summoned) bite 30% harder.
+- **Heat** (0-5, chosen in the lobby with up/down, held for the run): horde +15%, mob damage +10%, mob speed +3%, gold and XP +20%, dearer chests and a chance of a second mini-boss, per step. `?heat=N` in dev.
+- **Level-up rerolls and banishes** (`PlayerState.rerolls/banishes`, 2 and 1 to start, carried between levels): while choosing, stick up deals a fresh hand; stick down banishes the highlighted boon for the run.
+- **Fusions** (`UpgradeDef.evolve`): two boons held at rank 2 fuse into a legendary that takes the wildcard card of every offer until taken: Tempest (Chain Spark + Shatter), Bloodmoon (Blood Tithe + Executioner), Undying (Last Stand + Thick Skin), Wildfire (Farewell + Swift Feet) and War Cry (War Banner + Warding, party only).
+
+Dev aids: `?goto=chest|curse|charge|greed|mercy|elite`, `?calm=1` (an empty field), `?gold=N`.
+
 ## Enemy roster by biome
 
 Each biome has its own cast (`src/data/roster.ts`, one `RosterEntry` per enemy). The sim learns the biome from `biomeIndex(seed)` (also stored as `GameState.biome`), so the scenery and the enemies always agree; `?biome=N` forces both in dev builds. An enemy is absent until its `from` (level progress 0..1), then its share of the crowd grows steadily to the end of the level, so the first minutes are mostly fodder and the last are full of casters and elites. The boss's retinue is drawn from the same biome (`ROSTERS[b].support`).

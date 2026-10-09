@@ -66,10 +66,10 @@ function drawSeal(b: Batcher, S: Sprites, x: number, y: number): void {
   drawIcon(b, S, 'star', x + 2, y + 1, 1);
 }
 
-/** `tick` drives the footer blink only. */
-export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): void {
+/** `tick` drives the footer blink only. `overlay` draws the screen over whatever is already on the canvas (the store's counter over the field) instead of a backdrop. */
+export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number, overlay = false): void {
   if (scr.kind === 'title') { drawTitle(b, S, tick); return; }
-  backdrop(b, S);
+  if (overlay) rect(b, S, 0, 0, VIEW_W, VIEW_H, 0x080614, 0.82); else backdrop(b, S);
   if (scr.kind !== 'text') drawStory(b, S, scr.header, MARGIN, 14, GLASS.G, 2, GLASS.lead);
   if (scr.kind === 'select') {
     drawStory(b, S, scr.sub, MARGIN, 38, TONE.dim);

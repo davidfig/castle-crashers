@@ -123,6 +123,20 @@ function horde(b: Batcher, S: Sprites, tick: number): void {
 /** The blinking prompts spend most of the cycle visible: dark for only 12 of every 64 ticks. */
 export const promptOn = (tick: number): boolean => Math.floor(tick) % 64 < 52;
 
+/** What the title's sound and music buttons show; main.ts keeps these current. */
+export const titleToggles = { sound: true, music: true };
+const TOGGLE_Y = VIEW_H - 32, TOGGLE_H = 18, TOGGLE_MARGIN = 12;
+const toggleLabel = (name: string, key: string, on: boolean): string => `${name}: ${on ? 'On' : 'Off'} (${key})`;
+/** The two buttons' boxes in view pixels, widest label reserved so a box does not change size when toggled. */
+export function titleToggleRects(): { sound: { x: number; y: number; w: number; h: number }; music: { x: number; y: number; w: number; h: number } } {
+  const w = (name: string, key: string): number => storyWidth(toggleLabel(name, key, false)) + 16;
+  const sw = w('Sound', 'N/LB'), mw = w('Music', 'M/RB');
+  return {
+    sound: { x: TOGGLE_MARGIN, y: TOGGLE_Y, w: sw, h: TOGGLE_H },
+    music: { x: VIEW_W - TOGGLE_MARGIN - mw, y: TOGGLE_Y, w: mw, h: TOGGLE_H },
+  };
+}
+
 export function drawTitle(b: Batcher, S: Sprites, tick: number): void {
   if (!(tick > 0)) tick = 0; // a first frame can arrive with a NaN or negative tick; the animation indices below need a non-negative one
   sky(b, S, tick);
@@ -152,5 +166,10 @@ export function drawTitle(b: Batcher, S: Sprites, tick: number): void {
     const w = storyWidth(prompt) + 24, x = Math.round((VIEW_W - w) / 2);
     b.drawScaled(S.px, x, VIEW_H - 32, w, 18, hex(0x000000, 0.55));
     drawStory(b, S, prompt, x + 12, VIEW_H - 28, GLASS.W);
+  }
+  const r = titleToggleRects();
+  for (const [t, on, name, key] of [[r.sound, titleToggles.sound, 'Sound', 'N/LB'], [r.music, titleToggles.music, 'Music', 'M/RB']] as const) {
+    b.drawScaled(S.px, t.x, t.y, t.w, t.h, hex(0x000000, 0.55));
+    drawStory(b, S, toggleLabel(name, key, on), t.x + 8, t.y + 4, on ? GLASS.W : GLASS.z);
   }
 }

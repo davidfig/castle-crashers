@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { NPC_NAMES, buildNpcSets, npcFrame } from './npcArt';
 
 test('every story figure has an idle and a talk loop, with frames inside their sheet and a sensible pivot', () => {
-  const sets = buildNpcSets(NPC_NAMES.map((_, i) => ({ x: 0, y: i * 100 })), 512, 256);
+  const sets = buildNpcSets(NPC_NAMES.map((_, i) => ({ x: 0, y: i * 100 })), 512, 1024);
   for (const name of NPC_NAMES) {
     const set = sets[name];
     assert.ok(set, name);

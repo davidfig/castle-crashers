@@ -15,7 +15,7 @@ function hold(buttons: number, moveX = 0): InputFrame[] { const f = idle(); f[0]
 /** An empty field, hero at (100, 100) with plenty of health. */
 function arena(seed = 4): GameState {
   const s = createSim(seed);
-  for (let i = 0; i < s.ents.highWater; i++) if (s.ents.kind[i] === Kind.Mob) freeEntity(s.ents, i);
+  for (let i = 0; i < s.ents.highWater; i++) if (s.ents.kind[i] === Kind.Mob || s.ents.kind[i] === Kind.Chest || s.ents.kind[i] === Kind.Shrine) freeEntity(s.ents, i);
   s.spawnTimer = 1e9; s.flankTimer = 1e9; s.nextClump = s.plan.length;
   const pe = s.players[0].ent;
   s.ents.x[pe] = s.ents.px[pe] = 100; s.ents.y[pe] = s.ents.py[pe] = 100;
@@ -30,20 +30,6 @@ function goblin(s: GameState, x: number, y = 100, hp = 1): number {
   return g;
 }
 const alive = (s: GameState, m: number) => s.ents.alive[m] === 1 && s.ents.kind[m] === Kind.Mob;
-
-test('Powder Kegs: a kill bursts and takes its neighbours with it; without the boon they live', () => {
-  for (const rank of [0, 3]) {
-    const s = arena();
-    give(s, 'kegs', rank);
-    s.rngCombat.fill(0); // (no luck needed: every roll is a success)
-    goblin(s, 130, 100, 1);
-    const nearby = goblin(s, 150, 100, 50);
-    s.players[0].faceX = 1; s.players[0].faceY = 0;
-    for (let t = 0; t < 4; t++) step(s, hold(Btn.Attack));
-    if (rank === 0) assert.ok(alive(s, nearby), 'no boon, no blast');
-    else assert.ok(!alive(s, nearby) || s.ents.hp[nearby] < 50, 'the blast hurt it');
-  }
-});
 
 test('Bloodlust: a kill takes time off the special and the dodge', () => {
   const s = arena();
@@ -96,7 +82,7 @@ test('Last Stand: dropping low sets off a shockwave once, then it must recharge'
 test('a boon-fed chain reaction stays inside the tick budget and the sim stays deterministic', () => {
   const run = () => {
     const s = arena(9);
-    give(s, 'kegs', 3); give(s, 'spark', 3);
+    give(s, 'spark', 3); give(s, 'lust', 3);
     for (let k = 0; k < 150; k++) goblin(s, 120 + (k % 15) * 6, 80 + Math.floor(k / 15) * 6, 1);
     for (let t = 0; t < 120; t++) { step(s, hold(Btn.Attack)); assert.ok(s.procBudget >= 0 && s.procBudget <= PROC_BUDGET); assert.equal(s.procN, 0); }
     return hashState(s);
@@ -106,7 +92,7 @@ test('a boon-fed chain reaction stays inside the tick budget and the sim stays d
 
 test('trigger boons change the state hash', () => {
   const a = arena(), b = arena();
-  give(b, 'kegs', 1);
+  give(b, 'spark', 1);
   assert.notEqual(hashState(a), hashState(b));
 });
 
@@ -247,7 +233,7 @@ test('Death Dance frees the dodge after a vanish kill; Keen Edge and Pickpocket 
 });
 
 test('Eagle Eye hits far shots harder; Downpour rains more arrows', () => {
-  const dmg = (rank: number) => { const s = arena(); asClass(s, 4); give(s, 'eagle', rank); const g = goblin(s, 200, 100, 1000); s.ents.maxhp[g] = 1000; s.players[0].faceX = 1; s.players[0].faceY = 0; for (let t = 0; t < 60; t++) step(s, t === 0 ? hold(Btn.Attack) : idle()); return 1000 - s.ents.hp[g]; };
+  const dmg = (rank: number) => { const s = arena(); asClass(s, 4); give(s, 'eagle', rank); const g = goblin(s, 200, 100, 1000); s.ents.maxhp[g] = 1000; s.ents.stun[g] = 200; s.players[0].faceX = 1; s.players[0].faceY = 0; for (let t = 0; t < 60; t++) step(s, t === 0 ? hold(Btn.Attack) : idle()); return 1000 - s.ents.hp[g]; };
   assert.ok(dmg(3) > dmg(0));
 
   const rain = (rank: number) => { const s = arena(); asClass(s, 4); give(s, 'downpour', rank); s.players[0].fury = 100; step(s, hold(Btn.Ability1)); for (let i = 0; i < s.ents.highWater; i++) if (s.ents.alive[i] && s.ents.kind[i] === Kind.Zone) return s.ents.mode[i]; return 0; };
@@ -270,10 +256,10 @@ test('every offer has a trigger, no duplicates, only what the class may take', (
 
 test('offers lean toward the tags a hero already holds, and are a pure function of the held ranks', () => {
   const ranks = new Uint8Array(UPGRADES.length);
-  ranks[UPGRADE_INDEX.kegs] = 1; // corpse, blast, fire
+  ranks[UPGRADE_INDEX.gift] = 1; // dodge, blast
   const tally = (r?: Uint8Array) => {
     let blast = 0, total = 0;
-    for (let seed = 0; seed < 400; seed++) for (const u of offerFor(seed, 0, 6, r, 1)) { total++; if (UPGRADES[u].tags.includes('blast') && u !== UPGRADE_INDEX.kegs) blast++; }
+    for (let seed = 0; seed < 400; seed++) for (const u of offerFor(seed, 0, 6, r, 1)) { total++; if (UPGRADES[u].tags.includes('blast') && u !== UPGRADE_INDEX.gift) blast++; }
     return blast / total;
   };
   assert.ok(tally(ranks) > tally(undefined) * 1.15, 'blast boons come up more often once a blast boon is held');
@@ -284,7 +270,7 @@ test('the common stats thin out and rares grow as levels rise; tiers default by 
   const share = (level: number) => { let stat = 0, total = 0; for (let seed = 0; seed < 600; seed++) for (const u of offerFor(seed, 0, level, undefined, 0)) { total++; if (UPGRADES[u].kind === 'stat') stat++; } return stat / total; };
   assert.ok(share(18) < share(2));
   assert.equal(rarityOf(UPGRADES[UPGRADE_INDEX.heavy]), 0);
-  assert.equal(rarityOf(UPGRADES[UPGRADE_INDEX.kegs]), 1);
+  assert.equal(rarityOf(UPGRADES[UPGRADE_INDEX.spark]), 1);
 });
 
 import { Ev, EV_STRIDE } from './events';
@@ -292,15 +278,15 @@ import { Fx } from '../render/fx';
 
 test('a boon that fires tells the presentation, which pops its picture once per moment', () => {
   const s = arena();
-  give(s, 'kegs', 3);
+  give(s, 'spark', 3);
   s.rngCombat.fill(0);
-  for (let k = 0; k < 6; k++) goblin(s, 120 + k * 6, 100, 1);
+  for (let k = 0; k < 6; k++) goblin(s, 120 + k * 6, 100, 200);
   s.players[0].faceX = 1; s.players[0].faceY = 0;
   const fx = new Fx();
   let procs = 0;
   for (let t = 0; t < 30; t++) {
     step(s, hold(Btn.Attack));
-    for (let k = 0; k < s.events.n; k++) if (s.events.data[k * EV_STRIDE] === Ev.Proc) { procs++; assert.equal(s.events.data[k * EV_STRIDE + 4], UPGRADE_INDEX.kegs); }
+    for (let k = 0; k < s.events.n; k++) if (s.events.data[k * EV_STRIDE] === Ev.Proc) { procs++; assert.equal(s.events.data[k * EV_STRIDE + 4], UPGRADE_INDEX.spark); }
     fx.consume(s.events);
     s.events.n = 0;
   }
@@ -329,7 +315,7 @@ test('company-only boons are never offered to a solo hero; legendaries wait for 
   }
   for (const id of ['glass', 'phoenix', 'frenzy']) { assert.ok(!locked.has(UPGRADE_INDEX[id]), `${id} locked`); }
   assert.ok(['glass', 'phoenix', 'frenzy'].some((id) => open.has(UPGRADE_INDEX[id])), 'and open once unlocked');
-  assert.ok(UPGRADES.filter((u) => u.rarity === 2).every((u) => u.unlock === 'legend'), 'every legendary is gated');
+  assert.ok(UPGRADES.filter((u) => u.rarity === 2 && !u.evolve).every((u) => u.unlock === 'legend'), 'every legendary is gated');
 });
 
 test('War Banner and Warding reach an ally who stands close, and not one who does not', () => {

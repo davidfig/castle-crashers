@@ -1,5 +1,5 @@
 import { createRng, Stream, type Rng } from '../engine/rng';
-import { MAX_ENTS, MAX_PLAYERS } from './constants';
+import { MAX_ENTS, MAX_PLAYERS, STORE_EXIT_X, STORE_W, WORLD_W } from './constants';
 import { allocEntity, createEntities, Kind, type Entities } from './entities';
 import { createEvents, type EventBuf } from './events';
 import { createGrid, type Grid } from './grid';
@@ -7,13 +7,19 @@ import { CLASSES } from '../data/classes';
 import { MOBS } from '../data/mobs';
 import { UPGRADES } from '../data/upgrades';
 import { biomeIndex } from '../data/roster';
-import { planGates, planLevel, type ClumpPlan, type Gate, type SimBeat } from './gen/level';
+import { HEAT_MAX, heatHorde } from '../data/heat';
+import { placeSites } from './sites';
+import { planGates, planLevel, type ClumpPlan, type Gate, type SimBeat, type SimScene } from './gen/level';
 
 export const BLAST_CAP = 64;
 /** Boon effects waiting to resolve this tick: [kind, x, y, owner slot, a, b] each. */
 export const PROC_CAP = 96;
 /** Effects a tick may queue in all (a chain of kills that each burst stops growing past this). */
 export const PROC_BUDGET = 48;
+
+/** Level-up rerolls and banishes each hero starts a run with. */
+export const START_REROLLS = 2;
+export const START_BANISHES = 1;
 
 export const Phase = { Playing: 0, Won: 1, Lost: 2 } as const;
 
@@ -25,11 +31,10 @@ export interface PlayerState {
   downTimer: number;
   invuln: number;
   dashT: number;
-  /** Ticks left unseen after a rogue's vanish: untargetable, and broken by attacking. */
+  /** Non-zero while the rogue is hidden: unseen and untargetable until he strikes, is hurt, or a mob runs into him. */
   vanishT: number;
-  /** Where the rogue vanished from: the spot mobs keep heading for while he is unseen. */
-  vanishX: number;
-  vanishY: number;
+  /** Ticks until a revealed rogue can slip back into hiding. */
+  revealT: number;
   /** The cleric's holy aura is switched on: it pulses on its own and drains stamina. */
   auraOn: boolean;
   dashX: number;
@@ -102,6 +107,12 @@ export interface PlayerState {
   pullT: number;
   pullX: number;
   pullY: number;
+  /** Level-up rerolls and banishes left (they last the whole run), rerolls spent on the pick in front of the hero, the boons banished for good (index = UPGRADES), and which way the stick was last pushed up/down. */
+  rerolls: number;
+  banishes: number;
+  salt: number;
+  banned: Uint8Array;
+  stickPrevY: number;
 }
 
 export interface GameState {
@@ -129,10 +140,19 @@ export interface GameState {
   gateOpenTick: number;
   /** Index in `plan` of the staged story beat, or -1. */
   beatIndex: number;
+  /** Index in the plan of the road scene's marker, or -1 (see `sceneHold`). */
+  sceneIndex: number;
   /** Tick the party reached the staged beat (-1 = not yet). */
   beatPlayedTick: number;
   /** Stand Down / surrender is available (from chapter II of the campaign). */
   surrender: boolean;
+  /** This is the store between two levels: no enemies, no director, won by walking on to the far end. */
+  store: boolean;
+  /** The biome on the far side of the store (-1 outside one). */
+  nextBiome: number;
+  /** How long the field is, and the x at which a hero has reached its end (a level is won there; the store is left there). */
+  worldW: number;
+  exitX: number;
   /** Seed level-up offers are drawn from (the run's, not the level's). */
   offerSeed: number;
   /** Mobs that have laid down their arms this run, how many were killed anyway, and how many got away (by mob type). */
@@ -141,6 +161,10 @@ export interface GameState {
   spared: Int32Array;
   /** Shared gold (docs/05: gold is shared). */
   gold: number;
+  /** The difficulty the party chose (data/heat.ts, 0 = none), chests opened this run, and chests in a row that gave no boon (the pity timer). */
+  heat: number;
+  chestsOpened: number;
+  chestMiss: number;
   /** Live coin pickups on the field (capped). */
   coinCount: number;
   /** Live potion pickups on the field (capped), and how many more may still drop (refills over time; see `POTION_*` in step.ts). */
@@ -174,10 +198,11 @@ export interface GameState {
 function createPlayer(): PlayerState {
   return {
     active: false, ent: -1, classId: 0, downed: false, downTimer: 0, invuln: 0,
-    dashT: 0, vanishT: 0, vanishX: 0, vanishY: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
+    dashT: 0, vanishT: 0, revealT: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
     bufAbility1: 0, bufDodge: 0, prevButtons: 0, faceX: 1, faceY: 0, kills: 0, coins: 0,
     fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, cursor: 0, stickPrev: 0, ranks: new Uint8Array(UPGRADES.length), boonCd: new Uint16Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
     rootT: 0, dashChain: 0, chainT: 0, echoLeft: 0, echoT: 0, echoBig: false, silenceT: 0, confuseT: 0, poisonT: 0, burning: false, hexT: 0, witherT: 0, pullT: 0, pullX: 0, pullY: 0,
+    rerolls: START_REROLLS, banishes: START_BANISHES, salt: 0, banned: new Uint8Array(UPGRADES.length), stickPrevY: 0,
   };
 }
 
@@ -197,10 +222,22 @@ export interface SimOptions {
   offerSeed?: number;
   /** False for a level that is not the last of its route: no boss, won by reaching the far end. */
   boss?: boolean;
+  /** Enemy count multiplier for the level (1 = as planned): later levels of a biome are bigger. */
+  scale?: number;
+  /** The store between levels (see `STORE_W`): nobody to fight, a peddler to trade with, and the road on into the next level's biome. */
+  store?: boolean;
+  /** The biome the store leads into (its scenery takes over past the peddler). */
+  nextBiome?: number;
+  /** A road scene to leave a clearing for (see `SimScene`). */
+  scene?: SimScene;
+  /** The party's chosen difficulty (data/heat.ts). */
+  heat?: number;
 }
 
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
-  const plan = planLevel(seed, beat, { boss: opts.boss });
+  const store = opts.store === true;
+  const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
+  const plan = store ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat });
   const s: GameState = {
     seed,
     biome: biomeIndex(seed),
@@ -220,13 +257,21 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     gateIdx: 0,
     gateOpenTick: -1,
     beatIndex: plan.findIndex((c) => c.beat !== undefined),
+    sceneIndex: plan.findIndex((c) => c.scene !== undefined),
     beatPlayedTick: -1,
-    surrender: opts.surrender === true,
+    surrender: opts.surrender === true && !store,
+    store,
+    nextBiome: store ? (opts.nextBiome ?? biomeIndex(seed)) : -1,
+    worldW: store ? STORE_W : WORLD_W,
+    exitX: store ? STORE_EXIT_X : WORLD_W - 70,
     offerSeed: opts.offerSeed ?? seed,
     surrenders: 0,
     betrayed: 0,
     spared: new Int32Array(MOBS.length),
     gold: 0,
+    heat,
+    chestsOpened: 0,
+    chestMiss: 0,
     coinCount: 0,
     potionCount: 0,
     potionBudget: 1,
@@ -247,5 +292,6 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     procScratch: new Int32Array(MAX_ENTS),
   };
   activatePlayer(s, 0, 80, 100);
+  if (!store) placeSites(s, opts.boss !== false);
   return s;
 }

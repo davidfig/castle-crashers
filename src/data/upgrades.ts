@@ -29,6 +29,8 @@ export interface UpgradeDef {
   unlock?: string;
   /** An ability-scaling boon (sim/abilityMods.ts): which ability (0 basic, 1 special, 2 nova, 3 dodge) and which track (0 size, 1 count, 2 speed, 3 power). */
   scales?: { ability: 0 | 1 | 2 | 3; track: 0 | 1 | 2 | 3 };
+  /** An evolution: two boons held at `rank` fuse into this one. Never in the ordinary pool; once both are held high enough it takes a card in every offer until taken or banished. */
+  evolve?: { from: readonly [string, string]; rank: number };
 }
 
 /** The tier of `u`, defaulting by kind. */
@@ -43,7 +45,6 @@ export const UPGRADES: readonly UpgradeDef[] = [
   { id: 'windfall', icon: 'boon-windfall', name: 'WINDFALL', text: ['+25% GOLD'], perRank: 0.25, maxRank: 4, kind: 'stat', tags: ['gold'] },
   { id: 'wind', icon: 'boon-wind', name: 'SECOND WIND', text: ['HEAL FULLY', 'NOW'], perRank: 0, maxRank: 255, kind: 'stat', tags: ['heal'] },
   // Triggers (roadmap "Progression", docs/04): the first of the boons that change what happens, not how much.
-  { id: 'kegs', icon: 'boon-kegs', name: 'POWDER KEGS', text: ['KILLS BURST', 'INTO BLASTS'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['corpse', 'blast', 'fire'] },
   { id: 'spark', icon: 'boon-spark', name: 'CHAIN SPARK', text: ['HITS ARC TO', 'NEARBY FOES'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['chain', 'lightning'] },
   { id: 'lust', icon: 'boon-lust', name: 'BLOODLUST', text: ['KILLS SPEED', 'UP SPECIALS'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['streak', 'cooldown'] },
   { id: 'gift', icon: 'boon-gift', name: 'FAREWELL', text: ['DODGE DROPS', 'A BLAST'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['dodge', 'blast'] },
@@ -64,7 +65,7 @@ export const UPGRADES: readonly UpgradeDef[] = [
   { id: 'wrath', icon: 'boon-wrath', name: 'HOLY WRATH', text: ['HEAL PULSE', 'ALSO SMITES'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['holy', 'blast', 'dodge'], classes: [2] },
   { id: 'vigil', icon: 'boon-vigil', name: 'VIGIL', text: ['REVIVES', 'COME SOONER'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['holy', 'heal', 'party'], classes: [2] },
   // Rogue (class 3).
-  { id: 'dance', icon: 'boon-dance', name: 'DEATH DANCE', text: ['VANISH KILL', 'FREES DODGE'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['dodge', 'streak', 'flank'], classes: [3] },
+  { id: 'dance', icon: 'boon-dance', name: 'DEATH DANCE', text: ['AMBUSH KILL', 'FREES DODGE'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['dodge', 'streak', 'flank'], classes: [3] },
   { id: 'keen', icon: 'boon-keen', name: 'KEEN EDGE', text: ['FLANKING', 'HITS HARDER'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['damage', 'flank'], classes: [3] },
   { id: 'pick', icon: 'boon-pick', name: 'PICKPOCKET', text: ['FLANK HITS', 'STEAL GOLD'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['gold', 'flank'], classes: [3] },
   // Archer (class 4).
@@ -80,6 +81,12 @@ export const UPGRADES: readonly UpgradeDef[] = [
   { id: 'glass', icon: 'boon-glass', name: 'GLASS FANG', text: ['2X DAMAGE', '1.5X TAKEN'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['damage', 'risk'], rarity: 2, unlock: 'legend' },
   { id: 'phoenix', icon: 'boon-phoenix', name: 'PHOENIX', text: ['RISE ONCE', 'IN FLAMES'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['defense', 'blast', 'fire'], rarity: 2, unlock: 'legend' },
   { id: 'frenzy', icon: 'boon-frenzy', name: 'FRENZY', text: ['ATTACK 50%', 'FASTER'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['damage', 'speed'], rarity: 2, unlock: 'legend' },
+  // Evolutions: two boons at rank 2 fuse into one that changes the rules (sim/boons.ts holds what). Offered the moment both are held.
+  { id: 'tempest', icon: 'boon-tempest', name: 'TEMPEST', text: ['SPARKS', 'EXPLODE'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['chain', 'lightning', 'blast'], rarity: 2, evolve: { from: ['spark', 'pound'], rank: 2 } },
+  { id: 'bloodmoon', icon: 'boon-bloodmoon', name: 'BLOODMOON', text: ['EVERY KILL', 'HEALS A BIT'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['streak', 'heal', 'damage'], rarity: 2, evolve: { from: ['tithe', 'exec'], rank: 2 } },
+  { id: 'undying', icon: 'boon-undying', name: 'UNDYING', text: ['LAST STAND', 'COMES TWICE'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['defense', 'blast'], rarity: 2, evolve: { from: ['last', 'thick'], rank: 2 } },
+  { id: 'wildfire', icon: 'boon-wildfire', name: 'WILDFIRE', text: ['DODGE LAYS', '3 BLASTS'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['dodge', 'blast', 'speed'], rarity: 2, evolve: { from: ['gift', 'swift'], rank: 2 } },
+  { id: 'rallycry', icon: 'boon-rallycry', name: 'WAR CRY', text: ['AURAS REACH', '2X FARTHER'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['party', 'damage', 'defense'], rarity: 2, needsParty: true, evolve: { from: ['banner', 'ward'], rank: 2 } },
   // Ability scaling: the basic attack and the special each grow along four tracks, any number of times, and cost more stamina for it (sim/abilityMods.ts).
   { id: 'bsize', icon: 'boon-bsize', name: 'SIZE', text: ['BIGGER'], perRank: 0, maxRank: 4, kind: 'stat', tags: ['basic', 'size'], rarity: 1, scales: { ability: 0, track: 0 } },
   { id: 'bcount', icon: 'boon-bcount', name: 'SPLIT', text: ['MORE'], perRank: 0, maxRank: 4, kind: 'stat', tags: ['basic', 'split'], rarity: 1, classes: [0, 1, 3, 4], scales: { ability: 0, track: 1 } },
@@ -119,6 +126,11 @@ function tierWeight(tier: number, level: number): number {
 const TAG_BIAS = 1;
 const HELD_BIAS = 1.5;
 
+/** Are both halves of evolution `u` held at the rank it needs? */
+function evolved(u: UpgradeDef, ranks: ArrayLike<number>): boolean {
+  return !!u.evolve && u.evolve.from.every((id) => ranks[UPGRADE_INDEX[id]] >= u.evolve!.rank);
+}
+
 /**
  * The three upgrades offered for `levelNumber` (the level just reached), as indexes into UPGRADES. Weighted by tier and by the tags
  * the hero already holds, so builds emerge; the first card is always a trigger when one is on offer (so a level never offers only
@@ -129,18 +141,25 @@ export interface OfferContext {
   party?: number;
   /** Class-tree nodes the hero's character has unlocked. Absent = everything is open (until the tree exists); present = a boon with an `unlock` needs it in here. */
   unlocked?: ReadonlySet<string>;
+  /** Rerolls spent on this pick: each one deals a fresh hand. */
+  salt?: number;
+  /** Boons the hero has banished this run (index = UPGRADES, non-zero = never offered again). */
+  banned?: ArrayLike<number>;
 }
 
 export function offerFor(seed: number, slot: number, levelNumber: number, ranks?: ArrayLike<number>, classId?: number, ctx: OfferContext = {}): number[] {
-  const r = createRng((seed ^ Math.imul(slot + 1, 0x9e3779b1) ^ Math.imul(levelNumber + 1, 0x85ebca6b)) >>> 0, Stream.offer);
+  const r = createRng((seed ^ Math.imul(slot + 1, 0x9e3779b1) ^ Math.imul(levelNumber + 1, 0x85ebca6b) ^ Math.imul((ctx.salt ?? 0) + 1, 0xc2b2ae35)) >>> 0, Stream.offer);
   const held = new Set<string>();
   if (ranks) for (let i = 0; i < UPGRADES.length; i++) if (ranks[i] > 0) for (const tag of UPGRADES[i].tags) held.add(tag);
   const pool: number[] = [];
   const syn: number[] = [];
+  const evos: number[] = [];
   for (let i = 0; i < UPGRADES.length; i++) {
     const u = UPGRADES[i];
     if (u.classes && (classId === undefined || !u.classes.includes(classId))) continue;
     if (ranks && ranks[i] >= u.maxRank) continue;
+    if (ctx.banned && ctx.banned[i]) continue;
+    if (u.evolve) { if (ranks && evolved(u, ranks) && !(u.needsParty && ctx.party !== undefined && ctx.party < 2)) evos.push(i); continue; }
     if (u.needsParty && ctx.party !== undefined && ctx.party < 2) continue;
     if (u.unlock && ctx.unlocked && !ctx.unlocked.has(u.unlock)) continue;
     let shared = 0;
@@ -167,6 +186,8 @@ export function offerFor(seed: number, slot: number, levelNumber: number, ranks?
       take(draw(all, (k) => tierWeight(rarityOf(UPGRADES[pool[k]]), levelNumber))); // the wildcard
     } else take(draw(all, (k) => syn[k]));
   }
+  // A fusion that is ready takes the wildcard's place: a build always gets its chance at the payoff.
+  if (evos.length > 0 && out.length === OFFER_SIZE) out[OFFER_SIZE - 1] = evos[rngInt(r, evos.length)];
   // Which position holds the guaranteed trigger is not fixed.
   if (out.length === OFFER_SIZE) { const j = rngInt(r, OFFER_SIZE); [out[0], out[j]] = [out[j], out[0]]; }
   return out;
@@ -186,12 +207,12 @@ const NOUNS: readonly (readonly [string, string, string, string])[] = [
   ['SWORD', 'BIG SWING', 'QUAKE', 'CHARGE'],
   ['FIREBALL', 'MEGABALL', 'FIRE NOVA', 'BLINK'],
   ['AURA', 'HOLY BURST', 'HOLY NOVA', 'HEAL ROLL'],
-  ['DAGGER', 'SHADOWCUT', 'BLADE RING', 'VANISH'],
+  ['DAGGER', 'SHADOWCUT', 'BLADE RING', 'ROLL'],
   ['ARROW', 'VOLLEY', 'RAIN', 'ROLL'],
 ];
 const RANGED = [1, 4];
 const AURA = 2;
-const DODGE_KIND = ['charge', 'teleport', 'heal', 'vanish', 'roll'];
+const DODGE_KIND = ['charge', 'teleport', 'heal', 'roll', 'roll'];
 
 /** The card's name and text for `def`, for a hero of `classId`: ability boons say what they do to that class's own attack. */
 export function cardFor(def: UpgradeDef, classId: number): { name: string; text: readonly string[] } {

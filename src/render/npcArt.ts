@@ -4,9 +4,13 @@
 import type { Frame } from '../platform/gl/batcher';
 import registrarMeta from '../../art/out/registrar.json';
 import peddlerMeta from '../../art/out/peddler.json';
+import kingMeta from '../../art/out/king.json';
+import heraldMeta from '../../art/out/herald.json';
+import captainMeta from '../../art/out/captain.json';
+import elderMeta from '../../art/out/elder.json';
 
 /** Order matches the sheets in npcSheets.ts. */
-export const NPC_NAMES = ['registrar', 'peddler'] as const;
+export const NPC_NAMES = ['registrar', 'peddler', 'king', 'herald', 'captain', 'elder'] as const;
 export type NpcName = (typeof NPC_NAMES)[number];
 
 interface NpcMeta {
@@ -15,7 +19,7 @@ interface NpcMeta {
   frames: Record<string, { x: number; y: number; w: number; h: number }>;
   anims: Record<string, { frames: string[]; ms: number[] }>;
 }
-const METAS = [registrarMeta, peddlerMeta] as unknown as NpcMeta[];
+const METAS = [registrarMeta, peddlerMeta, kingMeta, heraldMeta, captainMeta, elderMeta] as unknown as NpcMeta[];
 
 export interface NpcAnim { frames: Frame[]; ms: number[] }
 export interface NpcSet {
