@@ -52,6 +52,8 @@ export const SCENE_AHEAD = 620;
 export const SCENE_RELEASE = 210;
 /** Reinforcements and flank waves pause while the camera centre is this far before a scene (and until the release). */
 const SCENE_HOLD_BEFORE = 330;
+/** Field y of a road scene: up at the far edge of the field, so the figures and their speech bubbles stand against the sky, clear of the fighting. */
+export const SCENE_Y = 18;
 const SCENE_STREAM = 5001;
 
 /** A story beat the run was told to place. Mirrors the campaign layer's ReservedBeat; the sim knows nothing else about the campaign. */
@@ -114,7 +116,7 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
     for (let k = plan.length - 1; k >= 0; k--) if (!plan[k].boss && plan[k].rid! < clumps && plan[k].x > x - SCENE_CLEARING && plan[k].x < x + SCENE_AHEAD) plan.splice(k, 1);
     let at = 0;
     while (at < plan.length && plan[at].x <= x) at++;
-    plan.splice(at, 0, { x, y: WORLD_H / 2 + 10, size: 0, line: false, t: opts.scene.t, scene: opts.scene.id, rid: SCENE_STREAM });
+    plan.splice(at, 0, { x, y: SCENE_Y, size: 0, line: false, t: opts.scene.t, scene: opts.scene.id, rid: SCENE_STREAM });
   }
   if (beat && STAGED_BEATS.includes(beat.id)) {
     // Placed at a fixed point of the field (there is one route), never rolled; the other encounters keep their own streams.
