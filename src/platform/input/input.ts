@@ -258,9 +258,9 @@ export class InputManager {
     return code.replace(/^Key/, '').replace('BracketLeft', '[');
   }
 
-  /** Release all slots (on restart) so devices can re-join. */
-  reset(): void {
-    this.slots.fill(null);
+  /** Release all slots (on restart) so devices can re-join. `keep[k]` keeps slot k's device bound to it (the lobby's party carrying into the run). */
+  reset(keep?: boolean[]): void {
+    this.slots = this.slots.map((id, k) => (keep?.[k] ? id : null));
     this.restartRequested = false;
     this.edges.clear();
     this.heldKeys = new Set(this.keys);

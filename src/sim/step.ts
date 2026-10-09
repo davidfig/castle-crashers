@@ -149,8 +149,8 @@ const standingInput: InputFrame = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, button
 
 /** What a hero with the level-up panel open (or a pick button still held) does: nothing. Reused; no frame is mutated. */
 const panelInput: InputFrame = { moveX: 0, moveY: 0, aimX: 0, aimY: 0, buttons: 0 };
-/** Pressed while choosing: Ability 1 and 2 take cards 2 and 3 outright; Attack, Dodge and Interact (a pad's A, B and Y) take the highlighted one. */
-const CONFIRM = Btn.Attack | Btn.Dodge | Btn.Interact;
+/** Pressed while choosing: Ability 1 and 2 take cards 2 and 3 outright; Attack, Dodge, Interact and Confirm (a pad's RT, LT, B/Y and A) take the highlighted one. */
+const CONFIRM = Btn.Attack | Btn.Dodge | Btn.Interact | Btn.Confirm;
 const PICK_BUTTONS = CONFIRM | Btn.Ability1 | Btn.Ability2 | Btn.Level;
 
 /**

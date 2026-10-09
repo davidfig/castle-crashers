@@ -251,7 +251,7 @@ function startRun(c: RunConfig, keepSlots = false): void {
   route = { index: 0, total, plan: levelPlan(c.seed, 0, total), carry: undefined, beats: [] };
   sim = newSim(route.plan);
   fx = new Fx();
-  input.reset();
+  input.reset(keepSlots ? picks.map((p) => p.joined) : undefined); // the lobby's devices stay on their heroes, so the run starts under their control
   retreated = false;
   endTicks = 0;
   barks.reset();
