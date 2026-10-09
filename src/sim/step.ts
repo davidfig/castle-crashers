@@ -366,7 +366,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
     const rooted = p.rootT > 0;
     if (rooted) p.rootT--;
     const turn = p.confuseT > 0 ? (p.confuseT--, -1) : 1; // a whiteout reverses the way the stick moves you
-    const speed = rooted ? 0 : (p.winded ? cls.speed * cls.windedSpeed : cls.speed) * (p.slowT > 0 ? SLOW_FACTOR : 1) * speedMul(p.ranks);
+    const speed = rooted ? 0 : (p.winded ? cls.speed * cls.windedSpeed : cls.speed) * (p.slowT > 0 ? SLOW_FACTOR : 1) * speedMul(p.ranks) * (p.cdAttack > 0 ? cls.attackMove ?? 1 : 1);
     e.x[i] += mx * speed * turn;
     e.y[i] += my * speed * turn;
     if (p.lungeT > 0) {
@@ -545,7 +545,8 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
     if (!sw.aoe && dist > 6 && dx * p.faceX + dy * p.faceY < dot * dist) continue;
     const inv = dist > 0.001 ? 1 / dist : 0;
     const flank = flankMul(s, p, cls, m, dx);
-    const r = damageMob(s, m, damage * flank, dist > 0.001 ? dx * inv : p.faceX, dist > 0.001 ? dy * inv : p.faceY, sw.knock, slot, (sw.pierce ? PIERCE : 0) | (sw.aoe && !heavy ? CHIP : 0));
+    const ring = sw.inner && sw.innerMul && dist <= range * sw.inner ? sw.innerMul : 1;
+    const r = damageMob(s, m, damage * flank * ring, dist > 0.001 ? dx * inv : p.faceX, dist > 0.001 ? dy * inv : p.faceY, sw.knock, slot, (sw.pierce ? PIERCE : 0) | (sw.aoe && !heavy ? CHIP : 0));
     if (r === 1) { hits++; if (flank > 1) s.gold += p.ranks[UPGRADE_INDEX.pick]; } // Pickpocket
   }
 
@@ -615,7 +616,9 @@ function radialBlast(s: GameState, slot: number, cls: ClassDef, big: boolean, sc
   const e = s.ents;
   const cx = e.x[p.ent], cy = e.y[p.ent];
   const radius = (big ? cls.novaBigRadius : cls.novaRadius) * (1 + NOVA_SIZE * rankOf(p.ranks, 2, 0));
-  const damage = (big ? cls.novaBigDamage : cls.novaDamage) * (1 + POWER_PER_RANK * rankOf(p.ranks, 2, 3)) * scale;
+  // A nova let off out of a vanish is an ambush like any other strike from the shadows.
+  const ambush = p.vanishT > 0 && cls.ambush ? cls.ambush + 0.5 * p.ranks[UPGRADE_INDEX.keen] : 1;
+  const damage = (big ? cls.novaBigDamage : cls.novaDamage) * (1 + POWER_PER_RANK * rankOf(p.ranks, 2, 3)) * scale * ambush;
   emit(s.events, Ev.Nova, cx, cy, radius, big ? 1 : 0);
   const killsBefore = s.kills;
   const n = gatherCircle(s.grid, e, cx, cy, radius, s.scratch);

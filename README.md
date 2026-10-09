@@ -19,7 +19,7 @@ Optional URL params: `?seed=1234` for a reproducible battlefield; dev builds als
 | Attack (cleave) | J | , | X |
 | Big swing (special, costs stamina) | I | ; | X |
 | Nova (AoE, costs fury) | K | . | A / Y |
-| Dash | L | / | B / RB |
+| Dash | L | / | LT |
 
 Any device pressing a button claims the next free player slot (up to 4). `R` or Start restarts.
 

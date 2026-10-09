@@ -14,7 +14,6 @@ import { drawAmbient, drawCrest, drawFog, drawGround, drawHaze, drawParallax, dr
 import { makeBlendedMood, moodAt, sceneryFor } from '../data/biomes';
 import { BLINK_TICKS, SLASH_TICKS, type Fx } from './fx';
 import { drawCamps } from './camp';
-import { drawGates } from './gate';
 import { drawLevelUp } from './levelup';
 import { drawBoonPops, drawBoonStrip } from './boonHud';
 import { drawMercy } from './mercy';
@@ -150,7 +149,6 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawCrest(b, S, biome, mood, camX, oy);
   drawFog(b, S, biome, mood, camX, oy, ft, progress);
   drawCamps(b, S, s, camX, oy);
-  drawGates(b, S, s, camX, oy);
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);

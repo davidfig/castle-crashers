@@ -165,6 +165,12 @@ function enterSelect(c?: RunConfig): void {
   screen = selectScreen(c?.writ, lobby);
 }
 
+/** Backing out of the lobby: to the board when a Writ or a party is behind it, otherwise to the title. */
+function leaveSelect(): void {
+  input.reset();
+  if (pendingCfg || picks.length) showBoard(); else { mode = 'title'; screen = { kind: 'title' }; }
+}
+
 function selectUpdate(): void {
   if (input.restartRequested) { input.reset(); if (pendingCfg || picks.length) showBoard(); return; } // backing out: to the board (the party stays as it was)
   const frames = input.sample();
@@ -172,10 +178,16 @@ function selectUpdate(): void {
     const f = frames[k], l = lobby[k];
     const x = f.moveX > 60 ? 1 : f.moveX < -60 ? -1 : 0;
     const dx = x !== lobbyPrevX[k] ? x : 0;
-    const atk = f.buttons & ~Btn.Join & ~lobbyPrevBtn[k]; // any button readies up
+    const atk = f.buttons & ~Btn.Join & ~Btn.Interact & ~lobbyPrevBtn[k]; // any other button readies up
+    const back = f.buttons & Btn.Interact & ~lobbyPrevBtn[k]; // B: unready, then leave, then out of the lobby
     lobbyPrevX[k] = x;
     lobbyPrevBtn[k] = f.buttons;
-    if (!l.joined) { if (f.buttons & Btn.Join) l.joined = true; continue; }
+    if (!l.joined) {
+      if (f.buttons & Btn.Join || atk) l.joined = true;
+      else if (back && !lobby.some((o) => o.joined)) { leaveSelect(); return; }
+      continue;
+    }
+    if (back) { if (l.ready) l.ready = false; else l.joined = false; continue; }
     if (!l.ready && dx !== 0) l.classId = (l.classId + dx + CLASSES.length) % CLASSES.length;
     if (atk) l.ready = !l.ready;
   }
@@ -353,7 +365,7 @@ function campUpdate(): void {
       shopPrevY[k] = y;
       if (!sim.players[k].active || campReady[k]) continue;
       if (dy !== 0) shopCursor[k] = (shopCursor[k] + dy + shopStock.length) % shopStock.length;
-      if (edge & Btn.Attack) {
+      if (edge & (Btn.Attack | Btn.Confirm)) {
         const i = shopCursor[k];
         if (shopSold[i]) continue;
         const res = buy(sim, k, WARES[shopStock[i].ware], shopStock[i].price);
@@ -374,10 +386,10 @@ function campUpdate(): void {
 }
 
 function menuUpdate(): void {
-  const { dx, ok } = input.consumeMenu();
+  const { dx, ok, any, back } = input.consumeMenu();
   if (mode === 'board') {
     if (dx !== 0) { sel = (sel + dx + writs.length) % writs.length; screen = boardScreen(ledger, writs, sel, saveNote); }
-    if (input.restartRequested) { enterSelect(); return; } // R: change the party
+    if (input.restartRequested || back) { enterSelect(); return; } // R / B: change the party
     if (ok) {
       const c = makeRunConfig(ledger, writs[sel]);
       if (picks.some((p) => p.joined)) startRun(c, true); else enterSelect(c); // the party was chosen up front (a dev skip has none)
@@ -396,7 +408,7 @@ function menuUpdate(): void {
       }
     }
   } else if (mode === 'summary' && ok) enterHub();
-  else if (mode === 'title' && ok) enterSelect();
+  else if (mode === 'title' && any) enterSelect();
 }
 
 if (params.has('seed') || (__DEV__ && params.has('camp'))) {

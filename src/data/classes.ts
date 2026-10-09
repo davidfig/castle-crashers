@@ -16,6 +16,9 @@ export interface Swing {
   waveWidth: number;
   /** Point-blank area burst instead of an arc: hits everything within `range` all around, no facing, no lunge (the cleric). */
   aoe?: boolean;
+  /** An aoe's inner ring: within this fraction of `range` each hit does `innerMul` times the damage (the cleric's aura grinds harder up close). */
+  inner?: number;
+  innerMul?: number;
 }
 
 /**
@@ -110,6 +113,8 @@ export interface ClassDef {
   dashKnock: number;
   /** The attack button toggles a pulsing aura (the cleric) that drains this much stamina per tick while on; absent = a normal attack. */
   auraDrain?: number;
+  /** Movement multiplier while an attack is in progress (its cooldown running): absent = 1, 0 = rooted.*/
+  attackMove?: number;
   /** The rogue's edge: melee hits on a mob that faces away from him deal this many times damage (absent = none). */
   backstab?: number;
   /** Same, for the first strike thrown out of a vanish (the mob never saw it coming). */
@@ -129,6 +134,7 @@ export const CLASSES: ClassDef[] = [
     name: 'warrior',
     hp: 100,
     speed: 1.5,
+    attackMove: 0.4,
     combo: [
       { range: 38, dot: 0.0, damage: 6, knock: 3.8, cooldown: 21, hitStop: 1, pierce: false, lunge: 3, wave: 0, waveWidth: 0 },
       { range: 40, dot: 0.0, damage: 6, knock: 4.2, cooldown: 21, hitStop: 1, pierce: false, lunge: 3, wave: 0, waveWidth: 0 },
@@ -174,7 +180,7 @@ const swing = (s: Partial<Swing> & Pick<Swing, 'range' | 'dot' | 'damage' | 'kno
 
 CLASSES.push(
   {
-    ...WARRIOR, name: 'mage', hp: 70, speed: 1.4,
+    ...WARRIOR, name: 'mage', hp: 70, speed: 1.4, attackMove: 0.4,
     dashKind: 'teleport', dashPower: 85, dashCost: 20, dashCooldown: 50, dashDamage: 0, dashTicks: 0,
     // No swing: the basic attack is a fireball that explodes on impact. (`combo` and `special` are required by the type but unused.)
     combo: [swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 24 })],
@@ -188,11 +194,11 @@ CLASSES.push(
     novaCost: 40, novaRadius: 85, novaDamage: 11, novaBigRadius: 125, novaBigDamage: 16,
   },
   {
-    ...WARRIOR, name: 'cleric', hp: 90, speed: 1.45,
+    ...WARRIOR, name: 'cleric', hp: 90, speed: 1.45, attackMove: 1,
     // No mace swing: a point-blank burst of holy light around the cleric hits everything close, in every direction.
     auraDrain: 0.12,
     // The aura is continuous: a small hit every 8 ticks all round her that barely nudges mobs (each hit slides one about 1.5 px) (the old pulse was 3 dmg / 22 ticks).
-    combo: [swing({ range: 40, dot: -1, damage: 1, knock: 0.3, cooldown: 8, hitStop: 0, aoe: true })],
+    combo: [swing({ range: 40, dot: -1, damage: 1, knock: 0.3, cooldown: 8, hitStop: 0, aoe: true, inner: 0.5, innerMul: 2 })],
     furyPerHit: 0.5,
     special: swing({ range: 62, dot: -1, damage: 7, knock: 9, cooldown: 28, hitStop: 2, pierce: true, aoe: true }),
     specialCost: 30, specialCooldown: 140,
@@ -200,7 +206,7 @@ CLASSES.push(
     dashKind: 'heal', dashPower: 14, dashRadius: 70, dashSpeed: 3, dashTicks: 8, dashCost: 24, dashCooldown: 70, dashDamage: 0,
   },
   {
-    ...WARRIOR, name: 'rogue', hp: 75, speed: 1.9,
+    ...WARRIOR, name: 'rogue', hp: 75, speed: 1.9, attackMove: 1,
     // Front-on he is no better than anyone (4 dmg a quick jab); from behind or out of a vanish he is the hardest hitter in the game.
     backstab: 2.5, ambush: 3.5,
     combo: [swing({ range: 30, dot: 0.1, damage: 4, knock: 2, cooldown: 14, lunge: 4 }), swing({ range: 32, dot: 0.1, damage: 4, knock: 2.2, cooldown: 14, lunge: 4 })],
@@ -210,7 +216,7 @@ CLASSES.push(
     dashSpeed: 4.2, dashTicks: 7, dashCost: 14, dashCooldown: 30, dashDamage: 0, dashKind: 'vanish', dashPower: 100,
   },
   {
-    ...WARRIOR, name: 'archer', hp: 70, speed: 1.6,
+    ...WARRIOR, name: 'archer', hp: 70, speed: 1.6, attackMove: 0.2,
     // No swing: it shoots. (`combo` and `special` are required by the type but never used for this class.)
     combo: [swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 8 })],
     special: swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 8 }),

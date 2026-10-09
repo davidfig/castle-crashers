@@ -9,6 +9,8 @@ export const Btn = {
   Ability2: 64,
   /** Opens or closes the level-up panel. */
   Level: 128,
+  /** Menus only (a pad's A): confirms in the lobby and the shop. The sim ignores it. */
+  Confirm: 256,
 } as const;
 
 export interface InputFrame {
