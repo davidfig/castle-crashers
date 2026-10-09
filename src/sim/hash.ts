@@ -67,6 +67,7 @@ export function hashState(s: GameState): number {
   h = mix(h, u8(e.cool));
   h = mix(h, u8(e.cool2));
   h = mix(h, u8(e.buff));
+  h = mix(h, u8(e.shieldHp));
   h = mix(h, u8(e.rem));
   h = mix(h, u8(e.by));
   h = mix(h, u8(e.flags));

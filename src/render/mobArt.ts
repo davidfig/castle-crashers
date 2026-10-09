@@ -116,6 +116,8 @@ export interface MobPoseState {
   cling?: boolean;
   /** Getting back up after a first death (the dread knight): uses `rise`, else `dazed`. */
   rising?: boolean;
+  /** A shield bearer whose shield has broken: uses the `...B` animations. */
+  broken?: boolean;
   moving: boolean;
   hurt: boolean;
   tick: number;
@@ -130,7 +132,7 @@ const at = (frames: Frame[], n: number): Frame => frames[((n % frames.length) + 
  * Missing animations fall through, so an enemy only needs the poses that make sense for it.
  */
 export function mobPose(art: MobArt, type: number, s: MobPoseState): Frame {
-  const A = art.anims[type];
+  const A = s.broken && art.anims[type].walkB ? brokenAnims(art.anims[type]) : art.anims[type];
   if (s.rising && (A.rise ?? A.dazed)) return at(A.rise ?? A.dazed, s.tick >> 3);
   if (s.cling && A.cling) return at(A.cling, s.tick >> 2);
   if (s.dazed && A.dazed) return at(A.dazed, s.tick >> 3);
@@ -153,4 +155,16 @@ export function mobPose(art: MobArt, type: number, s: MobPoseState): Frame {
   }
   if (!s.moving && A.idle) return at(A.idle, (s.tick >> 4) + s.salt);
   return at(A.walk, (s.tick >> 3) + s.salt);
+}
+
+const brokenCache = new WeakMap<Record<string, Frame[]>, Record<string, Frame[]>>();
+/** A shield bearer's animations with the broken-shield set (`walkB`, `idleB`, ...) standing in for the whole ones. */
+function brokenAnims(A: Record<string, Frame[]>): Record<string, Frame[]> {
+  let out = brokenCache.get(A);
+  if (!out) {
+    out = { ...A };
+    for (const k of Object.keys(A)) if (k.endsWith('B') && A[k.slice(0, -1)]) out[k.slice(0, -1)] = A[k];
+    brokenCache.set(A, out);
+  }
+  return out;
 }

@@ -32,19 +32,32 @@ const slab = rows(`
   XzzzZ
   .zzzz
 `);
+// what is left of the slab once it breaks: a jagged shard hanging from the guard's hand
+const shard = rows(`
+  XZ.
+  XZZ
+  zZZ
+  .zZ
+  ..z
+`);
 const headHurt = rows(`
   .HHHH.
   HJJJJH
   HJlHHH
   .HHHH.
 `);
-const parts = { head, headHurt, robe, shoe, slab };
+const parts = { head, headHurt, robe, shoe, slab, shard };
 const rig = robedRig({
   OX: 5, OY: 3, parts, shoe,
   layout: { robe: [3, 5], head: [3, 1], legB: [3, 9], legF: [5, 9], sleeve: null },
-  prop(o, h, { T }) { return [['slab', ...T(7 + (o.sx ?? 0) + (o.lean ?? 0), 4 + (o.bob ?? 0) + (o.sy ?? 0))]]; },
+  prop(o, h, { T }) {
+    if (o.broken) return [['shard', ...T(7 + (o.sx ?? 0) + (o.lean ?? 0), 6 + (o.bob ?? 0) + (o.sy ?? 0))]];
+    return [['slab', ...T(7 + (o.sx ?? 0) + (o.lean ?? 0), 4 + (o.bob ?? 0) + (o.sy ?? 0))]];
+  },
 });
-const { pose } = rig;
+const { pose: basePose } = rig;
+// every pose twice: with the slab, and (suffix B) with it broken, so the shield can break mid-fight
+const pose = (name, o) => { basePose(name, o); basePose(name + 'B', { ...o, broken: true }); };
 pose('walk0', { bob: 1, lf: 1, lb: -1 });
 pose('walk1', { bob: 0 });
 pose('walk2', { bob: 1, lf: -1, lb: 1 });
@@ -69,5 +82,10 @@ export default {
     windup: { fps: 1, frames: ['windup0', 'windup1'] },
     strike: { fps: 1, frames: ['strike0', 'strike1'] },
     hurt: { fps: 1, frames: ['hurt0'] },
+    walkB: { fps: 8, frames: ['walk0B', 'walk1B', 'walk2B', 'walk3B'] },
+    idleB: { fps: 3, frames: ['idle0B', 'idle1B'] },
+    windupB: { fps: 1, frames: ['windup0B', 'windup1B'] },
+    strikeB: { fps: 1, frames: ['strike0B', 'strike1B'] },
+    hurtB: { fps: 1, frames: ['hurt0B'] },
   },
 };

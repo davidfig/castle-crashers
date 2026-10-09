@@ -1,4 +1,5 @@
 // Struct-of-arrays entity storage. Horde-scale: thousands of entities, zero per-entity allocation.
+import { MOBS } from '../data/mobs';
 import { MAX_ENTS } from './constants';
 
 /** A Zone is a patch of ground that something is about to happen to (a lobbed rock) or that stays dangerous (a poison pool). */
@@ -51,6 +52,8 @@ export interface Entities {
   cool2: Uint16Array;
   /** Mobs: ticks of frenzy left (a drummer's rally). Zones: ticks of slow it inflicts. */
   buff: Uint16Array;
+  /** Mobs with a shield: damage it can still soak (0 = broken, or none). */
+  shieldHp: Float32Array;
   /** Full health, so a health bar can show a fraction. */
   maxhp: Float64Array;
   /** Distance left to cover in a charge. */
@@ -96,6 +99,7 @@ export function createEntities(capacity = MAX_ENTS): Entities {
     cool: new Uint16Array(capacity),
     cool2: new Uint16Array(capacity),
     buff: new Uint16Array(capacity),
+    shieldHp: new Float32Array(capacity),
     maxhp: new Float64Array(capacity),
     rem: new Float64Array(capacity),
     ax: new Float64Array(capacity),
@@ -120,7 +124,7 @@ export function allocEntity(e: Entities, kind: number, sub: number, x: number, y
   e.hp[i] = hp;
   e.maxhp[i] = hp;
   e.cool2[i] = 0;
-  e.hurt[i] = 0; e.stun[i] = 0; e.atk[i] = 0; e.wind[i] = 0; e.mode[i] = 0; e.cool[i] = 0; e.buff[i] = 0; e.rem[i] = 0; e.ax[i] = 0; e.ay[i] = 0;
+  e.hurt[i] = 0; e.stun[i] = 0; e.atk[i] = 0; e.wind[i] = 0; e.mode[i] = 0; e.cool[i] = 0; e.buff[i] = 0; e.shieldHp[i] = kind === Kind.Mob ? (MOBS[sub]?.shieldHp ?? 0) : 0; e.rem[i] = 0; e.ax[i] = 0; e.ay[i] = 0;
   e.face[i] = 1;
   e.flags[i] = 0;
   e.by[i] = -1;

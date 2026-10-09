@@ -1102,7 +1102,7 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   const moving = Math.abs(e.x[i] - e.px[i]) + Math.abs(e.y[i] - e.py[i]) > 0.05;
   const cling = e.mode[i] === SP_CLING;
   const rising = def.revive !== undefined && e.rem[i] === 1 && e.stun[i] > 20;
-  f = mobPose(S.mobArt, type, { winding, windP: p, striking, strikeQ: q, chargeWind, charging, dazed, cast: special, cling, rising, moving, hurt: hurtFlash > 0, tick, salt: i });
+  f = mobPose(S.mobArt, type, { winding, windP: p, striking, strikeQ: q, chargeWind, charging, dazed, cast: special, cling, rising, broken: def.shield && e.shieldHp[i] <= 0, moving, hurt: hurtFlash > 0, tick, salt: i });
 
   let ox = 0, oy = 0;
   let flash = hurtFlash;

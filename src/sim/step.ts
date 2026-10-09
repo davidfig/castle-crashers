@@ -799,12 +799,26 @@ export function damageMob(s: GameState, m: number, dmg: number, dirX: number, di
   }
   if (def.thorns && owner >= 0) poisonPlayer(s, owner, def.thorns); // its skin is venomous to whatever strikes it
   if (owner >= 0) dmg *= damageMul(s.players[owner].ranks) * executeMul(s, owner, m) * bannerMul(s, owner);
-  if (def.shield && !(flags & PIERCE) && dirX * e.face[m] < 0) {
-    // Attacker is on the shield side.
+  if (def.shield && !(flags & PIERCE) && dirX * e.face[m] < 0 && (def.shieldHp === undefined || e.shieldHp[m] > 0)) {
+    // Attacker is on the shield side: the shield takes the blow, and breaks once it has taken enough.
     e.vx[m] += dirX * knock * 0.25;
     e.hurt[m] = 2;
     e.flags[m] |= 1;
+    if (owner >= 0) e.by[m] = owner;
     emit(s.events, Ev.Block, e.x[m], e.y[m], e.face[m]);
+    if (def.shieldHp !== undefined) {
+      e.shieldHp[m] -= dmg;
+      if (e.shieldHp[m] <= 0) {
+        e.shieldHp[m] = 0;
+        e.stun[m] = Math.max(e.stun[m], 36); // the shock of it knocks the guard open
+        e.wind[m] = 0;
+        if (e.mode[m] === 1) e.mode[m] = 0;
+        e.hurt[m] = 6;
+        emit(s.events, Ev.Burst, e.x[m] + e.face[m] * 5, e.y[m], 16, BurstStyle.Flash);
+        emit(s.events, Ev.Burst, e.x[m] + e.face[m] * 5, e.y[m], 14, BurstStyle.Bones);
+        stop(s, 4);
+      }
+    }
     return 2;
   }
   if (isWarded(e, m)) {

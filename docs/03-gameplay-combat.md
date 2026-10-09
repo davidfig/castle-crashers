@@ -60,7 +60,7 @@ Physical bindings live in [09](09-input-audio-assets.md). The sim only sees logi
 | Goblin | Fodder, fast | Fuel for fury; arrives in waves |
 | Orc | Slow brute, big telegraphed smash, and a random **bull charge** | Interrupt the smash; read the charge lane and sidestep or dash it; punish the daze |
 | Archer | Ranged, keeps its distance, red aim line then a dodgeable arrow | Close in, dash the line, or swat arrows out of the air with a cleave/nova |
-| Shield bearer | Blocks frontal non-piercing hits | Use the finisher, nova, or get behind it |
+| Shield bearer | Blocks frontal non-piercing hits; the shield soaks 24 damage, then **breaks** (the guard is stunned and open from every side, and drawn with a shard instead of the slab) | Pound the shield down, use the finisher or nova (they pierce), or get behind it |
 | Bomber | Fast, explodes on a short fuse | Kill it *away from you*, or into a pack: its blast chain-kills nearby mobs and credits you |
 
 Use `npm run playtest` to run a scripted bot over several seeds for balance sanity (win/lose, kills, minimum HP).

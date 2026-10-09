@@ -199,8 +199,10 @@ export interface MobDef {
   /** Ticks of telegraph before the attack lands. Interrupted by stun (except bomber fuses). */
   windup: number;
   knockResist: number;
-  /** Blocks frontal non-piercing hits. */
+  /** Blocks frontal non-piercing hits, until `shieldHp` of damage has been spent on it: then it breaks and the mob is open from every side. */
   shield: boolean;
+  /** Damage a shield soaks before it breaks (absent = it never breaks). */
+  shieldHp?: number;
   /** Coin drop: chance (0..1) and value range of the single coin dropped. */
   coinChance: number;
   coinMin: number;
@@ -286,7 +288,7 @@ export const MOBS: MobDef[] = [
   { name: 'orc', behavior: Behavior.Melee, hp: 30, speed: 0.38, radius: 5.5, damage: 12, atkCooldown: 80, reach: 14, windup: 24, knockResist: 0.35, shield: false, coinChance: 1, coinMin: 3, coinMax: 6,
     charge: { chance: 1 / 500, speed: 3.4, distance: 190, windup: 36, cooldown: 420, damage: 14, minRange: 60, maxRange: 240, dazed: 55 } },
   { name: 'archer', behavior: Behavior.Ranged, hp: 5, speed: 0.5, radius: 3.5, damage: 6, atkCooldown: 110, reach: 100, windup: 30, knockResist: 1, shield: false, coinChance: 0.7, coinMin: 1, coinMax: 3 },
-  { name: 'shield', behavior: Behavior.Melee, hp: 22, speed: 0.42, radius: 5, damage: 7, atkCooldown: 70, reach: 11, windup: 16, knockResist: 0.5, shield: true, coinChance: 1, coinMin: 2, coinMax: 4 },
+  { name: 'shield', behavior: Behavior.Melee, hp: 22, speed: 0.42, radius: 5, damage: 7, atkCooldown: 70, reach: 11, windup: 16, knockResist: 0.5, shield: true, shieldHp: 24, coinChance: 1, coinMin: 2, coinMax: 4 },
   { name: 'bomber', behavior: Behavior.Bomber, hp: 4, speed: 0.95, radius: 3.5, damage: 14, atkCooldown: 0, reach: 10, windup: 30, knockResist: 1, shield: false, coinChance: 0, coinMin: 0, coinMax: 0 },
   {
     name: 'warlord', behavior: Behavior.Boss, hp: 650, speed: 0.3, radius: 22, damage: 22, atkCooldown: 100, reach: 30, windup: 28,
