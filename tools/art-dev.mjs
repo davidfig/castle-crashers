@@ -10,10 +10,11 @@ import { join, extname, dirname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import * as esbuild from 'esbuild';
+import { pickPort } from './port.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const ART = join(ROOT, 'art');
-const PORT = Number(process.env.ART_PORT) || 5190;
+const PORT = await pickPort(Number(process.env.ART_PORT) || 5190, { name: 'art workbench', marker: '/screens.html' });
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.css': 'text/css' };
 
 const clients = new Set();

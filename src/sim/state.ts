@@ -10,6 +10,10 @@ import { biomeIndex } from '../data/roster';
 import { planGates, planLevel, type ClumpPlan, type Gate, type SimBeat } from './gen/level';
 
 export const BLAST_CAP = 64;
+/** Boon effects waiting to resolve this tick: [kind, x, y, owner slot, a, b] each. */
+export const PROC_CAP = 96;
+/** Effects a tick may queue in all (a chain of kills that each burst stops growing past this). */
+export const PROC_BUDGET = 48;
 
 export const Phase = { Playing: 0, Won: 1, Lost: 2 } as const;
 
@@ -63,6 +67,8 @@ export interface PlayerState {
   stickPrev: number;
   /** Rank of each upgrade taken (index = UPGRADES). */
   ranks: Uint8Array;
+  /** Ticks until each trigger boon (index = UPGRADES) may fire again; only the ones with a cooldown use it. */
+  boonCd: Uint16Array;
   /** Stamina: spent by swings, dashes and the special; comes back once the regen delay has passed. */
   stamina: number;
   staminaDelay: number;
@@ -75,6 +81,13 @@ export interface PlayerState {
   slowT: number;
   /** Ticks left snared by a trap (cannot walk; a dodge-roll breaks free). */
   rootT: number;
+  /** Dodge Count: extra dodges left in this burst, and ticks left to use them. */
+  dashChain: number;
+  chainT: number;
+  /** Nova Count: echo pulses still to come, ticks to the next, and whether the cast was the big one. */
+  echoLeft: number;
+  echoT: number;
+  echoBig: boolean;
   /** Ticks left silenced by a banshee's wail (the ability buttons do nothing). */
   silenceT: number;
   /** Ticks left disoriented by a whiteout (movement reversed). */
@@ -144,12 +157,18 @@ export interface GameState {
   /** Pending bomber explosions: [x, y, ownerSlot, harmsPlayers] * BLAST_CAP. */
   blasts: Float64Array;
   blastN: number;
+  /** Boon effects queued by triggers, resolved after the tick's fighting (so a chain reaction never nests), and how many more this tick may add. */
+  procs: Float64Array;
+  procN: number;
+  procBudget: number;
   ents: Entities;
   grid: Grid;
   players: PlayerState[];
   events: EventBuf;
   /** Scratch space for spatial queries; not part of the hashed state. */
   scratch: Int32Array;
+  /** Same, for boon effects, which run while other code is still reading `scratch`. */
+  procScratch: Int32Array;
 }
 
 function createPlayer(): PlayerState {
@@ -157,8 +176,8 @@ function createPlayer(): PlayerState {
     active: false, ent: -1, classId: 0, downed: false, downTimer: 0, invuln: 0,
     dashT: 0, vanishT: 0, vanishX: 0, vanishY: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
     bufAbility1: 0, bufDodge: 0, prevButtons: 0, faceX: 1, faceY: 0, kills: 0, coins: 0,
-    fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, cursor: 0, stickPrev: 0, ranks: new Uint8Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
-    rootT: 0, silenceT: 0, confuseT: 0, poisonT: 0, burning: false, hexT: 0, witherT: 0, pullT: 0, pullX: 0, pullY: 0,
+    fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, cursor: 0, stickPrev: 0, ranks: new Uint8Array(UPGRADES.length), boonCd: new Uint16Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
+    rootT: 0, dashChain: 0, chainT: 0, echoLeft: 0, echoT: 0, echoBig: false, silenceT: 0, confuseT: 0, poisonT: 0, burning: false, hexT: 0, witherT: 0, pullT: 0, pullX: 0, pullY: 0,
   };
 }
 
@@ -217,11 +236,15 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     flankTimer: 420,
     blasts: new Float64Array(BLAST_CAP * 4),
     blastN: 0,
+    procs: new Float64Array(PROC_CAP * 6),
+    procN: 0,
+    procBudget: PROC_BUDGET,
     ents: createEntities(MAX_ENTS),
     grid: createGrid(),
     players: Array.from({ length: MAX_PLAYERS }, createPlayer),
     events: createEvents(),
     scratch: new Int32Array(MAX_ENTS),
+    procScratch: new Int32Array(MAX_ENTS),
   };
   activatePlayer(s, 0, 80, 100);
   return s;

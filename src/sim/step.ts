@@ -7,6 +7,7 @@ import { Btn, type InputFrame } from './input';
 import { TOP_ENTRY_DEPTH, VIEW_W, WORLD_H, WORLD_W } from './constants';
 import { allocEntity, BERSERK, BYSTANDER, freeEntity, Kind, SURRENDERED, ZoneKind } from './entities';
 import { rainLandTick, rainOffset } from './rain';
+import { ARC_PER_RANK, costMul, DODGE_CHAIN_COOLDOWN, DODGE_CHAIN_WINDOW, DODGE_POWER, DODGE_QUICK, DODGE_REACH, LANE_TURN, NOVA_ECHO_POWER, NOVA_ECHO_TICKS, NOVA_QUICK, NOVA_SIZE, novaCost, POWER_PER_RANK, RAIN_PER_COUNT, QUICK_MELEE, QUICK_RANGED, rankOf, SIZE_MELEE, SIZE_RANGED, type AbilityKind } from './abilityMods';
 import { damageMul, goldMul, MAX_LEVEL, OFFER_SIZE, offerFor, speedMul, takenMul, UPGRADE_INDEX, UPGRADES, xpToNext } from '../data/upgrades';
 import { STAND_RADIUS, STAND_SLOW, STAND_TICKS, SURRENDER_FLEE, SURRENDER_HOLD, surrenderChance } from '../data/surrender';
 import { Ev, emit } from './events';
@@ -14,13 +15,16 @@ import { pickMobType, pickSupport } from './gen/mix';
 import { BOSS_SPECIAL, BurstStyle, clingStep, dropMud, leapStep, SP_LEAP, fireSpecial, fireSpecialOf, hasSpecial, isWarded, onMobDeath, RALLY_SPEED, shovePlayer, SP_CLING, SP_INIT, SP_WIND, onScreen, startSpecial, startSpecialOf, updateZones } from './abilities';
 import { cellX, cellY, gatherCircle, rebuildGrid } from './grid';
 import { activatePlayer, BLAST_CAP, Phase, type GameState, type PlayerState } from './state';
+import { bannerMul, burstAt, executeMul, flushProcs, frenzyTick, onAura, onDodge, onDown, onExplode, onHit, onHurt, onKill, onSpecial, pop, rebirth, tickBoons, vigilBonus, wardMul } from './boons';
 import { activePlayers, hasBoss, partyScale, streamLevel } from './gen/level';
 
 export const REVIVE_TICKS = 600;
 const INPUT_BUFFER = 6;
-const PIERCE = 1;
+export const PIERCE = 1;
 /** A chip hit (the cleric's aura, landing every few ticks): damage and a small shove, but no stun and no interrupting a wind-up, or it would lock everything in reach in place. */
 const CHIP = 2;
+/** damage flag: dealt by a boon's effect, so it does not set off hit triggers again (a kill it causes still can, within the tick's budget). */
+export const PROC = 4;
 const BLAST_DAMAGE = 8;
 const BLAST_KNOCK = 4;
 /** Reinforcement and flank triggers are spaced in px of forward progress (the camera), not in time: a party that stands still faces no growing horde. */
@@ -86,6 +90,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
     return;
   }
 
+  tickBoons(s);
   passGates(s);
   rebuildGrid(s.grid, e);
   for (let slot = 0; slot < s.players.length; slot++) updatePlayer(s, slot, inputs[slot]);
@@ -96,7 +101,12 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   updateMobs(s);
   updateCoins(s);
   updatePotions(s);
-  flushBlasts(s);
+  // A blast can kill something that queues a boon effect, and an effect can kill a bomber: settle both queues before the tick ends.
+  for (let pass = 0; pass < 4; pass++) {
+    flushBlasts(s);
+    flushProcs(s);
+    if (s.blastN === 0 && s.procN === 0) break;
+  }
   const advance = Math.max(0, s.camX - s.trigCamX);
   s.trigCamX = Math.max(s.trigCamX, s.camX);
   runDirector(s, advance);
@@ -162,7 +172,7 @@ export function pickCard(p: PlayerState, dir: number, edge: number): number {
 export function choosePick(s: GameState, slot: number, card: number): void {
   const p = s.players[slot];
   const levelNumber = p.level - p.pending + 1;
-  const up = offerFor(s.offerSeed, slot, levelNumber, p.ranks)[card];
+  const up = offerFor(s.offerSeed, slot, levelNumber, p.ranks, p.classId, { party: activePlayers(s) })[card];
   if (up === undefined) return;
   if (p.ranks[up] < UPGRADES[up].maxRank) p.ranks[up]++;
   if (up === UPGRADE_INDEX.wind) s.ents.hp[p.ent] = CLASSES[p.classId].hp;
@@ -241,6 +251,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   const cls = CLASSES[p.classId];
   const i = p.ent;
   if (p.cdAttack > 0) p.cdAttack--;
+  frenzyTick(s, slot);
   if (p.cdAbility1 > 0) p.cdAbility1--;
   if (p.cdDash > 0) p.cdDash--;
   if (p.cdSpecial > 0) p.cdSpecial--;
@@ -256,6 +267,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   if (p.bufAbility2 > 0) p.bufAbility2--;
   if (p.bufDodge > 0) p.bufDodge--;
   if (p.comboTimer > 0) p.comboTimer--;
+  if (p.echoLeft > 0 && !p.downed && --p.echoT <= 0) { echoPulse(s, slot, cls); p.echoLeft--; p.echoT = NOVA_ECHO_TICKS; }
   // Stamina comes back once the regen delay (since the last spend) has passed; a winded hero is back on their
   // feet once enough has recovered.
   if (p.hexT > 0) p.hexT--;
@@ -269,7 +281,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   if (pressed & Btn.Dodge) p.bufDodge = INPUT_BUFFER;
 
   if (p.downed) {
-    p.downTimer--;
+    p.downTimer -= 1 + vigilBonus(s, slot);
     if (p.downTimer <= 0 && anyStanding(s)) {
       p.downed = false;
       e.hp[i] = cls.hp * 0.5;
@@ -306,38 +318,49 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
     else if (mx < -0.1) e.face[i] = -1;
   }
 
-  if (p.dashT === 0 && p.bufDodge > 0 && p.cdDash === 0 && !p.winded && p.stamina >= cls.dashCost) {
-    spendStamina(s, slot, cls.dashCost);
+  if (p.chainT > 0 && --p.chainT === 0) p.dashChain = 0;
+  const dodgeCost = cls.dashCost * costMul(p.ranks, 3);
+  const dodgeReach = 1 + DODGE_REACH * rankOf(p.ranks, 3, 0);
+  const powerRank = rankOf(p.ranks, 3, 3), dodgePower = 1 + DODGE_POWER * powerRank;
+  if (p.dashT === 0 && p.bufDodge > 0 && p.cdDash === 0 && !p.winded && p.stamina >= dodgeCost) {
+    spendStamina(s, slot, dodgeCost);
     p.dashT = cls.dashTicks;
     p.rootT = 0; // a dodge-roll tears free of a snare
-    p.cdDash = cls.dashCooldown;
+    // Dodge scaling (sim/abilityMods.ts): Count chains extra dodges with a short gap; Speed shortens the long cooldown.
+    if (p.chainT === 0) p.dashChain = rankOf(p.ranks, 3, 1);
+    if (p.dashChain > 0) { p.dashChain--; p.cdDash = DODGE_CHAIN_COOLDOWN; p.chainT = DODGE_CHAIN_WINDOW; }
+    else p.cdDash = Math.round(cls.dashCooldown * Math.max(0.4, 1 - DODGE_QUICK * rankOf(p.ranks, 3, 2)));
     p.invuln = Math.max(p.invuln, cls.dashTicks + 4);
     p.bufDodge = 0;
     if (len > 0.2) { p.dashX = mx / len; p.dashY = my / len; }
     else { p.dashX = p.faceX; p.dashY = p.faceY; }
     const kind = cls.dashKind;
+    const fromX = e.x[i], fromY = e.y[i];
     emit(s.events, Ev.Dash, e.x[i], e.y[i], p.dashX, p.dashY, kind === 'charge' ? 1 : kind === 'vanish' ? 2 : kind === 'teleport' ? 3 : kind === 'heal' ? 4 : 0);
+    onDodge(s, slot, e.x[i], e.y[i]);
     if (kind === 'vanish') {
-      p.vanishT = cls.dashPower ?? 90;
+      p.vanishT = Math.round((cls.dashPower ?? 90) * dodgeReach);
       p.vanishX = e.x[i];
       p.vanishY = e.y[i];
     } else if (kind === 'teleport') {
-      const nx = clamp(e.x[i] + p.dashX * (cls.dashPower ?? 80), s.camX + 10, heroMaxX(s));
-      const ny = clamp(e.y[i] + p.dashY * (cls.dashPower ?? 80), 2, WORLD_H - 2);
+      const nx = clamp(e.x[i] + p.dashX * (cls.dashPower ?? 80) * dodgeReach, s.camX + 10, heroMaxX(s));
+      const ny = clamp(e.y[i] + p.dashY * (cls.dashPower ?? 80) * dodgeReach, 2, WORLD_H - 2);
       emit(s.events, Ev.Teleport, e.x[i], e.y[i], nx, ny);
       e.x[i] = nx;
       e.y[i] = ny;
       p.invuln = Math.max(p.invuln, 14);
     } else if (kind === 'heal') {
-      healPulse(s, e.x[i], e.y[i], cls.dashRadius ?? 60, cls.dashPower ?? 12);
+      healPulse(s, e.x[i], e.y[i], (cls.dashRadius ?? 60) * dodgeReach, (cls.dashPower ?? 12) * dodgePower);
     }
+    // Power on a dodge with no strike of its own (a blink, a vanish, a plain roll) leaves a blast where it began.
+    if (kind !== 'charge' && kind !== 'heal' && powerRank > 0) burstAt(s, slot, fromX, fromY, 26 + 2 * powerRank, 2 + 2 * powerRank);
   }
 
   if (p.dashT > 0) {
-    e.x[i] += p.dashX * cls.dashSpeed;
-    e.y[i] += p.dashY * cls.dashSpeed;
+    e.x[i] += p.dashX * cls.dashSpeed * dodgeReach;
+    e.y[i] += p.dashY * cls.dashSpeed * dodgeReach;
     p.dashT--;
-    if (cls.dashDamage > 0) dashPlow(s, slot, cls);
+    if (cls.dashDamage > 0) dashPlow(s, slot, cls, dodgeReach, dodgePower);
   } else {
     if (p.slowT > 0) p.slowT--;
     const rooted = p.rootT > 0;
@@ -355,28 +378,31 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
       // The attack button flips the aura; while it is on it hurts everything in reach every few ticks, a constant grind, and the stamina bleeds away until it runs out.
       if (pressed & Btn.Attack && (p.auraOn || (!p.winded && p.stamina > 0))) p.auraOn = !p.auraOn;
       if (p.auraOn) {
-        spendStamina(s, slot, cls.auraDrain);
+        spendStamina(s, slot, cls.auraDrain * costMul(p.ranks, 0));
         if (p.winded) p.auraOn = false;
         else if (p.cdAttack === 0) swing(s, slot, cls, cls.combo[0], false);
       }
     }
     const acted = p.cdAttack + p.cdSpecial + p.cdAbility1;
-    if (p.silenceT === 0 && p.bufAbility1 > 0 && p.cdAbility1 === 0 && p.fury >= cls.novaCost) {
+    if (p.silenceT === 0 && p.bufAbility1 > 0 && p.cdAbility1 === 0 && p.fury >= novaCost(p.ranks, cls.novaCost, cls.furyMax)) {
       nova(s, slot, cls);
       p.bufAbility1 = 0;
-    } else if (p.silenceT === 0 && p.bufAbility2 > 0 && p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost && (p.cdAttack === 0 || p.auraOn)) {
+    } else if (p.silenceT === 0 && p.bufAbility2 > 0 && p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost * costMul(p.ranks, 1) && (p.cdAttack === 0 || p.auraOn)) {
       // Ability 2: the big sweep. It costs stamina and has its own cooldown.
-      spendStamina(s, slot, cls.specialCost);
-      p.cdSpecial = cls.specialCooldown;
+      spendStamina(s, slot, cls.specialCost * costMul(p.ranks, 1));
+      p.cdSpecial = cls.specialShot ? cls.specialCooldown : Math.round(cls.specialCooldown * (1 - QUICK_MELEE * rankOf(p.ranks, 1, 2))); // a quicker melee special also comes round sooner
       p.bufAbility2 = 0;
       if (cls.specialShot) {
-        fireArrows(s, slot, cls.specialShot, cls.specialShot.count, cls.specialShot.spread, !!cls.specialShot.pierce, true);
+        const split = rankOf(p.ranks, 1, 1) * (cls.specialShot.count > 1 ? 2 : 1); // Split: a fan gains two arrows a rank, a single ball one more ball
+        fireArrows(s, slot, cls.specialShot, cls.specialShot.count + split, cls.specialShot.spread + 0.06 * split, !!cls.specialShot.pierce, true);
         p.cdAttack = cls.specialShot.cooldown;
       } else swing(s, slot, cls, cls.special, true);
-    } else if (inp.buttons & Btn.Attack && !cls.auraDrain && p.cdAttack === 0 && !p.winded && p.stamina >= cls.attackCost) {
+      onSpecial(s, slot);
+    } else if (inp.buttons & Btn.Attack && !cls.auraDrain && p.cdAttack === 0 && !p.winded && p.stamina >= cls.attackCost * costMul(p.ranks, 0)) {
       if (cls.shot) {
-        spendStamina(s, slot, cls.attackCost);
-        fireArrows(s, slot, cls.shot, 1, 0, !!cls.shot.pierce);
+        spendStamina(s, slot, cls.attackCost * costMul(p.ranks, 0));
+        const twin = p.ranks[UPGRADE_INDEX.twin] + rankOf(p.ranks, 0, 1); // Twin Flame and the basic Split both add shots
+        fireArrows(s, slot, cls.shot, 1 + twin, 0.05 * twin, !!cls.shot.pierce);
         p.cdAttack = cls.shot.cooldown;
       } else cleave(s, slot, cls);
     }
@@ -433,14 +459,15 @@ function spendStamina(s: GameState, slot: number, cost: number): void {
 function fireArrows(s: GameState, slot: number, a: ArrowDef, count: number, spread: number, pierce: boolean, special = false): void {
   const p = s.players[slot];
   const e = s.ents;
+  const speed = a.speed * (1 + QUICK_RANGED * rankOf(p.ranks, special ? 1 : 0, 2));
   for (let k = 0; k < count; k++) {
     const t = count === 1 ? 0 : (k / (count - 1) - 0.5) * spread;
     const c = cosTurns(t), sn = sinTurns(t);
     const dx = p.faceX * c - p.faceY * sn, dy = p.faceX * sn + p.faceY * c;
     const q = allocEntity(e, Kind.Proj, 1 + slot, e.x[p.ent], e.y[p.ent], a.ttl);
     if (q < 0) break;
-    e.vx[q] = dx * a.speed;
-    e.vy[q] = dy * a.speed;
+    e.vx[q] = dx * speed;
+    e.vy[q] = dy * speed;
     e.flags[q] = (pierce ? 2 : 0) | (special ? 4 : 0);
   }
   emit(s.events, Ev.Fire, e.x[p.ent], e.y[p.ent], p.faceX, p.faceY);
@@ -451,8 +478,11 @@ function explodeShot(s: GameState, owner: number, a: ArrowDef, x: number, y: num
   const e = s.ents;
   const pl = s.players[owner];
   const cls = CLASSES[pl.classId];
-  const radius = (a.splash ?? 0) * scale;
+  const ab: AbilityKind = a === cls.specialShot ? 1 : 0;
+  const radius = (a.splash ?? 0) * scale * (1 + SIZE_RANGED * rankOf(pl.ranks, ab, 0));
+  const power = 1 + POWER_PER_RANK * rankOf(pl.ranks, ab, 3);
   emit(s.events, Ev.Blast, x, y, radius);
+  onExplode(s, owner, x, y, radius, a.damage * power * (a.splashDamage ?? 0.55) * scale);
   const n = gatherCircle(s.grid, e, x, y, radius, s.scratch);
   for (let k = 0; k < n; k++) {
     const m = s.scratch[k];
@@ -460,7 +490,7 @@ function explodeShot(s: GameState, owner: number, a: ArrowDef, x: number, y: num
     const dx = e.x[m] - x, dy = e.y[m] - y;
     const d = Math.sqrt(dx * dx + dy * dy);
     // the blast's edge is weaker than a direct hit
-    const r = damageMob(s, m, a.damage * (a.splashDamage ?? 0.55) * scale, d > 0.001 ? dx / d : 1, d > 0.001 ? dy / d : 0, a.knock * 0.7, owner, 0);
+    const r = damageMob(s, m, a.damage * power * (a.splashDamage ?? 0.55) * scale, d > 0.001 ? dx / d : 1, d > 0.001 ? dy / d : 0, a.knock * 0.7, owner, 0);
     if (r === 1) pl.fury = Math.min(cls.furyMax, pl.fury + cls.furyPerHit);
   }
 }
@@ -470,7 +500,7 @@ function cleave(s: GameState, slot: number, cls: ClassDef): void {
   const idx = p.comboTimer > 0 ? (p.combo + 1) % cls.combo.length : 0;
   const sw = cls.combo[idx];
   p.combo = idx;
-  spendStamina(s, slot, cls.attackCost);
+  spendStamina(s, slot, cls.attackCost * costMul(p.ranks, 0));
   swing(s, slot, cls, sw, false);
 }
 
@@ -479,8 +509,9 @@ function cleave(s: GameState, slot: number, cls: ClassDef): void {
  * otherwise it is a backstab when the mob faces the same way as the line from him to it, i.e. away from him.
  */
 function flankMul(s: GameState, p: PlayerState, cls: ClassDef, m: number, dx: number): number {
-  if (p.vanishT > 0 && cls.ambush) return cls.ambush;
-  if (cls.backstab && dx * s.ents.face[m] > 0) return cls.backstab;
+  const keen = 0.5 * p.ranks[UPGRADE_INDEX.keen];
+  if (p.vanishT > 0 && cls.ambush) return cls.ambush + keen;
+  if (cls.backstab && dx * s.ents.face[m] > 0) return cls.backstab + keen;
   return 1;
 }
 
@@ -488,45 +519,66 @@ function flankMul(s: GameState, p: PlayerState, cls: ClassDef, m: number, dx: nu
 function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: boolean): void {
   const p = s.players[slot];
   const e = s.ents;
-  p.cdAttack = sw.cooldown;
-  p.comboTimer = sw.cooldown + cls.comboWindow;
+  // Ability scaling (sim/abilityMods.ts): the basic attack and the special each grow along size, count, speed and power.
+  const ab: AbilityKind = heavy ? 1 : 0;
+  const reach = 1 + SIZE_MELEE * rankOf(p.ranks, ab, 0);
+  const range = sw.range * reach, wave = sw.wave * reach, waveWidth = sw.waveWidth * reach;
+  const split = rankOf(p.ranks, ab, 1);
+  const dot = sw.aoe ? sw.dot : Math.max(-1, sw.dot - ARC_PER_RANK * split);
+  const damage = sw.damage * (1 + POWER_PER_RANK * rankOf(p.ranks, ab, 3));
+  const cooldown = Math.max(Math.ceil(sw.cooldown / 2), Math.round(sw.cooldown * (1 - QUICK_MELEE * rankOf(p.ranks, ab, 2))));
+  p.cdAttack = cooldown;
+  p.comboTimer = cooldown + cls.comboWindow;
   p.lungeT = sw.aoe ? 0 : sw.lunge;
   const cx = e.x[p.ent], cy = e.y[p.ent];
   // Facing scaled by range so the presentation can size the slash arc; c = arc dot.
-  if (sw.aoe) { if (heavy) emit(s.events, Ev.Pulse, cx, cy, sw.range, 1, 0, slot); } // (the cleric's plain aura has no per-hit burst: the renderer draws it turning)
-  else emit(s.events, heavy ? Ev.Finisher : Ev.Swing, cx, cy, p.faceX * sw.range, p.faceY * sw.range, sw.dot, slot);
+  if (sw.aoe) { if (heavy) emit(s.events, Ev.Pulse, cx, cy, range, 1, 0, slot); } // (the cleric's plain aura has no per-hit burst: the renderer draws it turning)
+  else emit(s.events, heavy ? Ev.Finisher : Ev.Swing, cx, cy, p.faceX * range, p.faceY * range, dot, slot);
 
-  const n = gatherCircle(s.grid, e, cx, cy, sw.range, s.scratch);
+  const n = gatherCircle(s.grid, e, cx, cy, range, s.scratch);
   let hits = 0;
   for (let k = 0; k < n; k++) {
     const m = s.scratch[k];
     if (!isLiveMob(e, m)) continue;
     const dx = e.x[m] - cx, dy = e.y[m] - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (!sw.aoe && dist > 6 && dx * p.faceX + dy * p.faceY < sw.dot * dist) continue;
+    if (!sw.aoe && dist > 6 && dx * p.faceX + dy * p.faceY < dot * dist) continue;
     const inv = dist > 0.001 ? 1 / dist : 0;
-    const r = damageMob(s, m, sw.damage * flankMul(s, p, cls, m, dx), dist > 0.001 ? dx * inv : p.faceX, dist > 0.001 ? dy * inv : p.faceY, sw.knock, slot, (sw.pierce ? PIERCE : 0) | (sw.aoe && !heavy ? CHIP : 0));
-    if (r === 1) hits++;
+    const flank = flankMul(s, p, cls, m, dx);
+    const r = damageMob(s, m, damage * flank, dist > 0.001 ? dx * inv : p.faceX, dist > 0.001 ? dy * inv : p.faceY, sw.knock, slot, (sw.pierce ? PIERCE : 0) | (sw.aoe && !heavy ? CHIP : 0));
+    if (r === 1) { hits++; if (flank > 1) s.gold += p.ranks[UPGRADE_INDEX.pick]; } // Pickpocket
   }
 
-  // Finisher: a straight wave that carves down the field, shoving everything along the line.
-  if (sw.wave > 0) {
-    emit(s.events, Ev.Wave, cx, cy, p.faceX * sw.wave, p.faceY * sw.wave);
-    const wn = gatherCircle(s.grid, e, cx, cy, sw.wave, s.scratch);
+  // Finisher: a straight wave that carves down the field, shoving everything along the line. Split adds a pair of forked lanes a rank.
+  if (wave > 0) {
+    const laneN = 1 + 2 * split;
+    const lx = Lanes.x, ly = Lanes.y;
+    for (let l = 0; l < laneN; l++) {
+      const turn = l === 0 ? 0 : (l % 2 === 1 ? 1 : -1) * Math.ceil(l / 2) * LANE_TURN;
+      const c = cosTurns(turn), sn = sinTurns(turn);
+      lx[l] = p.faceX * c - p.faceY * sn;
+      ly[l] = p.faceX * sn + p.faceY * c;
+      emit(s.events, Ev.Wave, cx, cy, lx[l] * wave, ly[l] * wave);
+    }
+    const wn = gatherCircle(s.grid, e, cx, cy, wave, s.scratch);
     for (let k = 0; k < wn; k++) {
       const m = s.scratch[k];
       if (!isLiveMob(e, m) || e.hurt[m] >= 6) continue; // already caught by the arc this tick
       const dx = e.x[m] - cx, dy = e.y[m] - cy;
-      const along = dx * p.faceX + dy * p.faceY;
-      if (along < 0 || along > sw.wave) continue;
-      const lateral = dx * -p.faceY + dy * p.faceX;
-      if (lateral > sw.waveWidth || lateral < -sw.waveWidth) continue;
-      const r = damageMob(s, m, sw.damage * 0.6 * flankMul(s, p, cls, m, dx), p.faceX, p.faceY, sw.knock * 0.8, slot, PIERCE);
-      if (r === 1) hits++;
+      for (let l = 0; l < laneN; l++) {
+        const along = dx * lx[l] + dy * ly[l];
+        if (along < 0 || along > wave) continue;
+        const lateral = dx * -ly[l] + dy * lx[l];
+        if (lateral > waveWidth || lateral < -waveWidth) continue;
+        const r = damageMob(s, m, damage * 0.6 * flankMul(s, p, cls, m, dx), lx[l], ly[l], sw.knock * 0.8, slot, PIERCE);
+        if (r === 1) hits++;
+        break;
+      }
     }
   }
 
-  destroyArrows(s, cx, cy, sw.range, p.faceX, p.faceY, sw.aoe ? -2 : sw.dot);
+  destroyArrows(s, cx, cy, range, p.faceX, p.faceY, sw.aoe ? -2 : dot);
+  if (sw.aoe && !heavy) onAura(s, slot, hits);
   if (hits > 0) {
     p.fury = Math.min(cls.furyMax, p.fury + Math.min(cls.furyPerSwingCap, hits * cls.furyPerHit));
     if (!(sw.aoe && !heavy)) stop(s, Math.min(6, sw.hitStop + Math.floor(hits / 5))); // (the constant aura never freezes the game)
@@ -535,15 +587,35 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
 
 function nova(s: GameState, slot: number, cls: ClassDef): void {
   const p = s.players[slot];
-  const e = s.ents;
   if (cls.rain) { castRain(s, slot, cls, cls.rain); return; }
   if (cls.quake) { castQuake(s, slot, cls, cls.quake); return; }
-  const cx = e.x[p.ent], cy = e.y[p.ent];
   const big = p.fury >= cls.furyMax;
-  const radius = big ? cls.novaBigRadius : cls.novaRadius;
-  const damage = big ? cls.novaBigDamage : cls.novaDamage;
-  p.fury = big ? 0 : p.fury - cls.novaCost;
-  p.cdAbility1 = cls.novaCooldown;
+  p.fury = big ? 0 : p.fury - novaCost(p.ranks, cls.novaCost, cls.furyMax);
+  p.cdAbility1 = novaRecovery(p, cls);
+  radialBlast(s, slot, cls, big, 1);
+  // Count: the nova pulses again, a little weaker each time (see echoPulse).
+  p.echoLeft = rankOf(p.ranks, 2, 1);
+  p.echoT = NOVA_ECHO_TICKS;
+  p.echoBig = big;
+}
+
+/** The nova's ability-1 cooldown, shortened by its Speed ranks. */
+function novaRecovery(p: PlayerState, cls: ClassDef): number {
+  return Math.round(cls.novaCooldown * Math.max(0.5, 1 - NOVA_QUICK * rankOf(p.ranks, 2, 2)));
+}
+
+/** One more pulse of a radial nova, at the hero's place now. */
+function echoPulse(s: GameState, slot: number, cls: ClassDef): void {
+  radialBlast(s, slot, cls, s.players[slot].echoBig, NOVA_ECHO_POWER);
+}
+
+/** A ring of damage (and the cleric's healing) all round a hero: the whole of a radial nova, or an echo of it at `scale` of the strength. */
+function radialBlast(s: GameState, slot: number, cls: ClassDef, big: boolean, scale: number): void {
+  const p = s.players[slot];
+  const e = s.ents;
+  const cx = e.x[p.ent], cy = e.y[p.ent];
+  const radius = (big ? cls.novaBigRadius : cls.novaRadius) * (1 + NOVA_SIZE * rankOf(p.ranks, 2, 0));
+  const damage = (big ? cls.novaBigDamage : cls.novaDamage) * (1 + POWER_PER_RANK * rankOf(p.ranks, 2, 3)) * scale;
   emit(s.events, Ev.Nova, cx, cy, radius, big ? 1 : 0);
   const killsBefore = s.kills;
   const n = gatherCircle(s.grid, e, cx, cy, radius, s.scratch);
@@ -553,11 +625,11 @@ function nova(s: GameState, slot: number, cls: ClassDef): void {
     const dx = e.x[m] - cx, dy = e.y[m] - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const inv = dist > 0.001 ? 1 / dist : 0;
-    damageMob(s, m, damage, dist > 0.001 ? dx * inv : 1, dist > 0.001 ? dy * inv : 0, cls.novaKnock * (big ? 1.4 : 1), slot, PIERCE);
+    damageMob(s, m, damage, dist > 0.001 ? dx * inv : 1, dist > 0.001 ? dy * inv : 0, cls.novaKnock * (big ? 1.4 : 1) * scale, slot, PIERCE);
   }
   destroyArrows(s, cx, cy, radius, 0, 0, -2);
   // The cleric's nova also heals every standing player inside it (itself included).
-  const heal = big ? (cls.novaBigHeal ?? 0) : (cls.novaHeal ?? 0);
+  const heal = (big ? (cls.novaBigHeal ?? 0) : (cls.novaHeal ?? 0)) * (1 + POWER_PER_RANK * rankOf(p.ranks, 2, 3)) * scale;
   if (heal > 0) {
     for (const q of s.players) {
       if (!q.active || q.downed) continue;
@@ -566,8 +638,10 @@ function nova(s: GameState, slot: number, cls: ClassDef): void {
       e.hp[q.ent] = Math.min(CLASSES[q.classId].hp, e.hp[q.ent] + heal);
     }
   }
-  stop(s, 4 + Math.min(4, Math.floor((s.kills - killsBefore) / 6)));
+  stop(s, Math.round((4 + Math.min(4, Math.floor((s.kills - killsBefore) / 6))) * scale));
 }
+
+const Lanes = { x: new Float64Array(16), y: new Float64Array(16) };
 
 /** The warrior's shockwave: everything in a long, narrow lane in front of him is hurt and thrown down the lane. */
 function castQuake(s: GameState, slot: number, cls: ClassDef, q: NonNullable<ClassDef['quake']>): void {
@@ -575,23 +649,39 @@ function castQuake(s: GameState, slot: number, cls: ClassDef, q: NonNullable<Cla
   const e = s.ents;
   const cx = e.x[p.ent], cy = e.y[p.ent];
   const big = p.fury >= cls.furyMax;
-  const length = big ? q.bigLength : q.length, width = big ? q.bigWidth : q.width;
-  const damage = big ? cls.novaBigDamage : cls.novaDamage;
-  p.fury = big ? 0 : p.fury - cls.novaCost;
-  p.cdAbility1 = cls.novaCooldown;
-  emit(s.events, Ev.Quake, cx, cy, p.faceX * length, p.faceY * length, width, big ? 1 : 0);
+  const grow = 1 + NOVA_SIZE * rankOf(p.ranks, 2, 0);
+  const length = (big ? q.bigLength : q.length) * grow, width = (big ? q.bigWidth : q.width) * grow;
+  const damage = (big ? cls.novaBigDamage : cls.novaDamage) * (1 + POWER_PER_RANK * rankOf(p.ranks, 2, 3));
+  p.fury = big ? 0 : p.fury - novaCost(p.ranks, cls.novaCost, cls.furyMax);
+  p.cdAbility1 = novaRecovery(p, cls);
+  // Split Earth: the shockwave forks into extra lanes fanned either side of the facing.
+  const forks = p.ranks[UPGRADE_INDEX.rift] + rankOf(p.ranks, 2, 1); // Split Earth and the nova's Count both fork the quake
+  const laneN = 1 + 2 * forks;
+  if (forks > 0) pop(s, slot, 'rift');
+  const lx = Lanes.x, ly = Lanes.y;
+  for (let l = 0; l < laneN; l++) {
+    const turn = l === 0 ? 0 : (l % 2 === 1 ? 1 : -1) * Math.ceil(l / 2) * 0.09;
+    const c = cosTurns(turn), sn = sinTurns(turn);
+    lx[l] = p.faceX * c - p.faceY * sn;
+    ly[l] = p.faceX * sn + p.faceY * c;
+    emit(s.events, Ev.Quake, cx, cy, lx[l] * length, ly[l] * length, width, big ? 1 : 0);
+  }
   const killsBefore = s.kills;
   const n = gatherCircle(s.grid, e, cx, cy, length + width, s.scratch);
   for (let k = 0; k < n; k++) {
     const m = s.scratch[k];
     if (!isLiveMob(e, m)) continue;
     const dx = e.x[m] - cx, dy = e.y[m] - cy;
-    const along = dx * p.faceX + dy * p.faceY;
-    const lateral = dx * -p.faceY + dy * p.faceX;
-    if (along < -6 || along > length || Math.abs(lateral) > width) continue;
-    // shoved down the lane (and a little to the side it is already on), harder the nearer it is
-    const push = 1 - 0.4 * (along / length);
-    damageMob(s, m, damage, p.faceX + (lateral / width) * 0.25 * -p.faceY, p.faceY + (lateral / width) * 0.25 * p.faceX, cls.novaKnock * (big ? 1.4 : 1) * push, slot, PIERCE);
+    for (let l = 0; l < laneN; l++) {
+      const fx = lx[l], fy = ly[l];
+      const along = dx * fx + dy * fy;
+      const lateral = dx * -fy + dy * fx;
+      if (along < -6 || along > length || Math.abs(lateral) > width) continue;
+      // shoved down the lane (and a little to the side it is already on), harder the nearer it is
+      const push = 1 - 0.4 * (along / length);
+      damageMob(s, m, damage, fx + (lateral / width) * 0.25 * -fy, fy + (lateral / width) * 0.25 * fx, cls.novaKnock * (big ? 1.4 : 1) * push, slot, PIERCE);
+      break; // one lane hits a mob once
+    }
   }
   for (let t = 0; t <= 4; t++) destroyArrows(s, cx + p.faceX * length * t / 4, cy + p.faceY * length * t / 4, width + 8, 0, 0, -2);
   stop(s, 4 + Math.min(4, Math.floor((s.kills - killsBefore) / 6)));
@@ -606,18 +696,19 @@ function castRain(s: GameState, slot: number, cls: ClassDef, r: RainDef): void {
   const p = s.players[slot];
   const e = s.ents;
   const big = p.fury >= cls.furyMax;
-  p.fury = big ? 0 : p.fury - cls.novaCost;
-  p.cdAbility1 = cls.novaCooldown;
+  p.fury = big ? 0 : p.fury - novaCost(p.ranks, cls.novaCost, cls.furyMax);
+  p.cdAbility1 = novaRecovery(p, cls);
   const x = e.x[p.ent], y = e.y[p.ent];
   const tx = clamp(x + p.faceX * r.reach, s.camX + 10, heroMaxX(s));
   const ty = clamp(y + p.faceY * r.reach, 6, WORLD_H - 6);
   const z = allocEntity(e, Kind.Zone, ZoneKind.Rain, tx, ty, 1);
   if (z < 0) return;
   e.ax[z] = x; e.ay[z] = y;
-  e.rem[z] = big ? r.bigRadius : r.radius;
-  e.mode[z] = big ? r.bigArrows : r.arrows;
+  e.rem[z] = (big ? r.bigRadius : r.radius) * (1 + NOVA_SIZE * rankOf(p.ranks, 2, 0));
+  e.mode[z] = Math.min(250, (big ? r.bigArrows : r.arrows) + RAIN_PER_COUNT * (p.ranks[UPGRADE_INDEX.downpour] + rankOf(p.ranks, 2, 1)));
+  if (p.ranks[UPGRADE_INDEX.downpour] > 0) pop(s, slot, 'downpour');
   e.vx[z] = (s.tick * 2654435761 + slot * 40503) >>> 0;
-  e.hp[z] = r.damage;
+  e.hp[z] = r.damage * (1 + POWER_PER_RANK * rankOf(p.ranks, 2, 3));
   e.buff[z] = 1 + slot;
   e.atk[z] = 0;
   emit(s.events, Ev.Fire, x, y, p.faceX, p.faceY);
@@ -666,18 +757,18 @@ function healPulse(s: GameState, cx: number, cy: number, radius: number, amount:
   }
 }
 
-function dashPlow(s: GameState, slot: number, cls: ClassDef): void {
+function dashPlow(s: GameState, slot: number, cls: ClassDef, reach: number, power: number): void {
   const p = s.players[slot];
   const e = s.ents;
   const cx = e.x[p.ent], cy = e.y[p.ent];
-  const n = gatherCircle(s.grid, e, cx, cy, cls.dashRadius ?? 9, s.scratch);
+  const n = gatherCircle(s.grid, e, cx, cy, (cls.dashRadius ?? 9) * reach, s.scratch);
   for (let k = 0; k < n; k++) {
     const m = s.scratch[k];
     if (!isLiveMob(e, m) || e.stun[m] > 0) continue;
     const dx = e.x[m] - cx, dy = e.y[m] - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const inv = dist > 0.001 ? 1 / dist : 0;
-    damageMob(s, m, cls.dashDamage, dist > 0.001 ? dx * inv : p.dashX, dist > 0.001 ? dy * inv : p.dashY, cls.dashKnock, slot, 0);
+    damageMob(s, m, cls.dashDamage * power, dist > 0.001 ? dx * inv : p.dashX, dist > 0.001 ? dy * inv : p.dashY, cls.dashKnock, slot, 0);
   }
 }
 
@@ -697,7 +788,7 @@ function destroyArrows(s: GameState, cx: number, cy: number, r: number, fx: numb
 }
 
 /** Returns 0 = ignored, 1 = hit, 2 = blocked by a shield. */
-function damageMob(s: GameState, m: number, dmg: number, dirX: number, dirY: number, knock: number, owner: number, flags: number): number {
+export function damageMob(s: GameState, m: number, dmg: number, dirX: number, dirY: number, knock: number, owner: number, flags: number): number {
   const e = s.ents;
   const def = MOBS[e.sub[m]];
   if (e.flags[m] & 2) return 0; // still walking in from off-field: immune until it has arrived
@@ -707,7 +798,7 @@ function damageMob(s: GameState, m: number, dmg: number, dirX: number, dirY: num
     return 0;
   }
   if (def.thorns && owner >= 0) poisonPlayer(s, owner, def.thorns); // its skin is venomous to whatever strikes it
-  if (owner >= 0) dmg *= damageMul(s.players[owner].ranks);
+  if (owner >= 0) dmg *= damageMul(s.players[owner].ranks) * executeMul(s, owner, m) * bannerMul(s, owner);
   if (def.shield && !(flags & PIERCE) && dirX * e.face[m] < 0) {
     // Attacker is on the shield side.
     e.vx[m] += dirX * knock * 0.25;
@@ -768,6 +859,7 @@ function damageMob(s: GameState, m: number, dmg: number, dirX: number, dirY: num
       grantXp(s, def.behavior === Behavior.Boss ? XP_BOSS : 1, e.x[m], e.y[m]);
       p.kills++;
       p.fury = Math.min(cls.furyMax, p.fury + cls.furyPerKill);
+      onKill(s, owner, e.x[m], e.y[m]);
     }
     if (def.onDeath) onMobDeath(s, m, def.onDeath, dirX, dirY);
     if (def.behavior === Behavior.Boss) bossDeath(s, m);
@@ -775,6 +867,7 @@ function damageMob(s: GameState, m: number, dmg: number, dirX: number, dirY: num
     freeEntity(e, m);
   } else {
     emit(s.events, Ev.Hit, e.x[m], e.y[m], dmg);
+    if (owner >= 0 && !(flags & PROC)) onHit(s, owner, m, dmg);
   }
   return 1;
 }
@@ -784,7 +877,7 @@ export function hurtPlayer(s: GameState, slot: number, dmg: number, slow = 0, fl
   const e = s.ents;
   const dot = (flags & HURT_DOT) !== 0;
   if (p.downed || (p.invuln > 0 && !dot)) return;
-  dmg *= takenMul(p.ranks) * (p.hexT > 0 ? HEX_TAKEN : 1);
+  dmg *= takenMul(p.ranks) * wardMul(s, slot) * (p.hexT > 0 ? HEX_TAKEN : 1);
   if (slow > p.slowT) p.slowT = slow;
   const i = p.ent;
   const cls = CLASSES[p.classId];
@@ -794,6 +887,7 @@ export function hurtPlayer(s: GameState, slot: number, dmg: number, slow = 0, fl
   p.fury = Math.min(cls.furyMax, p.fury + 3); // pain feeds the rage
   if (!dot) stop(s, 2);
   emit(s.events, Ev.PlayerHurt, e.x[i], e.y[i], slot);
+  if (e.hp[i] <= 0 && rebirth(s, slot)) return;
   if (e.hp[i] <= 0) {
     e.hp[i] = 0;
     p.downed = true;
@@ -802,7 +896,8 @@ export function hurtPlayer(s: GameState, slot: number, dmg: number, slow = 0, fl
     p.burning = false;
     p.downTimer = REVIVE_TICKS;
     emit(s.events, Ev.PlayerDown, e.x[i], e.y[i], slot);
-  }
+    onDown(s, slot);
+  } else onHurt(s, slot);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -903,7 +998,8 @@ function updateProjectiles(s: GameState): void {
       const a = (e.flags[i] & 4) ? ocls.specialShot : ocls.shot;
       if (!a) { freeEntity(e, i); continue; }
       const pierce = (e.flags[i] & 2) !== 0;
-      const n = gatherCircle(s.grid, e, e.x[i], e.y[i], a.radius ?? 5, s.scratch);
+      const ab: AbilityKind = (e.flags[i] & 4) ? 1 : 0;
+      const n = gatherCircle(s.grid, e, e.x[i], e.y[i], (a.radius ?? 5) * (1 + SIZE_RANGED * rankOf(pl.ranks, ab, 0)), s.scratch);
       let primary = -1;
       let spent = false;
       for (let k = 0; k < n && !spent; k++) {
@@ -911,7 +1007,7 @@ function updateProjectiles(s: GameState): void {
         if (!isLiveMob(e, m) || (pierce && e.hurt[m] >= 6)) continue;
         const vl = Math.sqrt(e.vx[i] * e.vx[i] + e.vy[i] * e.vy[i]) || 1;
         const flown = (a.ttl - e.hp[i]) / a.ttl; // 0 at the bow, 1 at the end of its range
-        const r = damageMob(s, m, a.damage * (1 + (ocls.longShot ?? 0) * flown), e.vx[i] / vl, e.vy[i] / vl, a.knock, owner, a.shieldPierce ? PIERCE : 0);
+        const r = damageMob(s, m, a.damage * (1 + POWER_PER_RANK * rankOf(pl.ranks, ab, 3)) * (1 + ((ocls.longShot ?? 0) + 0.4 * pl.ranks[UPGRADE_INDEX.eagle]) * flown), e.vx[i] / vl, e.vy[i] / vl, a.knock, owner, a.shieldPierce ? PIERCE : 0);
         if (r === 0) continue;
         if (r === 1) pl.fury = Math.min(ocls.furyMax, pl.fury + ocls.furyPerHit);
         if (!pierce || r === 2) { primary = m; freeEntity(e, i); spent = true; }

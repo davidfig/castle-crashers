@@ -118,7 +118,7 @@ test('another player is unaffected while one is choosing', () => {
 test('three face buttons choose cards 1, 2 and 3; the choice applies and spends the level', () => {
   for (const [button, card] of [[Btn.Attack, 0], [Btn.Ability1, 1], [Btn.Ability2, 2]] as const) {
     const s = arena(1);
-    const offer = offerFor(s.seed, 0, 2, s.players[0].ranks);
+    const offer = offerFor(s.seed, 0, 2, s.players[0].ranks, s.players[0].classId, { party: 1 });
     tap(s, Btn.Level);
     step(s, hold(button));
     assert.equal(s.players[0].pending, 0);
@@ -143,14 +143,14 @@ test('choosing a card does not swing a sword: the pick button stays muted until 
 
 test('pending levels queue: each opens in turn, and the offer follows the level reached', () => {
   const s = arena(3);
-  const first = offerFor(s.seed, 0, 2, s.players[0].ranks);
+  const first = offerFor(s.seed, 0, 2, s.players[0].ranks, s.players[0].classId, { party: 1 });
   tap(s, Btn.Level);
   step(s, hold(Btn.Attack));
   step(s, idle());
   assert.equal(s.players[0].pending, 2);
   tap(s, Btn.Level);
   assert.equal(s.players[0].panel, true);
-  const second = offerFor(s.seed, 0, 3, s.players[0].ranks);
+  const second = offerFor(s.seed, 0, 3, s.players[0].ranks, s.players[0].classId, { party: 1 });
   assert.notDeepEqual(second, first, 'a different level offers differently (for this seed)');
 });
 
@@ -213,7 +213,7 @@ test('the upgrades do what they say', () => {
   // second wind heals fully
   const s = arena(1);
   s.ents.hp[s.players[0].ent] = 5;
-  const wind = offerFor(s.seed, 0, 2, s.players[0].ranks).indexOf(UPGRADE_INDEX.wind);
+  const wind = offerFor(s.seed, 0, 2, s.players[0].ranks, s.players[0].classId, { party: 1 }).indexOf(UPGRADE_INDEX.wind);
   if (wind >= 0) {
     tap(s, Btn.Level);
     step(s, hold([Btn.Attack, Btn.Ability1, Btn.Ability2][wind]));
@@ -245,7 +245,7 @@ test('the stick steps a highlight along the cards and a confirm button takes the
   step(s, idle());
   step(s, hold(0, 127));
   assert.equal(s.players[0].cursor, 2, 'stops at the last card');
-  const expected = offerFor(s.offerSeed, 0, s.players[0].level, s.players[0].ranks)[2];
+  const expected = offerFor(s.offerSeed, 0, s.players[0].level, s.players[0].ranks, s.players[0].classId, { party: 1 })[2];
   step(s, idle());
   tap(s, Btn.Dodge);
   assert.equal(s.players[0].pending, 0, 'the pick was made');

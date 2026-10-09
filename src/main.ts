@@ -1,5 +1,6 @@
 import { InputManager } from './platform/input/input';
 import { startLoop } from './platform/loop';
+import { UPGRADES, UPGRADE_INDEX } from './data/upgrades';
 import { Renderer } from './platform/gl/renderer';
 import { buildSprites } from './render/art';
 import { loadHeroImages } from './render/heroSheets';
@@ -206,6 +207,15 @@ function newSim(plan: LevelPlan): ReturnType<typeof createSim> {
   }
   // Dev aid: bot-controlled slots each take a different class (the warrior stays in slot 1; the seed picks which others), so a bot party shows several.
   if (!route.carry) for (const k of botSlots) s.players[k].classId = classForBotSlot(k, sd);
+  // Dev aid: ?boons=kegs:2,spark gives every hero those boons (id[:rank]) and ?pending=N waits N level-ups, to see the HUD strip and the level-up panel in a run.
+  if (__DEV__ && !route.carry) {
+    for (const part of (params.get('boons') ?? '').split(',').filter(Boolean)) {
+      const [id, r] = part.split(':');
+      const idx = UPGRADE_INDEX[id];
+      if (idx !== undefined) for (const p of s.players) p.ranks[idx] = Math.min(UPGRADES[idx].maxRank, Number(r ?? 1) || 1);
+    }
+    if (params.has('pending')) for (const p of s.players) { p.level = 1 + Number(params.get('pending')); p.pending = Number(params.get('pending')) || 0; }
+  }
   // Dev aid: ?boss=1 starts at the boss arena so the boss can be tried without fighting the whole battlefield.
   if (__DEV__ && params.get('boss') === '1' && plan.boss) {
     s.tick = 130;                            // past the opening delay, so encounters stream in

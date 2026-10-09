@@ -38,6 +38,7 @@ export const Ev = {
   Surrender: 23,  // a mob lays down its arms; a = mob type
   LevelUp: 24,    // a hero gained a level; a = slot
   Potion: 31,     // a hero drank a potion; a = slot
+  Proc: 34,       // a boon fired; a = slot, b = upgrade index (x, y = the hero)
   Pick: 25,       // a hero chose an upgrade; a = slot, b = upgrade index
 } as const;
 

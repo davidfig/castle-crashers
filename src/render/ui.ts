@@ -7,6 +7,8 @@ import { npcFrame, type NpcName } from './npcArt';
 import { GLASS } from './uiArt';
 
 /** Rarity border colours: common, uncommon, rare, epic, legendary. */
+/** Card border (an index into RARITY) for an upgrade tier: common steel, rare lapis, legendary gold. */
+export const TIER_BORDER = [0, 2, 4] as const;
 export const RARITY = [GLASS.Z, GLASS.m, GLASS.c, GLASS.q, GLASS.G] as const;
 
 /** Text colours on a vellum page, by tone; on ink they are the lighter set in menu.ts. */

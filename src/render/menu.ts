@@ -11,7 +11,7 @@ import { LINE_H, storyWidth } from '../data/storyFont';
 import { CLASSES } from '../data/classes';
 import { drawBackdrop, SCENE_FLOOR, STAGE } from './sceneArt';
 import { npcFrame } from './npcArt';
-import { drawCard, drawCursor, drawDivider, drawIcon, drawNpc, drawPanel, drawShadow, drawStory, PAGE_TONE } from './ui';
+import { TIER_BORDER, drawCard, drawCursor, drawDivider, drawIcon, drawNpc, drawPanel, drawShadow, drawStory, PAGE_TONE } from './ui';
 import { GLASS } from './uiArt';
 import { drawTitle } from './titleArt';
 
@@ -156,7 +156,7 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
         drawStory(b, S, `${ln.pending} pick${ln.pending > 1 ? 's' : ''} waiting`, x + 9, y + 34, TONE.gold);
         ln.cards.forEach((c, k) => {
           const cy = y + 50 + k * 58;
-          drawCard(b, S, x + 8, cy, w - 16, 53, 0, k === ln.cursor);
+          drawCard(b, S, x + 8, cy, w - 16, 53, TIER_BORDER[c.tier], k === ln.cursor);
           drawText(b, S, String(k + 1), x + 13, cy + 7, hex(TONE.gold));
           drawIcon(b, S, c.icon, x + w - 34, cy + 6, 2);
           drawStory(b, S, c.name[0] + c.name.slice(1).toLowerCase(), x + 13, cy + 19, 0xffffff);
@@ -175,9 +175,11 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number): v
       const y = 58 + i * (rh + 6);
       const here = scr.seats.filter((s) => s.active && s.cursor === i);
       drawCard(b, S, rx, y, rw, rh, here.length ? 4 : 0, here.length > 0);
-      drawIcon(b, S, r.icon, rx + 8, y + 12, 2);
-      drawStory(b, S, r.name[0] + r.name.slice(1).toLowerCase(), rx + 34, y + 6, r.sold ? TONE.dim : TONE.normal);
-      r.text.forEach((t, j) => drawText(b, S, t, rx + 34, y + 20 + j * 8, hex(0xa8b4d8)));
+      const pic = r.icon.startsWith('boon-'); // a boon's badge is 16x16, so it is drawn at the old icons' 2x and the words move over
+      drawIcon(b, S, r.icon, rx + 8, y + (pic ? 4 : 12), 2);
+      const tx = rx + (pic ? 46 : 34);
+      drawStory(b, S, r.name[0] + r.name.slice(1).toLowerCase(), tx, y + 6, r.sold ? TONE.dim : TONE.normal);
+      r.text.forEach((t, j) => drawText(b, S, t, tx, y + 20 + j * 8, hex(0xa8b4d8)));
       const pt = String(r.price);
       drawText(b, S, pt, rx + rw - 12 - pt.length * 8, y + 14, hex(r.sold ? TONE.dim : r.afford ? TONE.gold : TONE.red), 2);
       here.forEach((s, k) => b.drawScaled(S.px, rx - 8 - k * 5, y + 2, 4, rh - 4, hex(PLAYER_COLORS[s.slot])));

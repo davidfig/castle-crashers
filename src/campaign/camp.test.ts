@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { BIOME_COUNT } from '../data/roster';
-import { UPGRADES, offerFor } from '../data/upgrades';
+import { cardFor, UPGRADES, offerFor } from '../data/upgrades';
 import { captureCarry } from '../sim/carry';
 import { createSim } from '../sim/state';
 import { doorsScreen, picksScreen, pickLanes, routeStrip, shopScreen, spoilsScreen } from './camp';
@@ -80,8 +80,8 @@ test('the picks panels match the offers the level-up panel shows, and a player w
   const sim = createSim(9, undefined, { offerSeed: 4242 });
   sim.players[0].level = 4; sim.players[0].pending = 2;
   const lanes = pickLanes(sim, [false, false, false, false]);
-  const offer = offerFor(4242, 0, 3, sim.players[0].ranks);
-  assert.deepEqual(lanes[0].cards.map((c) => c.name), offer.map((u) => UPGRADES[u].name));
+  const offer = offerFor(4242, 0, 3, sim.players[0].ranks, sim.players[0].classId, { party: 1 });
+  assert.deepEqual(lanes[0].cards.map((c) => c.name), offer.map((u) => cardFor(UPGRADES[u], sim.players[0].classId).name));
   assert.equal(lanes[0].ready, false);
   assert.equal(pickLanes(sim, [true, false, false, false])[0].ready, true, 'keeping the picks for later is ready');
   sim.players[0].pending = 0;

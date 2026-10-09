@@ -31,6 +31,9 @@ export const SLASH_TICKS = 8;
 /** Teleport: the wizard dissolves upward at the origin and re-forms at the destination over this many ticks. */
 export const BLINK_TICKS = 16;
 const MAX_BLINKS = 4;
+/** Boon pictures floating up over a hero when one of their boons fires. */
+const MAX_POPS = 12;
+export const POP_TICKS = 46;
 
 export class Fx {
   // particles (ground-plane x,y plus height z)
@@ -108,6 +111,13 @@ export class Fx {
   bly1 = new Float32Array(MAX_BLINKS);
   blt = new Float32Array(MAX_BLINKS).fill(-1);
   private blHead = 0;
+
+  // boon pops: the picture of a boon that just fired, rising over its hero
+  ppx = new Float32Array(MAX_POPS);
+  ppy = new Float32Array(MAX_POPS);
+  pslot = new Uint8Array(MAX_POPS);
+  pboon = new Uint8Array(MAX_POPS);
+  pt = new Float32Array(MAX_POPS).fill(-1);
 
   trauma = 0;
   /** Camera kick in the swing direction (px), decays quickly. */
@@ -375,6 +385,18 @@ export class Fx {
           for (let j = 0; j < 14; j++) this.spawn(x + (this.rand() - 0.5) * 8, y, 2 + this.rand() * 8, (this.rand() - 0.5) * 0.8, -0.1, 0.6 + this.rand() * 0.9, 26 + this.rand() * 14, hex(this.rand() < 0.7 ? 0x7dffa0 : 0xfff6c8, 0.95), this.rand() < 0.3 ? 1 : 0);
           this.addRing(x, y, 14, hex(0x7dffa0), 0);
           break;
+        case Ev.Proc: {
+          // a = slot, b = upgrade index. The same boon firing again within a moment just refreshes its pop, so a chain reaction is one picture.
+          let free = -1, same = -1;
+          for (let q = 0; q < MAX_POPS; q++) {
+            if (this.pt[q] < 0) { if (free < 0) free = q; } else if (this.pslot[q] === a && this.pboon[q] === b) same = q;
+          }
+          const q = same >= 0 ? (this.pt[same] < 14 ? -2 : same) : free;
+          if (q === -2 || q < 0) break;
+          this.ppx[q] = x; this.ppy[q] = y; this.pslot[q] = a; this.pboon[q] = b; this.pt[q] = 0;
+          for (let j = 0; j < 8; j++) this.spawn(x, y, 22, (this.rand() - 0.5) * 1.4, (this.rand() - 0.5) * 0.6, 0.4 + this.rand() * 0.7, 20 + this.rand() * 10, hex(this.rand() < 0.5 ? 0xffe9a8 : 0xffffff, 0.95), 0);
+          break;
+        }
         case Ev.Revive:
           for (let j = 0; j < 12; j++) this.spawn(x, y, 2, (this.rand() - 0.5) * 2, (this.rand() - 0.5) * 1, 1 + this.rand() * 2, 30, hex(0x7dff9a), 1);
           break;
@@ -458,6 +480,9 @@ export class Fx {
     }
     for (let i = 0; i < MAX_RINGS; i++) {
       if (this.rt[i] >= 0) { this.rt[i] += dt; if (this.rt[i] > 18) this.rt[i] = -1; }
+    }
+    for (let i = 0; i < MAX_POPS; i++) {
+      if (this.pt[i] >= 0) { this.pt[i] += dt; if (this.pt[i] > POP_TICKS) this.pt[i] = -1; }
     }
     for (let i = 0; i < MAX_BLINKS; i++) {
       if (this.blt[i] >= 0) { this.blt[i] += dt; if (this.blt[i] > BLINK_TICKS) this.blt[i] = -1; }

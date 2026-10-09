@@ -2,7 +2,7 @@
 // In order: the spoils, the picks a player did not make in the level, and the doors. Pure view-building, no drawing.
 import { CLASSES } from '../data/classes';
 import { chapterDef } from '../data/story/chapters';
-import { OFFER_SIZE, offerFor, UPGRADES } from '../data/upgrades';
+import { cardFor, OFFER_SIZE, offerFor, rarityOf, UPGRADES } from '../data/upgrades';
 import { merchantLine } from '../data/story/hub';
 import { WARES, type StockItem } from '../data/wares';
 import type { Carry } from '../sim/carry';
@@ -45,7 +45,7 @@ export function pickLanes(sim: GameState, ready: readonly boolean[]): PickLane[]
   return sim.players.map((p, slot) => {
     if (!p.active) return { active: false, slot, name: '', level: 0, pending: 0, ready: false, cursor: 0, cards: [] };
     const cards = p.pending > 0
-      ? offerFor(sim.offerSeed, slot, p.level - p.pending + 1, p.ranks).slice(0, OFFER_SIZE).map((u) => ({ name: UPGRADES[u].name, text: [...UPGRADES[u].text], rank: p.ranks[u], icon: UPGRADES[u].icon }))
+      ? offerFor(sim.offerSeed, slot, p.level - p.pending + 1, p.ranks, p.classId, { party: sim.players.filter((q) => q.active).length }).slice(0, OFFER_SIZE).map((u) => ({ name: cardFor(UPGRADES[u], p.classId).name, text: [...cardFor(UPGRADES[u], p.classId).text], rank: p.ranks[u], icon: UPGRADES[u].icon, tier: rarityOf(UPGRADES[u]) }))
       : [];
     return { active: true, slot, name: CLASSES[p.classId].name.toUpperCase(), level: p.level, pending: p.pending, ready: p.pending === 0 || ready[slot], cursor: p.cursor, cards };
   });

@@ -16,6 +16,7 @@ import { BLINK_TICKS, SLASH_TICKS, type Fx } from './fx';
 import { drawCamps } from './camp';
 import { drawGates } from './gate';
 import { drawLevelUp } from './levelup';
+import { drawBoonPops, drawBoonStrip } from './boonHud';
 import { drawMercy } from './mercy';
 import { heroFrame } from './hero';
 import { mobPose } from './mobArt';
@@ -603,6 +604,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     b.drawScaled(S.px, sx, FIELD_Y0 + fx.y[i] - fx.z[i] + oy, sz, sz, c >>> 0);
   }
 
+  drawBoonPops(b, S, fx, camX, oy);
   drawMercy(b, S, s, camX, alpha, oy);
   drawHud(b, S, s, fx, dbg);
   drawLevelUp(b, S, s, dbg.levelKeys);
@@ -661,6 +663,7 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
   const popY = fx.goldPop > 0.3 ? -1 : 0;
   b.draw(S.coin[0][0], 6, 8 + row * 11 + 1 + popY);
   drawText(b, S, String(s.gold), 13, 8 + row * 11 + popY, hex(fx.goldPop > 0.3 ? 0xffffff : 0xffd84a));
+  drawBoonStrip(b, S, s);
 
   let mobs = 0;
   for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Mob) mobs++;

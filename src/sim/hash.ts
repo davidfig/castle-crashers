@@ -98,6 +98,7 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.panel ? 1 : 0);
     h = mixNum(h, p.lock ? 1 : 0);
     h = mix(h, p.ranks);
+    for (let b = 0; b < p.boonCd.length; b++) h = mixNum(h, p.boonCd[b]);
     h = mixNum(h, p.stamina);
     h = mixNum(h, p.staminaDelay);
     h = mixNum(h, p.winded ? 1 : 0);
@@ -105,6 +106,11 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.bufAbility2);
     h = mixNum(h, p.slowT);
     h = mixNum(h, p.rootT);
+    h = mixNum(h, p.dashChain);
+    h = mixNum(h, p.chainT);
+    h = mixNum(h, p.echoLeft);
+    h = mixNum(h, p.echoT);
+    h = mixNum(h, p.echoBig ? 1 : 0);
     h = mixNum(h, p.silenceT);
     h = mixNum(h, p.confuseT);
     h = mixNum(h, p.poisonT);

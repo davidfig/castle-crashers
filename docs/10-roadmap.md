@@ -32,6 +32,7 @@ Original M1 goals:
 - **Exit:** pass an item between players without a menu.
 
 ## M4 — Progression In-Run
+Status: **built, in tuning.** XP and levels with non-blocking picks; 5 classes; ~34 boons (stat, trigger, class mutation, party, legendary) with tiers, tag-weighted offers, pictures, HUD row and trigger pops; see [04](04-classes-progression.md). Not yet: the ability bench and slots, companions, rerolls, sound, tuning with real playtesters.
 - XP, levels, level-up strip with offers, ability bench & slots, perk/mutation system.
 - 3 more classes (Mage, Cleric, Rogue) to stress the system; Archer after.
 - **Exit:** two runs with the same class produce noticeably different builds.

@@ -18,7 +18,7 @@ export interface Card { title: string; lines: string[]; tag?: string; biome: num
 export interface SelectSlot { joined: boolean; ready: boolean; classId: number; name: string; blurb: string[]; hp: number; speed: number }
 
 /** A card in a player's panel at the camp. */
-export interface PickCard { name: string; text: string[]; rank: number; icon: string }
+export interface PickCard { name: string; text: string[]; rank: number; icon: string; /** Border tier: 0 common, 1 rare, 2 legendary. */ tier: number }
 /** One player's panel at the camp: their pending picks, one card each for the level being chosen. */
 export interface PickLane { active: boolean; slot: number; name: string; level: number; pending: number; ready: boolean; cursor: number; cards: PickCard[] }
 /** A story figure standing beside the text, and whether they are speaking (their talk loop) or listening (idle). */
