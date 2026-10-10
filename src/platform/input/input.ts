@@ -98,7 +98,7 @@ export class InputManager {
       if (!p) continue;
       const down = (i: number) => !!p.buttons[i]?.pressed;
       const x = p.axes[0] ?? 0;
-      const mask = (down(14) || x < -0.6 ? 1 : 0) | (down(15) || x > 0.6 ? 2 : 0) | (p.buttons.some((bt, i) => i < 12 && i !== 9 && i !== 4 && i !== 5 && bt.pressed) ? 4 : 0) | (p.buttons.some((bt, i) => i !== 4 && i !== 5 && bt.pressed) ? 8 : 0) | (down(1) ? 16 : 0) | (down(4) ? 32 : 0) | (down(5) ? 64 : 0); // the bumpers are the sound / music switches, not 'any button'
+      const mask = (down(14) || x < -0.6 ? 1 : 0) | (down(15) || x > 0.6 ? 2 : 0) | (p.buttons.some((bt, i) => i < 12 && i !== 9 && i !== 4 && i !== 5 && bt.pressed) ? 4 : 0) | (p.buttons.some((bt, i) => i !== 1 && i !== 4 && i !== 5 && bt.pressed) ? 8 : 0) | (down(1) ? 16 : 0) | (down(4) ? 32 : 0) | (down(5) ? 64 : 0); // the bumpers are the sound / music switches, not 'any button'
       const fresh = mask & ~(this.padMenuPrev.get(p.index) ?? 0);
       this.padMenuPrev.set(p.index, mask);
       if (fresh & 1) this.menuLeft = true;
