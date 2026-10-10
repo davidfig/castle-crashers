@@ -1,7 +1,7 @@
 // Weather drawn over the world: rain, snow, fog and lightning (see docs/11-backgrounds.md).
 // Render-only: a pure function of (biome weather, level progress, camera x, tick), so it cannot touch the deterministic sim.
-import type { WeatherSpan } from '../campaign/route';
-import { weatherFor, weatherLevel, type BiomeDef, type BlendedMood, type WeatherDef } from '../data/biomes';
+import { weatherFor, type BlendedMood, type WeatherDef } from '../data/biomes';
+import { stormCoverAt, weatherAt, type Active, type Sky } from '../data/scenery/sky';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { VIEW_H, VIEW_W } from '../sim/constants';
@@ -25,54 +25,45 @@ function tinted(rgb: number, tint: number, alpha: number): number {
   return hex((Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(bl), alpha);
 }
 
-/** Where the level being drawn (0) and the one after it (1, seen past the peddler in the store) sit in their biome's weather. */
-const spans: [WeatherSpan | null, WeatherSpan | null] = [null, null];
+/** Weather in force at the camera, refilled each frame. */
+const active: Active[] = [];
+const scratch: Active[] = [];
 
-/** Set by the game whenever a level or store begins (see `weatherSpan`); with none set, each level's weather is its own. */
-export function setWeatherRoute(current: WeatherSpan | null, next: WeatherSpan | null = current): void {
-  spans[0] = current;
-  spans[1] = next;
+/**
+ * How overcast the sky is (0..1) at road `x`: the rain's strength, felt a little ahead of it and kept a little behind it, so the cloud
+ * banks roll in before the first drops and linger as the rain lets up.
+ */
+export function stormCover(sky: Sky, x: number): number {
+  if (devOverride()) { let m = 0; for (const w of devOverride()!) if (w.kind === 'rain') m = Math.max(m, w.curve?.[0]?.[1] ?? 1); return Math.min(1, m * 1.7); }
+  return stormCoverAt(sky, x, scratch);
+}
+
+/** The dev preview (`?weather=...`): steady weather everywhere, whatever the road says. */
+function devOverride(): readonly WeatherDef[] | null {
+  const want = typeof __DEV__ !== 'undefined' && __DEV__ ? (globalThis as { __weather?: string }).__weather : undefined;
+  return want === undefined ? null : weatherFor(undefined, want);
 }
 
 /**
- * How overcast the sky is (0..1) for the level at `progress`: the rain's strength, but felt a little ahead of it and
- * kept a little behind it, so the cloud banks roll in before the first drops and linger as the rain lets up.
+ * Draws the weather at road `x` (the camera's left edge, in road coordinates). The weather is the run's own (`planSky`), laid along the road
+ * and not tied to any level or biome, so a front can carry on across a turn between biomes.
  */
-export function stormCover(biome: BiomeDef, progress: number, levelSeed: number, which = 0): number {
-  const list = weatherFor(biome);
-  const sp = spans[which];
-  const seed = sp ? sp.seed : levelSeed, span = sp ? sp.levels : 1;
-  const at = (p: number): number => (sp ? sp.from + (sp.to - sp.from) * p : p);
-  let m = 0;
-  for (const w of list) {
-    if (w.kind !== 'rain') continue;
-    for (const d of [-0.07, -0.035, 0, 0.035, 0.07]) {
-      const p = Math.min(1, Math.max(0, at(progress) + d / span));
-      m = Math.max(m, weatherLevel(w, p, seed, span) * (1 - Math.abs(d) * 2.5));
-    }
-  }
-  return Math.min(1, m * 1.7);
-}
-
-/**
- * Draw the weather for the level at `progress` (0..1 through it). `which` picks the level: 0 the current one, 1 the next
- * (the store shows the end of one level and the start of the next). The weather runs across the whole biome, so a level's
- * progress is mapped onto its slice of the biome's.
- */
-export function drawWeather(b: Batcher, S: Sprites, biome: BiomeDef, mood: BlendedMood, camX: number, oy: number, tick: number, progress: number, levelSeed: number, which = 0): void {
-  const list = weatherFor(biome);
-  if (list.length === 0) return;
-  const sp = spans[which];
-  const seed = sp ? sp.seed : levelSeed, span = sp ? sp.levels : 1;
-  if (sp) progress = sp.from + (sp.to - sp.from) * progress;
+export function drawWeather(b: Batcher, S: Sprites, sky: Sky, mood: BlendedMood, x: number, oy: number, tick: number): void {
+  const dev = devOverride();
+  let n = 0;
+  if (dev) for (const w of dev) { if (!active[n]) active[n] = { kind: w.kind, level: 0, wind: 0 }; active[n].kind = w.kind; active[n].level = w.curve?.[0]?.[1] ?? 1; active[n].wind = w.wind ?? 0; n++; }
+  else n = weatherAt(sky, x + VIEW_W / 2, active);
+  if (n === 0) return;
+  const camX = x;
   let storm = 0;
-  for (const w of list) if (w.kind === 'rain') storm = Math.max(storm, weatherLevel(w, progress, seed, span));
+  for (let i = 0; i < n; i++) if (active[i].kind === 'rain') storm = Math.max(storm, active[i].level);
   // heavy rain dims the day
   if (storm > MIN_LEVEL) b.drawScaled(S.px, 0, 0, VIEW_W, VIEW_H, hex(0x0a1226, 0.22 * storm));
-  for (const w of list) {
-    const level = weatherLevel(w, progress, seed, span);
+  for (let i = 0; i < n; i++) {
+    const { kind, level, wind } = active[i];
     if (level < MIN_LEVEL) continue;
-    switch (w.kind) {
+    const w: WeatherDef = { kind, wind };
+    switch (kind) {
       case 'fog': drawFogBanks(b, S, mood, camX, oy, tick, level); break;
       case 'rain': drawRainfall(b, S, mood, w, camX, oy, tick, level); break;
       case 'snow': drawSnowfall(b, S, mood, w, camX, tick, level); break;

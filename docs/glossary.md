@@ -24,3 +24,8 @@
 | **Telegraph** | Visible windup indicating an incoming enemy attack. |
 | **Hit-stop** | Brief freeze on impact to add weight. |
 | **Rest room** | Safe room with in-world interactions (heal, merchant, drop-in). |
+| **Archetype** | One of the hand-made biome templates (Meadow, Haunted Keep, ...) that a run varies into its own biome. |
+| **World (scenery)** | A run's generated biomes plus the road that turns one into the next (`generateWorld`). |
+| **Span / turn** | One stretch of road over which one biome turns into the next; the share rises along a seeded curve. |
+| **Share** | The fraction (0..1) of the road's elements that belong to the incoming biome at a point of a turn. |
+| **Tone** | A biome's colour shift from its archetype: hue of its foliage band, sky hue, saturation, lightness. |

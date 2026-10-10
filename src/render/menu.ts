@@ -4,7 +4,8 @@ import { hex } from '../platform/gl/batcher';
 import { VIEW_H, VIEW_W } from '../sim/constants';
 import { CARD_WIDTH_CHARS, wrap, type Screen, type Tone } from '../campaign/view';
 import { drawText } from './draw';
-import { BIOMES, moodAt } from '../data/biomes';
+import { moodAt } from '../data/biomes';
+import { getWorld } from './sceneryWorld';
 import { Scenery } from './scenery';
 import { drawCrest, drawFog, drawGround, drawHaze, drawParallax, drawSky } from './background';
 import { PLAYER_COLORS, type Sprites } from './art';
@@ -35,18 +36,19 @@ const THUMB_TOP = 74;
 
 /** A picture of a biome as the game draws it at the start of a level (sky, far hills, the field), cropped into a box. */
 function biomeThumb(b: Batcher, S: Sprites, biome: number, x: number, y: number, w: number, h: number, tick: number): void {
-  const def = BIOMES[biome];
+  const def = getWorld()?.biomes.find((g) => g.recipe.archetype === biome)?.def; // this run's own take on that kind of place
   if (!def) return;
-  thumbScenery.set(def, undefined, 0);
+  thumbScenery.setSolo(def);
+  thumbScenery.prog[0] = 0.1;
   moodAt(def, 0.2, thumbScenery.mood[0]); // morning
   const oy = y - THUMB_TOP;
   b.setClip(x, y, x + w, y + h);
   drawSky(b, S, thumbScenery, 0, tick, x, oy);
-  drawParallax(b, S, thumbScenery, 0, 0, x, oy, tick);
+  drawParallax(b, S, thumbScenery, 0, x, oy, tick);
   drawHaze(b, S, thumbScenery, 0, oy);
   drawGround(b, S, thumbScenery, -x, oy, tick);
   drawCrest(b, S, thumbScenery, -x, oy);
-  drawFog(b, S, thumbScenery, -x, oy, tick, 0.1);
+  drawFog(b, S, thumbScenery, -x, oy, tick);
   b.clearClip();
   // a frame, and the biome's name on a dark plate
   rect(b, S, x - 1, y - 1, w + 2, 1, 0x000000, 0.8);

@@ -37,3 +37,26 @@ export function silhouette(src: Pix): Pix {
   for (let i = 0; i < src.rgba.length; i += 4) if (src.rgba[i + 3] > 0) p.rgba.fill(255, i, i + 4);
   return p;
 }
+
+/** A sprite from rows of text: `.` is clear, every other character is a colour of `pal`. */
+export function bitmap(rows: string[], pal: Record<string, number>, name: string): Pix {
+  const w = Math.max(...rows.map((r) => r.length));
+  const h = rows.length;
+  if (__DEV__) {
+    for (const r of rows) if (r.length !== w) console.warn(`art: ${name} has ragged row "${r}" (${r.length} != ${w})`);
+  }
+  const rgba = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ch = rows[y][x] ?? '.';
+      const c = pal[ch];
+      if (ch === '.' || c === undefined) continue;
+      const o = (y * w + x) * 4;
+      rgba[o] = (c >> 16) & 255;
+      rgba[o + 1] = (c >> 8) & 255;
+      rgba[o + 2] = c & 255;
+      rgba[o + 3] = 255;
+    }
+  }
+  return { w, h, rgba };
+}

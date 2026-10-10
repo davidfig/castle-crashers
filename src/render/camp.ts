@@ -39,8 +39,8 @@ export function drawCamps(b: Batcher, S: Sprites, s: GameState, camX: number, oy
 }
 
 /**
- * The store between levels: the peddler's stall standing where one biome gives way to the other
- * (the seam itself is drawn by the scenery, see `drawStoreScenery` in draw.ts).
+ * The store between levels: the peddler's stall, standing halfway along the road's turn between two levels
+ * (the scenery under it is the road's, see `Scenery`).
  */
 export function drawStore(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
   const sx = Math.round(STORE_X - camX), sy = Math.round(FIELD_Y0 + STORE_Y + oy);

@@ -16,8 +16,10 @@ import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, NovaStyle, ProjStyle, 
 import { PLAYER_COLORS, type Sprites } from './art';
 import { drawWeather, stormCover } from './weather';
 import { drawAmbient, drawCrest, drawFog, drawGround, drawHaze, drawParallax, drawRidge, drawSky, FIELD_Y0, GROUND_TOP } from './background';
-import { dayPhase, moodAt, sceneryFor } from '../data/biomes';
+import { dayPhase, moodAt } from '../data/biomes';
+import { LEVELS_PER_BIOME } from '../campaign/route';
 import { roadOffset, Scenery } from './scenery';
+import { getWorld, levelsPlayed, roadShift } from './sceneryWorld';
 import { BLINK_TICKS, FIRE_RING_LIFE, SLASH_TICKS, type Fx } from './fx';
 import { drawCamps, drawStore, drawStoreHints, drawStoreWares, type StoreView } from './camp';
 import { drawQuestBoard, drawQuestGivers, drawQuestHud, drawQuestMarks, drawQuestNpc, type QuestView } from './quests';
@@ -31,29 +33,30 @@ import { activeBestiary } from '../data/bestiary';
 import type { FrameStats } from '../platform/perf';
 import type { RoadCast } from './roadCast';
 
-/** The biomes on screen this frame (see scenery.ts): the level's, and the one the road is turning into. */
+/** The biomes on screen this frame (see scenery.ts): the two the road is turning between. */
 const scenery = new Scenery();
-
-/** The biome the road enters after the current level (-1 for none) and the number of levels already played, set by the game whenever a level begins. */
-let nextSceneryBiome = -1;
-let levelsPlayed = 0;
-export function setSceneryRoute(next: number, played: number): void { nextSceneryBiome = next; levelsPlayed = played; }
+/** The biome stage the level on screen belongs to (an index into the world's biomes), set each frame. */
+let stageSlot = 0;
 
 /**
- * Sets `scenery` up for this frame and returns the road coordinate of the camera's zero. The level and the store after it are one
- * stretch of road: the scenery is drawn in road coordinates (the level's camera plus where that level starts along the road; the
- * store's plus the level's length), so the horizon, ground and hashes carry on across the store and into the next level, and the
- * road turns from this level's biome into the next one's along the end of the level and the start of the store. The time of day is
- * the road's clock, so it runs on across levels and biomes, and is the same for both biomes.
+ * Sets `scenery` up for this frame and returns the road coordinate of the camera's zero. The scenery is drawn in road coordinates (the
+ * level's camera plus where that level starts along the road; the store's plus the level's length), so the horizon, ground and hashes carry
+ * on across the store and into the next level; the biomes turn from one into the next wherever the run's road says (a stretch of a level or two,
+ * not tied to where a level ends). The time of day is the road's clock, so it runs on across levels and biomes.
  */
-function setUpScenery(s: GameState, progress: number): number {
-  const next = s.store ? s.nextBiome : nextSceneryBiome;
-  const biome = sceneryFor(s.biome);
-  const base = roadOffset(levelsPlayed);
-  scenery.set(biome, next >= 0 ? sceneryFor(next) : undefined, base);
-  const phase = dayPhase(levelsPlayed + (s.store ? 1 : progress));
+function setUpScenery(s: GameState, progress: number, camXf: number): number {
+  const played = levelsPlayed();
+  const base = roadOffset(played);
+  const road = base + (s.store ? LEVEL_CAM_END : 0) + roadShift();
+  const world = getWorld();
+  if (!world) throw new Error('drawFrame: no scenery installed (see installSceneryArt)');
+  stageSlot = Math.min(world.biomes.length - 1, Math.floor(played / LEVELS_PER_BIOME));
+  scenery.setRoad(world, road + camXf + VIEW_W / 2);
+  const here = s.store ? 1 : progress;
+  for (let i = 0; i < scenery.n; i++) scenery.prog[i] = scenery.slot[i] === stageSlot ? here : -1;
+  const phase = dayPhase(played + here);
   for (let i = 0; i < scenery.n; i++) moodAt(scenery.biome[i], phase, scenery.mood[i]);
-  return base + (s.store ? LEVEL_CAM_END : 0);
+  return road;
 }
 
 /** Ticks a killed mob takes to topple over before it lies still (a boss is slower: it is heavier). */
@@ -190,10 +193,10 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
 
   // --- sky + parallax layers (the light changes with how far the party has advanced)
   const progress = s.store ? 1 : Math.min(1, Math.max(0, camXf / (WORLD_W - VIEW_W)));
-  const road = setUpScenery(s, progress);
-  const biome = scenery.biome[0], mood = scenery.mood[0];
-  drawSky(b, S, scenery, camXf + road, ft, -shx, oy, stormCover(biome, progress, s.seed));
-  drawParallax(b, S, scenery, camXf + road, progress, -shx, oy, ft);
+  const road = setUpScenery(s, progress, camXf);
+  const mood = scenery.mood[scenery.n === 2 && scenery.share(camXf + road + VIEW_W / 2) > 0.5 ? 1 : 0]; // the air takes the light of whichever biome has most of the view
+  drawSky(b, S, scenery, camXf + road, ft, -shx, oy, stormCover(getWorld()!.sky, camXf + road + VIEW_W / 2));
+  drawParallax(b, S, scenery, camXf + road, -shx, oy, ft);
   drawHaze(b, S, scenery, camXf + road, oy);
 
   // --- enemies coming over the top: they climb up from behind the hill (head first, the hill hiding their
@@ -214,7 +217,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   // --- ground, then the hill's crest in front of the climbers
   drawGround(b, S, scenery, camX + road, oy, ft);
   drawCrest(b, S, scenery, camX + road, oy);
-  drawFog(b, S, scenery, camX + road, oy, ft, progress);
+  drawFog(b, S, scenery, camX + road, oy, ft);
   drawCamps(b, S, s, camX, oy);
   if (s.store) { drawStore(b, S, s, camX, oy); drawQuestGivers(b, S, s, camX, oy, dbg.questView); }
 
@@ -778,7 +781,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     b.drawScaled(S.px, sx, FIELD_Y0 + fx.y[i] - fx.z[i] + oy, sz, sz, c >>> 0);
   }
 
-  drawWeather(b, S, biome, mood, camX + (s.store ? LEVEL_CAM_END : 0), oy, ft, progress, s.seed);
+  drawWeather(b, S, getWorld()!.sky, mood, camX + road, oy, ft);
 
   drawBoonPops(b, S, fx, camX, oy);
   drawMercy(b, S, s, camX, alpha, oy);

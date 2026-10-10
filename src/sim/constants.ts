@@ -18,11 +18,11 @@ export const EVENT_CAP = 8192;
 
 /**
  * The store between levels is a stretch of field of its own, a transition piece: it opens where the level just won ended (the party
- * walks in at the same place on screen) and the scenery changes along it from that level's biome to the next one's, with the peddler
- * at the seam. It ends where the next level begins. Sim coordinates are local to the store.
+ * walks in at the same place on screen) and the scenery carries on along it (the road turns between biomes wherever its own plan says, which
+ * may be here or may not), with the peddler halfway along. It ends where the next level begins. Sim coordinates are local to the store.
  */
 export const STORE_W = 1740;
-/** Where the peddler stands, and so where one biome gives way to the other. */
+/** Where the peddler stands; the music turns to the next biome's key here. */
 export const STORE_X = 900;
 export const STORE_Y = 70;
 /** The camera at the far end of the store (its limit), and the screen column the lead hero crosses to leave it: the next level starts them there. */
