@@ -8,7 +8,12 @@ import { installMonsterArt } from './render/monsterSprites';
 import { loadHeroImages } from './render/heroSheets';
 import { loadMobImages } from './render/mobSheets';
 import { loadNpcImages } from './render/npcSheets';
-import { drawFrame, setSceneryRoute } from './render/draw';
+import { drawFrame } from './render/draw';
+import { generateWorld } from './data/scenery/world';
+import { BIOMES } from './data/biomes';
+import { ROAD_STRIDE } from './render/scenery';
+import { setLevelsPlayed, setRoadShift, setWorld } from './render/sceneryWorld';
+import { installSceneryArt } from './render/sceneryArt';
 import { Fx } from './render/fx';
 import { Audio } from './platform/audio/audio';
 import { dangerOf } from './platform/audio/music';
@@ -30,8 +35,7 @@ import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
 import { spawnClump } from './sim/gen/level';
 import { summarizeEnd } from './campaign/run';
-import { levelPlan, LEVELS_PER_BIOME, ROUTE_LEVELS, weatherSpan, type LevelPlan } from './campaign/route';
-import { setWeatherRoute } from './render/weather';
+import { levelPlan, LEVELS_PER_BIOME, ROUTE_LEVELS, type LevelPlan } from './campaign/route';
 import { stockFor, WARES, wareSpot, wareStanding, type StockItem } from './data/wares';
 import type { StoreView } from './render/camp';
 import type { QuestView } from './render/quests';
@@ -100,8 +104,6 @@ const params = new URLSearchParams(location.search);
 if (params.has('mute') && params.get('mute') !== '0') audio.muted = true;
 // ?biome=N forces a biome (scenery and enemies; see biomeIndex). Read before any sim is created.
 if (__DEV__ && params.has('biome')) (globalThis as { __biome?: number }).__biome = Number(params.get('biome'));
-// ?scenery=frozen previews scenery that has no enemy roster yet (see FROZEN_PASS); the enemies stay those of the seed's biome.
-if (__DEV__ && params.has('scenery')) (globalThis as { __scenery?: string }).__scenery = params.get('scenery') ?? undefined;
 // ?weather=rain,lightning:0.5 forces weather on any level (see weatherFor); ?weather=none turns it off.
 if (__DEV__ && params.has('weather')) (globalThis as { __weather?: string }).__weather = params.get('weather') === 'none' ? '' : params.get('weather') ?? undefined;
 let seed = params.has('seed') ? Number(params.get('seed')) >>> 0 : (Date.now() & 0xffffffff) >>> 0;
@@ -120,6 +122,26 @@ function applyCast(runSeed: number): void {
   installMonsterArt(sprites, renderer, activeBestiary());
 }
 applyCast(seed);
+
+// A run's scenery is generated from its seed (data/scenery/world.ts): one biome per stage of the road, each its archetype varied, and the road
+// turning each into the next. Drawn into the atlas before any level of the run is shown. Dev aid: ?scenery=frozen makes the whole road that
+// archetype (the enemies stay those of the seed's biomes); ?biome=N already forces both; ?world=N changes the scenery's seed alone.
+if (__DEV__ && params.has('roadx')) setRoadShift(Number(params.get('roadx')) || 0); // ?roadx=N draws the scenery N px further along the road
+let sceneryKey = '';
+function applyScenery(runSeed: number, total: number): void {
+  const stages = Math.max(1, Math.ceil(total / LEVELS_PER_BIOME));
+  const want = __DEV__ ? (params.get('scenery') ?? '').toLowerCase() : '';
+  const forced = want ? BIOMES.findIndex((b) => b.name.toLowerCase().includes(want)) : -1;
+  const worldSeed = __DEV__ && params.has('world') ? Number(params.get('world')) >>> 0 : runSeed;
+  const archetypes = Array.from({ length: stages }, (_, k) => (forced >= 0 ? forced : levelPlan(runSeed, k * LEVELS_PER_BIOME, total).biome));
+  const key = `${worldSeed}:${archetypes.join(',')}`;
+  if (key === sceneryKey) return;
+  sceneryKey = key;
+  const world = generateWorld(worldSeed, archetypes, LEVELS_PER_BIOME * ROAD_STRIDE);
+  installSceneryArt(sprites, renderer, world);
+  setWorld(world);
+}
+applyScenery(seed, ROUTE_LEVELS);
 // Dev aid: let the bot drive extra player slots so multiplayer can be watched without controllers.
 //   ?bots=3  slots 2-4 are bot-controlled     ?auto=1  slot 1 is bot-controlled too
 const botSlots: number[] = [];
@@ -266,8 +288,7 @@ function devQuest(plan: LevelPlan): QuestDef | undefined {
 function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof createSim> {
   const nextBiome = store ? levelPlan(cfg.seed, Math.min(route.index + 1, route.total - 1), route.total).biome : undefined;
   const sd = plan.seed;
-  setSceneryRoute(!store && route.index + 1 < route.total ? levelPlan(cfg.seed, route.index + 1, route.total).biome : -1, route.index);
-  setWeatherRoute(weatherSpan(cfg.seed, route.index, route.total), weatherSpan(cfg.seed, Math.min(route.index + 1, route.total - 1), route.total));
+  setLevelsPlayed(route.index);
   const s = createSim(sd, route.index === 0 && !store ? cfg.reservedBeat : undefined, {
     surrender: plan.chapter >= 2 || (__DEV__ && params.get('surrender') === '1'),
     offerSeed: cfg.seed,
@@ -373,6 +394,7 @@ function startRun(c: RunConfig, keepSlots = false): void {
   if (!keepSlots) picks = [];
   seed = c.seed;
   const total = routeTotal();
+  applyScenery(c.seed, total);
   const at = __DEV__ ? Math.max(0, Math.min(total - 1, Number(params.get('at') ?? 0) || 0)) : 0;
   const plan = levelPlan(c.seed, at, total);
   // the first level of a real run stages the cookfire camp (docs/12, R1): the story told in the field

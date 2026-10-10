@@ -5,7 +5,7 @@ import type { Batcher, Frame } from '../platform/gl/batcher';
 import { hex, rgba } from '../platform/gl/batcher';
 import { VIEW_H, VIEW_W } from '../sim/constants';
 import type { Sprites } from './art';
-import { flatNoise, patchNoise, type Scenery } from './scenery';
+import { flatNoise, GROUND_CELL, groundNoise, patchNoise, type Scenery } from './scenery';
 
 /** Screen y of world y=0 (feet at the very top of the field stand on the crest line) and of the horizon. */
 export const FIELD_Y0 = 112;
@@ -132,8 +132,9 @@ function drawSkyWash(b: Batcher, S: Sprites, sc: Scenery, camXf: number, oy: num
 /** Sky bands, then stars, the sun and moon, and drifting clouds; where the road is turning into the next biome, its sky washes in along the road and its stars, aurora and clouds take over one by one. */
 export function drawSky(b: Batcher, S: Sprites, sc: Scenery, camXf: number, tick: number, ox: number, oy: number, cover = 0): void {
   const mood = sc.mood[0];
-  drawSkyBands(b, S, mood, oy);
-  if (sc.n === 2 && !sc.allOld(camXf + VIEW_W + 8)) drawSkyWash(b, S, sc, camXf, oy);
+  const allNew = sc.allNew(camXf - 8);
+  drawSkyBands(b, S, allNew ? sc.mood[1] : mood, oy);
+  if (!allNew && sc.n === 2 && !sc.allOld(camXf + VIEW_W + 8)) drawSkyWash(b, S, sc, camXf, oy);
 
   if (mood.stars > 0.02 || (sc.n === 2 && sc.mood[1].stars > 0.02)) {
     for (let i = 0; i < STAR_COUNT; i++) {
@@ -275,11 +276,11 @@ function pickChunk(c: number, salt: number, n: number): number {
 }
 
 /** The horizon: each biome's layers, far to near, with the two biomes' layers of the same depth drawn together so a near strip of one never ends up behind a far strip of the other. */
-export function drawParallax(b: Batcher, S: Sprites, sc: Scenery, camXf: number, progress: number, ox: number, oy: number, tick: number): void {
+export function drawParallax(b: Batcher, S: Sprites, sc: Scenery, camXf: number, ox: number, oy: number, tick: number): void {
   const deepest = Math.max(sc.biome[0].layers.length, sc.n === 2 ? sc.biome[1].layers.length : 0);
   for (let li = 0; li < deepest; li++) {
     for (let i = 0; i < sc.n; i++) {
-      if (li < sc.biome[i].layers.length) drawParallaxLayer(b, S, sc, i, li, camXf, i === 0 ? progress : 0, ox, oy, tick);
+      if (li < sc.biome[i].layers.length) drawParallaxLayer(b, S, sc, i, li, camXf, sc.prog[i], ox, oy, tick);
     }
   }
 }
@@ -288,7 +289,7 @@ export function drawParallax(b: Batcher, S: Sprites, sc: Scenery, camXf: number,
 function drawParallaxLayer(b: Batcher, S: Sprites, sc: Scenery, pi: number, li: number, camXf: number, progress: number, ox: number, oy: number, tick: number): void {
   const biome = sc.biome[pi], mood = sc.mood[pi];
   const layer = biome.layers[li];
-  if (layer.sprite === DESTINATION_LAYER) { drawDestination(b, S, sc, pi, camXf, progress, layer.k, ox, oy); return; }
+  if (layer.sprite === DESTINATION_LAYER) { if (progress >= 0) drawDestination(b, S, sc, pi, camXf, progress, layer.k, ox, oy); return; }
   const frames = S.layers[layer.sprite];
   const off = Math.floor(camXf * layer.k);
   const y = GROUND_TOP - frames[0].h + (layer.dy ?? 0) + oy;
@@ -362,12 +363,11 @@ export function drawHaze(b: Batcher, S: Sprites, sc: Scenery, camXf: number, oy:
   }
 }
 
-/** The noise that decides which biome the ground tile at (tx, ty) (16 px, counted from the horizon) belongs to: patchy, so the new ground spreads in islands. */
-function tileNoise(tx: number, ty: number): number { return patchNoise(tx * 16 + 8, ty * 16 + 8, 56, 11); }
-
-/** Does biome `pi` own the ground at road x `wx`, screen y `y`? Floor, patches, decals and the path ask the same question of the same 16 px tile, so a decal never stands on the other biome's floor. */
+/** Does biome `pi` own the ground at road x `wx`, screen y `y`? The floor, patches, decals and the path ask the same question of the same 8 px cell, so a decal never stands on the other biome's floor. */
 function ownsGround(sc: Scenery, pi: number, wx: number, y: number): boolean {
-  return sc.n === 1 || sc.keep(pi, Math.floor(wx / 16) * 16 + 8, tileNoise(Math.floor(wx / 16), Math.floor((y - GROUND_TOP) / 16)));
+  if (sc.n === 1) return pi === 0;
+  const cx = Math.floor(wx / GROUND_CELL), cy = Math.floor((y - GROUND_TOP) / GROUND_CELL);
+  return sc.keep(pi, cx * GROUND_CELL + GROUND_CELL / 2, groundNoise(cx, cy));
 }
 
 /**
@@ -429,9 +429,18 @@ function depthTint(tint: number, y: number): number {
   return shade(0xffffff, tint, depthShade(y), 255, 1 + (1 - groundDepth(y)) * 0.04);
 }
 
+/** A shared frame for drawing one 8 px quarter of a 16 px tile. */
+const quarter: Frame = { u0: 0, v0: 0, u1: 0, v1: 0, w: 8, h: 8 };
+function drawQuarter(b: Batcher, f: Frame, x: number, y: number, qx: number, qy: number, tint: number): void {
+  const ku = (f.u1 - f.u0) / f.w, kv = (f.v1 - f.v0) / f.h;
+  quarter.u0 = f.u0 + qx * 8 * ku; quarter.u1 = quarter.u0 + 8 * ku;
+  quarter.v0 = f.v0 + qy * 8 * kv; quarter.v1 = quarter.v0 + 8 * kv;
+  b.draw(quarter, x + qx * 8, y + qy * 8, false, tint);
+}
+
 /**
- * The floor surface: flat tiles, or a paved floor. Biome 0 is drawn whole (it is the ground beneath), biome 1's floor goes over it
- * tile by tile where it owns the ground.
+ * The floor surface: flat tiles, or a paved floor. The first biome is drawn whole (it is the ground beneath), the second's floor goes over it
+ * where it owns the ground: a whole tile where it owns all four of the tile's 8 px quarters, otherwise just the quarters it owns.
  */
 function drawFloor(b: Batcher, S: Sprites, sc: Scenery, pi: number, camX: number, oy: number): void {
   const g = sc.biome[pi].ground, mood = sc.mood[pi], overlay = pi === 1;
@@ -443,9 +452,13 @@ function drawFloor(b: Batcher, S: Sprites, sc: Scenery, pi: number, camX: number
     const y = GROUND_TOP + ty * 16;
     const tint = depthTint(mood.tint, y + 8);
     for (let tx = tx0; tx <= tx1; tx++) {
-      if (overlay && !sc.keep(1, tx * 16 + 8, tileNoise(tx, ty))) continue;
       const h = Math.imul(tx, 73856093) ^ Math.imul(ty, 19349663);
-      b.draw(tiles[((h >>> 8) & 0xffff) % tiles.length], tx * 16 - camX, y + oy, false, tint);
+      const f = tiles[((h >>> 8) & 0xffff) % tiles.length];
+      if (!overlay) { b.draw(f, tx * 16 - camX, y + oy, false, tint); continue; }
+      let mask = 0;
+      for (let q = 0; q < 4; q++) if (sc.keep(1, tx * 16 + (q & 1) * 8 + 4, groundNoise(tx * 2 + (q & 1), ty * 2 + (q >> 1)))) mask |= 1 << q;
+      if (mask === 15) b.draw(f, tx * 16 - camX, y + oy, false, tint);
+      else for (let q = 0; q < 4; q++) if (mask & (1 << q)) drawQuarter(b, f, tx * 16 - camX, y + oy, q & 1, q >> 1, tint);
     }
   }
 }
@@ -562,12 +575,12 @@ export function drawGround(b: Batcher, S: Sprites, sc: Scenery, camX: number, oy
  * a horde stays readable). Each layer's wisps wrap around a 960 px loop that scrolls with the camera by `k` and slides by
  * `drift` per tick, so they never run out and the fog never seems to follow the camera exactly. Each wisp is one biome's.
  */
-export function drawFog(b: Batcher, S: Sprites, sc: Scenery, camX: number, oy: number, tick: number, progress: number): void {
+export function drawFog(b: Batcher, S: Sprites, sc: Scenery, camX: number, oy: number, tick: number): void {
   for (let pi = 0; pi < sc.n; pi++) {
     const biome = sc.biome[pi], mood = sc.mood[pi];
     if (!biome.fog) continue;
     const LOOP = 960;
-    const prog = pi === 0 ? progress : 0;
+    const prog = Math.max(0, sc.prog[pi]);
     for (const layer of biome.fog) {
       // morning mist thins out and is gone by `until`
       const burn = layer.until === undefined ? 1 : 1 - smoothstep(layer.until - 0.25, layer.until, prog);

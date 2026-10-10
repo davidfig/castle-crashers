@@ -85,22 +85,3 @@ export function levelPlan(runSeed: number, level: number, total: number): LevelP
     chapter: stageBiome(level) + 1,
   };
 }
-
-/** Where a level sits in its biome's weather: the weather runs across all of a biome's levels, so it is drawn from a slice of one shared span. */
-export interface WeatherSpan {
-  /** One seed for the whole biome, so the weather's surges carry across its levels. */
-  seed: number;
-  /** This level's slice of the biome's progress, 0..1. */
-  from: number;
-  to: number;
-  /** Levels in the biome. */
-  levels: number;
-}
-
-/** The weather span of `level` in a route of `total` levels (a one-level dev run is its own whole span). */
-export function weatherSpan(runSeed: number, level: number, total: number): WeatherSpan {
-  const first = total > 1 ? level - (level % LEVELS_PER_BIOME) : 0;
-  const levels = total > 1 ? Math.min(LEVELS_PER_BIOME, total - first) : 1;
-  const at = level - first;
-  return { seed: (levelSeed(runSeed, first) ^ 0x57ea7e) >>> 0, from: at / levels, to: (at + 1) / levels, levels };
-}
