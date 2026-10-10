@@ -1,75 +1,10 @@
-// Enemy sprites from the art workbench. Frames are tight cells whose bottom row is the ground line and whose pivot
+// Enemy sprites (a run's generated monsters, see monsterArt.ts). Frames are tight cells whose bottom row is the ground line and whose pivot
 // column is the cell centre, so the existing bottom-centre drawing code works unchanged. The enemies' swings,
 // leans and charges stay code-driven (draw.ts). Weapons are baked into the body frames.
 import type { Frame } from '../platform/gl/batcher';
-import goblinMeta from '../../art/out/goblin.json';
-import orcMeta from '../../art/out/orc.json';
-import mobarcherMeta from '../../art/out/mobarcher.json';
-import shieldbearerMeta from '../../art/out/shieldbearer.json';
-import bomberMeta from '../../art/out/bomber.json';
-import bossMeta from '../../art/out/boss.json';
-import wolfMeta from '../../art/out/wolf.json';
-import slingerMeta from '../../art/out/slinger.json';
-import shamanMeta from '../../art/out/shaman.json';
-import drummerMeta from '../../art/out/drummer.json';
-import trollMeta from '../../art/out/troll.json';
-import skeletonMeta from '../../art/out/skeleton.json';
-import bonearcherMeta from '../../art/out/bonearcher.json';
-import ghoulMeta from '../../art/out/ghoul.json';
-import wraithMeta from '../../art/out/wraith.json';
-import skullMeta from '../../art/out/skull.json';
-import bonebruteMeta from '../../art/out/bonebrute.json';
-import necromancerMeta from '../../art/out/necromancer.json';
-import bansheeMeta from '../../art/out/banshee.json';
-import plaguezombieMeta from '../../art/out/plaguezombie.json';
-import lichMeta from '../../art/out/lich.json';
-import dreadknightMeta from '../../art/out/dreadknight.json';
-import trapperMeta from '../../art/out/trapper.json';
-import snowspriteMeta from '../../art/out/snowsprite.json';
-import harpoonerMeta from '../../art/out/harpooner.json';
-import frostwolfMeta from '../../art/out/frostwolf.json';
-import ramMeta from '../../art/out/ram.json';
-import icehuskMeta from '../../art/out/icehusk.json';
-import yetiMeta from '../../art/out/yeti.json';
-import frostshamanMeta from '../../art/out/frostshaman.json';
-import blizzardwitchMeta from '../../art/out/blizzardwitch.json';
-import whiteoutspiritMeta from '../../art/out/whiteoutspirit.json';
-import tundraguardMeta from '../../art/out/tundraguard.json';
-import rimekingMeta from '../../art/out/rimeking.json';
-import dreadregentMeta from '../../art/out/dreadregent.json';
-import bogfrogMeta from '../../art/out/bogfrog.json';
-import mudleechMeta from '../../art/out/mudleech.json';
-import toadspitterMeta from '../../art/out/toadspitter.json';
-import bullfrogMeta from '../../art/out/bullfrog.json';
-import sporebloatMeta from '../../art/out/sporebloat.json';
-import reedstalkerMeta from '../../art/out/reedstalker.json';
-import wispMeta from '../../art/out/wisp.json';
-import peatbruteMeta from '../../art/out/peatbrute.json';
-import mirehagMeta from '../../art/out/mirehag.json';
-import toadmatronMeta from '../../art/out/toadmatron.json';
-import drownedwardenMeta from '../../art/out/drownedwarden.json';
-import fenlordMeta from '../../art/out/fenlord.json';
-import duneraiderMeta from '../../art/out/duneraider.json';
-import scarabMeta from '../../art/out/scarab.json';
-import flamearcherMeta from '../../art/out/flamearcher.json';
-import sidewinderMeta from '../../art/out/sidewinder.json';
-import scorpionMeta from '../../art/out/scorpion.json';
-import falconerMeta from '../../art/out/falconer.json';
-import dustdevilMeta from '../../art/out/dustdevil.json';
-import antlionMeta from '../../art/out/antlion.json';
-import mummyMeta from '../../art/out/mummy.json';
-import sunpriestMeta from '../../art/out/sunpriest.json';
-import sunguardMeta from '../../art/out/sunguard.json';
-import suntyrantMeta from '../../art/out/suntyrant.json';
 
 interface Rect { x: number; y: number; w: number; h: number }
 export interface SheetMeta { ground?: number; frames: Record<string, Rect>; anims: Record<string, { frames: string[] }> }
-const MOB_METAS = [
-  goblinMeta, orcMeta, mobarcherMeta, shieldbearerMeta, bomberMeta, bossMeta, wolfMeta, slingerMeta, shamanMeta, drummerMeta, trollMeta, skeletonMeta, bonearcherMeta, ghoulMeta, wraithMeta, skullMeta, bonebruteMeta, necromancerMeta, bansheeMeta, plaguezombieMeta, lichMeta, dreadknightMeta,
-  trapperMeta, snowspriteMeta, harpoonerMeta, frostwolfMeta, ramMeta, icehuskMeta, yetiMeta, frostshamanMeta, blizzardwitchMeta, whiteoutspiritMeta, tundraguardMeta, rimekingMeta, dreadregentMeta,
-  bogfrogMeta, mudleechMeta, toadspitterMeta, bullfrogMeta, sporebloatMeta, reedstalkerMeta, wispMeta, peatbruteMeta, mirehagMeta, toadmatronMeta, drownedwardenMeta, fenlordMeta,
-  duneraiderMeta, scarabMeta, flamearcherMeta, sidewinderMeta, scorpionMeta, falconerMeta, dustdevilMeta, antlionMeta, mummyMeta, sunpriestMeta, sunguardMeta, suntyrantMeta,
-] as unknown as SheetMeta[];
 
 export interface MobArt {
   /** Indexed by MobType: the walk cycle. */
@@ -86,12 +21,7 @@ const uv = (r: Rect, pl: { x: number; y: number }, W: number, H: number): Frame 
   u0: (pl.x + r.x) / W, v0: (pl.y + r.y) / H, u1: (pl.x + r.x + r.w) / W, v1: (pl.y + r.y + r.h) / H, w: r.w, h: r.h,
 });
 
-/** places: one atlas placement per sheet, in loadMobImages() order. */
-export function buildMobArt(places: { x: number; y: number }[], W: number, H: number): MobArt {
-  return buildMobArtFrom(MOB_METAS, places, W, H);
-}
-
-/** The same, for any list of sheet metadata (the hand-made sheets, or a run's generated monsters). */
+/** Frame tables for a list of sheet metadata (a run's generated monsters), each placed in the atlas at `places`. */
 export function buildMobArtFrom(metas: readonly SheetMeta[], places: { x: number; y: number }[], W: number, H: number): MobArt {
   const anims = metas.map((m, t) => {
     const out: Record<string, Frame[]> = {};

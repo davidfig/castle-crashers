@@ -5,7 +5,7 @@ A player learns *this run's* "cinder hound" (it charges), "bile mite" (poison, b
 over its retinue) in the first level, and uses that through every biome of the road. The next run is a new cast to learn.
 The monsters need not make sense (a flaming serpent with a bow, a hooded blob that raises the dead): they are small, and the surprise is the point.
 
-The hand-made roster (59 enemies) is still in the code as `CLASSIC_MOBS` and is what the sim's tests run against; `?mobs=classic` plays it.
+The hand-made roster (59 enemies) is still in the code as `CLASSIC_MOBS` and is what the sim's tests run against; `?mobs=classic` plays those stats. The hand-made enemy *pictures* are gone: the classic roster wears the generated look of each slot (from the run seed).
 
 ## How it works
 
@@ -48,7 +48,7 @@ run seed ──► generateBestiary(seed) ──► Bestiary { defs[], looks[], 
   a palette from a colour family each biome shares for the run, and a size from its hit radius. Powers pull the pieces: shooters carry bows, casters staves,
   chargers horns, flame-wreathed things are hot-coloured.
 - **Sprites** (`render/monsterArt.ts`). The look is composed at run start, as pixels, from parametric shapes and small stamps (no rotation or resampling of pixel art,
-  flat fills, upper-left light, rim and ink) into a sheet per monster with the same poses the hand-made sheets have (walk, idle, windup, strike, hurt, dead, cast,
+  flat fills, upper-left light, rim and ink) into a sheet per monster with the poses the renderer looks up (walk, idle, windup, strike, hurt, dead, cast,
   aim/release, lit, paw/charge/dazed, rise; slam/roar/smash for bosses). `render/monsterSprites.ts` packs the sheets into the atlas's **monster band** and
   swaps them in; `mobArt.ts` and `draw.ts` read them like any other sheet. Per-monster presentation (shadow, blood, held item) is in `render/mobStyle.ts`.
 
@@ -56,7 +56,7 @@ run seed ──► generateBestiary(seed) ──► Bestiary { defs[], looks[], 
 
 `generateBestiary(seed)` is a pure function of the **run seed** (`cfg.seed`; the road's levels derive from it), with its own random streams,
 never the sim's. The game installs it before any sim of the run is created (`applyCast` in `main.ts`), so every client and replay fights the same cast.
-Tests (and tools) install explicitly; with nothing installed `MOBS` is the hand-made roster.
+Tests (and tools) install explicitly; with nothing installed `MOBS` is the hand-made roster (stats only).
 
 ## Tools
 
@@ -66,7 +66,7 @@ Tests (and tools) install explicitly; with nothing installed `MOBS` is the hand-
 | `node tools/monster-sheet.mjs --seed N --count 40 --out sheet.png` | contact sheet of generated sprites (`--boss`, `--poses`) |
 | `BESTIARY=<seed> node tools/balance.mjs` | per-monster duel probe against the bot (compare with the hand-made roster's) |
 | `npm run playtest -- --bestiary 1 2 3` | bot runs against each seed's generated cast |
-| `?mobs=classic` (dev) | play the hand-made roster |
+| `?mobs=classic` (dev) | play the hand-made roster's stats (with generated pictures) |
 
 ## Adding to the kit
 

@@ -1,3 +1,5 @@
+> **Superseded for art:** the hand-pixeled enemy rigs (`art/chars`, `mobSheets.ts`) were removed; enemy pictures are generated (docs/15). Kept as history.
+
 # Brief: the Frozen Pass enemy roster
 
 **For:** whoever owns enemies and the roster (`src/data/mobs.ts`, `src/data/roster.ts`, `art/chars/`).

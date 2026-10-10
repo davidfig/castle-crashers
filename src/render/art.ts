@@ -3,7 +3,7 @@
 // bgArt.ts, and the pixel helpers they share in pix.ts.
 import type { Frame } from '../platform/gl/batcher';
 import { buildHeroSets, type HeroSet } from './hero';
-import { buildMobArt, type MobArt } from './mobArt';
+import type { MobArt } from './mobArt';
 import { makeCrag, makeFog, makeKeep, makeMottle, makeMoon, makeCloud, makeDither } from './bgArt';
 import { bitmap, makeEllipse, type Pix } from './pix';
 import { buildUiArt, type UiArt } from './uiArt';
@@ -86,10 +86,8 @@ export interface Sprites {
   shrine: Frame[];
   /** Player sprites from the art workbench: one set per class (CLASSES order), each with a sheet per player slot (see hero.ts). */
   heroes: HeroSet[];
-  /** Enemy art in play: the hand-made sheets, or a run's generated monsters once `installMonsterArt` has drawn them (see monsterSprites.ts). */
+  /** Enemy art in play: a run's generated monsters, empty until `installMonsterArt` has drawn them (see monsterSprites.ts). */
   mobArt: MobArt;
-  /** The hand-made enemy art, kept so the classic roster can be put back. */
-  classicMobArt: MobArt;
   /** The strip of the atlas generated monsters are drawn into: a run's cast is repainted here, over the last run's. */
   monsterBand: { x: number; y: number; w: number; h: number };
   /** The strip of the atlas a run's generated scenery is drawn into (sceneryArt.ts). */
@@ -124,7 +122,7 @@ export interface Sprites {
   npcs: Record<NpcName, NpcSet>;
 }
 
-export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImageElement[], npcImages: HTMLImageElement[] = []): Sprites {
+export function buildSprites(heroImages: HTMLImageElement[], npcImages: HTMLImageElement[] = []): Sprites {
   const blank: Frame = { u0: 0, v0: 0, u1: 0, v1: 0, w: 0, h: 0 };
   const mk = (): Frame => ({ ...blank });
   const items: { w: number; h: number; rgba: Uint8ClampedArray; frame: Frame }[] = [];
@@ -214,9 +212,9 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   // (5 classes x 4 colours) are shelf-packed, tallest first, into the free space beside the procedural strip and then below it.
   const stripH = y + rowH + 1;
   let usedH = stripH;
-  // Enemy and story-figure sheets are shelf-packed, tallest first, across the full atlas width (stacked in one column they would
-  // pass the 16384 px texture limit once there are dozens of enemies).
-  const sheets = [...mobImages, ...npcImages];
+  // Story-figure sheets are shelf-packed, tallest first, across the full atlas width (stacked in one column they would
+  // pass the 16384 px texture limit once there are dozens of sheets).
+  const sheets = [...npcImages];
   const sheetPlaces: { x: number; y: number }[] = new Array(sheets.length);
   {
     let sx = 0, sy = stripH, sh = 0;
@@ -229,8 +227,7 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     }
     usedH = sy + sh + 1;
   }
-  const mobPlaces = sheetPlaces.slice(0, mobImages.length);
-  const npcPlaces = sheetPlaces.slice(mobImages.length);
+  const npcPlaces = sheetPlaces;
   const heroPlaces: { x: number; y: number }[] = new Array(heroImages.length);
   {
     // Region A: the free space right of the procedural strip. Region B: full width below the enemy sheets.
@@ -271,14 +268,12 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   }
 
   heroImages.forEach((img, k) => ctx.drawImage(img, heroPlaces[k].x, heroPlaces[k].y));
-  mobImages.forEach((img, k) => ctx.drawImage(img, mobPlaces[k].x, mobPlaces[k].y));
   npcImages.forEach((img, k) => ctx.drawImage(img, npcPlaces[k].x, npcPlaces[k].y));
   const heroes = buildHeroSets(heroPlaces, ATLAS_W, H);
-  const mobArt = buildMobArt(mobPlaces, ATLAS_W, H);
+  const mobArt: MobArt = { walk: [], anims: [] };
   const npcs = buildNpcSets(npcPlaces, ATLAS_W, H);
   const mob = mobArt.walk;
-  // Corpses (the boss's too) are the authored `dead` frame of each enemy sheet (the first walk frame laid on its side, built by tools/art.mjs).
-  const corpse = mobArt.anims.map((a) => a.dead[0]);
+  const corpse: Frame[] = [];
 
-  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, staminaPotion, chest, shrine, heroes, mobArt, classicMobArt: mobArt, monsterBand, sceneryBand, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, staminaPotion, chest, shrine, heroes, mobArt, monsterBand, sceneryBand, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
 }

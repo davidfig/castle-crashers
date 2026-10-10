@@ -3,10 +3,9 @@ import { startLoop } from './platform/loop';
 import { UPGRADES, UPGRADE_INDEX } from './data/upgrades';
 import { Renderer } from './platform/gl/renderer';
 import { buildSprites } from './render/art';
-import { activeBestiary, bestiaryEpoch, ensureBestiary, installBestiary } from './data/bestiary';
+import { activeBestiary, bestiaryEpoch, ensureBestiary, generateBestiary, installBestiary } from './data/bestiary';
 import { installMonsterArt } from './render/monsterSprites';
 import { loadHeroImages } from './render/heroSheets';
-import { loadMobImages } from './render/mobSheets';
 import { loadNpcImages } from './render/npcSheets';
 import { drawFrame } from './render/draw';
 import { generateWorld } from './data/scenery/world';
@@ -58,16 +57,14 @@ function fail(msg: string): never {
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 let heroImages: HTMLImageElement[];
-let mobImages: HTMLImageElement[];
 let npcImages: HTMLImageElement[];
 try {
   heroImages = await loadHeroImages();
-  mobImages = await loadMobImages();
   npcImages = await loadNpcImages();
 } catch (err) {
   fail(String(err instanceof Error ? err.message : err));
 }
-const sprites = buildSprites(heroImages, mobImages, npcImages);
+const sprites = buildSprites(heroImages, npcImages);
 let renderer: Renderer;
 try {
   renderer = new Renderer(canvas, sprites.atlas, VIEW_W, VIEW_H);
@@ -115,11 +112,18 @@ const demo = __DEV__ && params.has('demo') ? parseDemo(params.get('demo')!) : nu
 if (__DEV__ && params.has('demo') && !demo) console.warn('?demo=kind:element[:key=val...]: unknown kind or element in', params.get('demo'));
 const classicMobs = __DEV__ && (params.get('mobs') === 'classic' || demo !== null);
 let castEpoch = -1;
+let classicArtSeed = -1;
 function applyCast(runSeed: number): void {
-  if (classicMobs) { if (activeBestiary() !== null) installBestiary(null); } else ensureBestiary(runSeed);
+  if (classicMobs) {
+    // The hand-made stats keep no pictures of their own: they wear the look the run's generated cast gives each slot.
+    if (activeBestiary() !== null) installBestiary(null);
+    if (classicArtSeed !== runSeed) { classicArtSeed = runSeed; installMonsterArt(sprites, renderer, generateBestiary(runSeed)); }
+    return;
+  }
+  ensureBestiary(runSeed);
   if (castEpoch === bestiaryEpoch()) return;
   castEpoch = bestiaryEpoch();
-  installMonsterArt(sprites, renderer, activeBestiary());
+  installMonsterArt(sprites, renderer, activeBestiary()!);
 }
 applyCast(seed);
 
@@ -671,6 +675,6 @@ if (__DEV__) {
   w.sim = () => sim;
   w.cast = () => cast;
   w.sprites = sprites;
-  w.fx = fx;
+  Object.defineProperty(w, 'fx', { get: () => fx }); // (the run replaces it, so hand out the live one)
   (w as unknown as { stats: typeof stats }).stats = stats;
 }
