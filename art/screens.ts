@@ -4,7 +4,6 @@
 import { Renderer } from '../src/platform/gl/renderer';
 import { buildSprites } from '../src/render/art';
 import { loadHeroImages } from '../src/render/heroSheets';
-import { loadMobImages } from '../src/render/mobSheets';
 import { loadNpcImages } from '../src/render/npcSheets';
 import { drawScreen } from '../src/render/menu';
 import { VIEW_H, VIEW_W } from '../src/sim/constants';
@@ -119,7 +118,7 @@ function refresh(): void {
 const fail = (msg: string): void => { $('err').textContent = msg; };
 (async () => {
   try {
-    const sprites = buildSprites(await loadHeroImages(), await loadMobImages(), await loadNpcImages());
+    const sprites = buildSprites(await loadHeroImages(), await loadNpcImages());
     (window as unknown as { sprites: typeof sprites }).sprites = sprites; // for poking at in the console
     const renderer = new Renderer($<HTMLCanvasElement>('game'), sprites.atlas, VIEW_W, VIEW_H);
     applyZoom();

@@ -56,6 +56,32 @@ function setUpScenery(s: GameState, progress: number): number {
   return base + (s.store ? LEVEL_CAM_END : 0);
 }
 
+/** Ticks a killed mob takes to topple over before it lies still (a boss is slower: it is heavier). */
+const FALL_TICKS = 18;
+const BOSS_FALL_TICKS = 36;
+
+/**
+ * A body going over: the standing figure pivots about its feet from upright to the way the corpse lies (`t` 0..1), speeding up as gravity takes it,
+ * and ends at the corpse's own angle (`rot`, a random lean) so the hand-over to the lying frame is seamless. The figure sinks as it tips, so its side
+ * meets the ground rather than hanging in the air.
+ */
+function drawToppling(b: Batcher, S: Sprites, type: number, sx: number, feetY: number, flip: boolean, rot: number, t: number, tint: number): void {
+  const f = S.mob[type][0];
+  const pose = topplePose(f.w, f.h, flip, rot, t);
+  b.draw(f, sx + pose.cx - f.w / 2, feetY + (f.drop ?? 0) + pose.cy - f.h / 2, flip, tint, 0, pose.angle);
+}
+
+/**
+ * Where a toppling figure of size w x h is `t` (0..1) of the way over: the centre of its sprite relative to its feet, and the angle it is turned by.
+ * It pivots about the feet from upright to lying (a quarter turn toward its head side, plus the random lean `rot` it will lie at), slow at first and
+ * quick at the end, and sinks as it tips so its side (half its width) comes to rest on the ground line.
+ */
+export function topplePose(w: number, h: number, flip: boolean, rot: number, t: number): { cx: number; cy: number; angle: number } {
+  const e = 0.5 * t * t * (3 - 2 * t) + 0.5 * t * t;
+  const angle = (flip ? -1 : 1) * (Math.PI / 2) * e + rot * e;
+  const sinT = Math.sin(angle), cosT = Math.cos(angle);
+  return { cx: (h / 2) * sinT, cy: -((h / 2) * Math.abs(cosT) + (w / 2) * Math.abs(sinT)), angle };
+}
 const order = new Int32Array(4096);
 const sortedBuf = new Int32Array(4096);
 /** Enemies still climbing up from behind the hill at the top edge (drawn before the ground, so the hill covers them). */
@@ -198,12 +224,10 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const i = (fx.cHead + k) % fx.cx.length;
     const sx = fx.cx[i] - camX;
     if (sx < -12 || sx > VIEW_W + 12) continue;
-    if (isBossType(fx.ctype[i])) {
-      // the boss's body (and the club it dropped)
-      const bf = S.corpse[fx.ctype[i]];
-      b.draw(bf, sx - bf.w / 2, FIELD_Y0 + fx.cy[i] - bf.h + oy, fx.cflip[i] === 1, cTint, 0, fx.crot[i]);
-      continue;
-    }
+    const fall = isBossType(fx.ctype[i]) ? BOSS_FALL_TICKS : FALL_TICKS;
+    const age = fx.now - fx.cborn[i] + alpha;
+    if (age < fall) { drawToppling(b, S, fx.ctype[i], sx, FIELD_Y0 + fx.cy[i] + oy, fx.cflip[i] === 1, fx.crot[i], age / fall, cTint); continue; }
+    // lying where it fell (the boss's body too, and the club it dropped)
     const f = S.corpse[fx.ctype[i]];
     b.draw(f, sx - f.w / 2, FIELD_Y0 + fx.cy[i] - f.h + oy, fx.cflip[i] === 1, cTint, 0, fx.crot[i]);
   }
@@ -698,9 +722,11 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const sx = fx.bx[i] - camX;
     if (sx < -16 || sx > VIEW_W + 16) continue;
     const f = S.mob[fx.btype[i]][0];
-    const spin = (Math.floor(fx.bage[i] / 3) & 1) === 1;
     const flash = fx.bage[i] < 4 ? 0.9 : 0;
-    b.draw(f, sx - f.w / 2, FIELD_Y0 + fx.by[i] - fx.bz[i] - f.h + (f.drop ?? 0) + oy, spin, 0xffffffff, flash);
+    // it turns through the air, head first, to the very pose it will lie in when it lands (so the landing is not a jump)
+    const p = Math.min(1, (fx.bage[i] + alpha) / Math.max(1, fx.bdur[i]));
+    const pose = topplePose(f.w, f.h, fx.bflip[i] === 1, fx.brot[i], p);
+    b.draw(f, sx - f.w / 2, FIELD_Y0 + fx.by[i] - fx.bz[i] + (f.drop ?? 0) + pose.cy - f.h / 2 + oy, fx.bflip[i] === 1, 0xffffffff, flash, pose.angle);
   }
 
   // --- slash arcs: a bold arc with a bright leading edge sweeping through the swing

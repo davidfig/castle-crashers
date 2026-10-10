@@ -62,6 +62,10 @@ export class Fx implements Sink {
   ctype = new Uint8Array(MAX_CORPSES);
   cflip = new Uint8Array(MAX_CORPSES);
   crot = new Float32Array(MAX_CORPSES);
+  /** `now` when the body went down (a body that landed from a tumble, or any that should not topple, is far in the past). */
+  cborn = new Float32Array(MAX_CORPSES);
+  /** Frame time in ticks, advanced by `update`: the clock the toppling corpses run on. */
+  now = 0;
   cHead = 0;
   cCount = 0;
 
@@ -90,6 +94,10 @@ export class Fx implements Sink {
   bvz = new Float32Array(MAX_BODIES);
   btype = new Uint8Array(MAX_BODIES);
   bage = new Float32Array(MAX_BODIES);
+  /** The way the body will lie (mirrored or not), the lean it will lie at, and how many ticks its flight lasts: it turns through the air to exactly that pose. */
+  bflip = new Uint8Array(MAX_BODIES);
+  brot = new Float32Array(MAX_BODIES);
+  bdur = new Float32Array(MAX_BODIES);
 
   // sweeping slash arcs
   slx = new Float32Array(MAX_SLASHES);
@@ -168,7 +176,7 @@ export class Fx implements Sink {
         case Ev.Kill: {
           if (isBossType(a)) {
             // the boss does not tumble away: it goes down where it stands
-            this.addCorpse(x, y, a);
+            this.addCorpse(x, y, a, true);
             this.trauma = 1;
             break;
           }
@@ -182,8 +190,12 @@ export class Fx implements Sink {
             this.bvz[q] = 0.9 + Math.min(1.2, speed * 0.12) + this.rand() * 0.5;
             this.btype[q] = a;
             this.bage[q] = 0;
+            // it falls head-first the way it was thrown, turning through the air to the pose it will lie in
+            this.bflip[q] = Math.abs(this.bvx[q]) > 0.05 ? (this.bvx[q] < 0 ? 1 : 0) : this.rand() < 0.5 ? 1 : 0;
+            this.brot[q] = (this.rand() - 0.5) * 1.05;
+            this.bdur[q] = (this.bvz[q] + Math.sqrt(this.bvz[q] * this.bvz[q] + 0.4)) / 0.2; // time to come down from z = 1 under this fall's gravity
           } else {
-            this.addCorpse(x, y, a);
+            this.addCorpse(x, y, a, true);
           }
           const blood = bloodColor(a);
           for (let j = 0; j < 3; j++) this.spawn(x, y, 3, (this.rand() - 0.5) * 3, (this.rand() - 0.5) * 1.5, 1 + this.rand() * 1.5, 18, hex(blood), 1);
@@ -467,12 +479,14 @@ export class Fx implements Sink {
     ev.n = 0;
   }
 
-  private addCorpse(x: number, y: number, type: number): void {
+  private addCorpse(x: number, y: number, type: number, topple = false, flip = -1, rot = NaN): void {
     const i = (this.cHead + this.cCount) % MAX_CORPSES;
     const slot = this.cCount < MAX_CORPSES ? i : this.cHead;
     if (this.cCount < MAX_CORPSES) this.cCount++; else this.cHead = (this.cHead + 1) % MAX_CORPSES;
-    this.cx[slot] = x; this.cy[slot] = y; this.ctype[slot] = type; this.cflip[slot] = this.rand() < 0.5 ? 1 : 0;
-    this.crot[slot] = (this.rand() - 0.5) * 0.7; // +-20 degrees so a pile of corpses doesn't look stamped
+    this.cx[slot] = x; this.cy[slot] = y; this.ctype[slot] = type; this.cflip[slot] = flip >= 0 ? flip : this.rand() < 0.5 ? 1 : 0;
+    // where it ends up lying: a random angle (up to ~30 degrees either side of flat) so a pile of corpses doesn't look stamped
+    this.crot[slot] = Number.isNaN(rot) ? (this.rand() - 0.5) * 1.05 : rot;
+    this.cborn[slot] = topple ? this.now : -1e6;
   }
 
   private addSlash(x: number, y: number, a: number, b: number, dot: number, heavy: boolean, slot: number): void {
@@ -507,6 +521,7 @@ export class Fx implements Sink {
   camX = 0;
 
   update(dt: number): void {
+    this.now += dt;
     for (let i = 0; i < this.n; ) {
       this.life[i] -= dt;
       if (this.life[i] <= 0) {
@@ -540,12 +555,13 @@ export class Fx implements Sink {
       this.bvx[i] *= drag;
       this.bvy[i] *= drag;
       if (this.bz[i] <= 0) {
-        this.addCorpse(this.bx[i], this.by[i], this.btype[i]);
+        this.addCorpse(this.bx[i], this.by[i], this.btype[i], false, this.bflip[i], this.brot[i]);
         for (let j = 0; j < 2; j++) this.spawn(this.bx[i], this.by[i], 1, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.3, 10, hex(0xcfc9a0, 0.7));
         const l = --this.nb;
         this.bx[i] = this.bx[l]; this.by[i] = this.by[l]; this.bz[i] = this.bz[l];
         this.bvx[i] = this.bvx[l]; this.bvy[i] = this.bvy[l]; this.bvz[i] = this.bvz[l];
         this.btype[i] = this.btype[l]; this.bage[i] = this.bage[l];
+        this.bflip[i] = this.bflip[l]; this.brot[i] = this.brot[l]; this.bdur[i] = this.bdur[l];
         continue;
       }
       i++;

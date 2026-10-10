@@ -30,7 +30,7 @@ Default bindings (proposal):
 - **Web Audio API** directly: a master gain → bus gains (music, sfx, ui) → `AudioContext.destination`.
 - SFX: short samples decoded to `AudioBuffer` at load; played through pooled `AudioBufferSourceNode`s with per-sound polyphony caps and slight pitch/volume randomization (cosmetic RNG, **not** the sim stream).
 - Positional feel: simple stereo pan from screen x; distance attenuation unnecessary at this scale.
-- Music: layered stems (base + combat intensity) that crossfade by "danger" level published from the presentation event stream.
+- Music: generative layers (pads, melody, heartbeat, drone, plus hats/arpeggio/bass/drums/lead) driven by a battle-energy curve: it builds with the danger level, peaks, then a "relief" phase (warm melody, drive dropped) follows once the field thins. Tempo and chord pace follow the energy.
 - Browsers require a user gesture to start audio: the title/"press to start" screen unlocks the context.
 - Sound is triggered by **presentation events** emitted by the sim ([01](01-architecture.md)), never directly by sim code.
 - Formats: `.ogg` / `.mp3` fallback for Safari; or `.wav` for tiny SFX to avoid encoding quirks. Decide in tooling setup.
