@@ -13,6 +13,8 @@ const MAX_RINGS = 8;
 const MAX_BODIES = 700;
 const MAX_SLASHES = 8;
 export const SLASH_TICKS = 8;
+/** How long (ticks) the mage's ring of fire takes to fly out; the other rings take 18. */
+export const FIRE_RING_LIFE = 34;
 /** Teleport: the wizard dissolves upward at the origin and re-forms at the destination over this many ticks. */
 export const BLINK_TICKS = 16;
 const MAX_BLINKS = 4;
@@ -171,6 +173,16 @@ export class Fx {
           break;
         }
         case Ev.Nova:
+          if (c) { // the mage's ring of fire (ring styles 4 and 5)
+            this.addRing(x, y, a, hex(0xff8a30), 4 + b);
+            this.trauma = Math.min(1, this.trauma + 0.55 + b * 0.25);
+            for (let j = 0; j < 40; j++) {
+              const ang = (j / 40) * Math.PI * 2;
+              const sp = 0.8 + this.rand() * 1.2;
+              this.spawn(x, y, 1, Math.cos(ang) * sp, Math.sin(ang) * sp, 0.4 + this.rand() * 0.8, 24, hex(this.rand() < 0.5 ? 0xff8a30 : 0xffd35a, 0.9), 1);
+            }
+            break;
+          }
           this.addRing(x, y, a, hex(0xfff4c0), b);
           this.trauma = Math.min(1, this.trauma + 0.55 + b * 0.25);
           for (let j = 0; j < 36; j++) {
@@ -374,8 +386,8 @@ export class Fx {
           for (let j = 0; j < 2; j++) this.spawn(x, y, 5, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.8 + this.rand(), 12, hex(0xffe27a), 0);
           break;
         case Ev.Potion:
-          for (let j = 0; j < 14; j++) this.spawn(x + (this.rand() - 0.5) * 8, y, 2 + this.rand() * 8, (this.rand() - 0.5) * 0.8, -0.1, 0.6 + this.rand() * 0.9, 26 + this.rand() * 14, hex(this.rand() < 0.7 ? 0x7dffa0 : 0xfff6c8, 0.95), this.rand() < 0.3 ? 1 : 0);
-          this.addRing(x, y, 14, hex(0x7dffa0), 0);
+          for (let j = 0; j < 14; j++) this.spawn(x + (this.rand() - 0.5) * 8, y, 2 + this.rand() * 8, (this.rand() - 0.5) * 0.8, -0.1, 0.6 + this.rand() * 0.9, 26 + this.rand() * 14, hex(this.rand() < 0.7 ? (b === 1 ? 0xffe84a : 0x7dffa0) : 0xfff6c8, 0.95), this.rand() < 0.3 ? 1 : 0);
+          this.addRing(x, y, 14, hex(b === 1 ? 0xffe84a : 0x7dffa0), 0);
           break;
         case Ev.Proc: {
           // a = slot, b = upgrade index. The same boon firing again within a moment just refreshes its pop, so a chain reaction is one picture.
@@ -399,6 +411,16 @@ export class Fx {
           this.addRing(x, y, a === 1 ? 70 : a === 3 ? 12 : 36, hex(col), a === 1 ? 1 : 0);
           if (a === 0 || a === 2) { this.goldPop = 1; for (let j = 0; j < 22; j++) this.spawn(x + (this.rand() - 0.5) * 10, y, 4 + this.rand() * 10, (this.rand() - 0.5) * 2.4, (this.rand() - 0.5) * 1.2, 0.8 + this.rand() * 2, 26 + this.rand() * 14, hex(this.rand() < 0.6 ? 0xffd35a : 0xffffff, 0.95), 1); }
           if (a === 1) this.trauma = Math.max(this.trauma, 0.5);
+          break;
+        }
+        case Ev.Quest: {
+          // a = what (QuestEv), b = detail. Done: gold and light; Fail: a grey-red puff; Hurt: red sparks; Swing: a glint; Free: a ring; Spawn: a thud
+          if (a === 1) { this.goldPop = 1; this.addRing(x, y, 44, hex(0x7dff9a), 1); for (let j = 0; j < 26; j++) this.spawn(x + (this.rand() - 0.5) * 12, y, 4 + this.rand() * 12, (this.rand() - 0.5) * 2.6, (this.rand() - 0.5) * 1.3, 0.8 + this.rand() * 2, 28 + this.rand() * 16, hex(this.rand() < 0.5 ? 0xffd35a : this.rand() < 0.5 ? 0x7dff9a : 0xffffff, 0.95), 1); }
+          else if (a === 2) { this.addRing(x, y, 22, hex(0xe0503a), 0); for (let j = 0; j < 10; j++) this.spawn(x + (this.rand() - 0.5) * 8, y, 2 + this.rand() * 8, (this.rand() - 0.5) * 1.4, (this.rand() - 0.5) * 0.8, 0.4 + this.rand(), 24, hex(this.rand() < 0.5 ? 0x8a8f99 : 0xe0503a, 0.9), 0); }
+          else if (a === 4) { for (let j = 0; j < 6; j++) this.spawn(x, y, 8 + this.rand() * 8, (this.rand() - 0.5) * 2, (this.rand() - 0.5) * 0.9, 0.5 + this.rand(), 16, hex(0xe0503a, 0.95), 0); }
+          else if (a === 3) { for (let j = 0; j < 3; j++) this.spawn(x + b * 8, y, 8 + this.rand() * 6, b * (0.6 + this.rand()), (this.rand() - 0.5) * 0.5, 0.3 + this.rand() * 0.5, 10, hex(0xffffff, 0.9), 0); }
+          else if (a === 5) { this.addRing(x, y, 30, hex(0xffd35a), 0); this.goldPop = 1; }
+          else if (a === 6) this.trauma = Math.max(this.trauma, 0.3);
           break;
         }
         case Ev.Revive:
@@ -490,7 +512,7 @@ export class Fx {
       i++;
     }
     for (let i = 0; i < MAX_RINGS; i++) {
-      if (this.rt[i] >= 0) { this.rt[i] += dt; if (this.rt[i] > 18) this.rt[i] = -1; }
+      if (this.rt[i] >= 0) { this.rt[i] += dt; if (this.rt[i] > (this.rbig[i] >= 4 ? FIRE_RING_LIFE : 18)) this.rt[i] = -1; }
     }
     for (let i = 0; i < MAX_POPS; i++) {
       if (this.pt[i] >= 0) { this.pt[i] += dt; if (this.pt[i] > POP_TICKS) this.pt[i] = -1; }

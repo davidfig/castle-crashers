@@ -60,10 +60,13 @@ add({ id: 'snare', group: 'hit', on: [M], minU: 0.4, weight: 1.4, themes: [MARSH
 add({ id: 'wither', group: 'hit', on: [M], minU: 0.3, weight: 1.4, themes: [DUNES], motifs: ['bandage'], apply: (m, d) => { m.witherOnHit = d.int(170, 260); } });
 add({ id: 'drain', group: 'hit', on: [M], minU: 0.1, weight: 1.6, themes: [DUNES, KEEP], hp: 0.85, motifs: ['glow'], apply: (m, d) => { m.drain = d.int(2, 3); } });
 
+add({ id: 'lunge', group: 'hit', on: [M], minU: 0, weight: 1.6, themes: [KEEP, MEADOW], maxRadius: 5.5, motifs: ['bones'], apply: (m, d) => { m.lunge = d.int(14, 22); } });
+
 // ---- how it moves
 add({ id: 'weave', group: 'move', on: [M], minU: 0, weight: 2, apply: (m, d) => { m.weave = round(d.range(0.5, 0.95), 2); } });
 add({ id: 'hop', group: 'move', on: [M], minU: 0, weight: 1.8, themes: [MARSH], excl: ['burrow', 'charge'], apply: (m, d) => { m.hop = { every: d.int(45, 65), speed: round(d.range(1.2, 1.6), 1), minDist: 30 }; } });
 add({ id: 'retreat', group: 'move', on: [M], minU: 0, weight: 1.6, themes: [FROZEN], excl: ['burrow'], apply: (m, d) => { m.retreat = d.int(24, 40); } });
+add({ id: 'backstep', group: 'move', on: [R], minU: 0, weight: 1.6, themes: [MEADOW, DUNES], apply: (m, d) => { m.backstep = { trigger: d.int(40, 50), dist: d.int(58, 70), every: d.int(130, 170) }; } });
 add({ id: 'evade', group: 'move', on: ALL, minU: 0, weight: 1.6, themes: [DUNES], motifs: ['ghost'], apply: (m, d) => { m.evade = round(d.range(0.15, 0.3), 2); } });
 add({ id: 'burrow', group: 'move', on: [M], minU: 0.15, weight: 1.4, themes: [DUNES], excl: ['hop', 'retreat', 'revive', 'charge', 'special'], maxRadius: 5, apply: (m, d) => { m.burrow = d.int(38, 50); } });
 
@@ -77,6 +80,7 @@ add({ id: 'shield', group: 'body', on: [M], minU: 0.1, weight: 1.6, themes: [MEA
 add({ id: 'thorns', group: 'body', on: [M], minU: 0.2, weight: 1.4, themes: [MARSH], motifs: ['thorns', 'poison'], apply: (m, d) => { m.thorns = d.int(130, 200); } });
 add({ id: 'regen', group: 'body', on: ALL, minU: 0.2, weight: 1.4, themes: [KEEP, MARSH], hp: 0.85, motifs: ['slime'], apply: (m, d) => { m.regen = round(d.range(0.02, 0.045), 3); } });
 add({ id: 'berserk', group: 'body', on: [M], minU: 0.3, weight: 1.4, themes: [FROZEN, MEADOW], motifs: ['fur'], apply: (m, d) => { m.berserk = round(d.range(0.3, 0.5), 2); } });
+add({ id: 'swarm', group: 'body', on: [M], minU: 0, weight: 1.5, themes: [MEADOW, DUNES], maxRadius: 5, motifs: ['fur'], apply: (m, d) => { m.swarm = { radius: d.int(54, 66), bonus: round(d.range(0.04, 0.06), 2), max: d.int(6, 8) }; } });
 add({ id: 'pack', group: 'body', on: [M], minU: 0, weight: 1.8, themes: [MEADOW, FROZEN], maxRadius: 5, motifs: ['fur'], apply: (m, d) => { m.pack = { radius: 44, bonus: round(d.range(0.15, 0.25), 2) }; } });
 add({ id: 'revive', group: 'body', on: [M], minU: 0.55, weight: 1.4, themes: [KEEP], excl: ['burrow'], hp: 0.8, motifs: ['bones', 'ghost'], apply: (m, d) => { m.revive = round(d.range(0.35, 0.45), 2); } });
 add({ id: 'mud', group: 'body', on: [M], minU: 0.35, weight: 1.3, themes: [MARSH], minRadius: 4.5, motifs: ['slime'], apply: (m, d) => { m.trail = { every: d.int(32, 40), radius: d.int(12, 14), linger: d.int(380, 440), slow: 30 }; } });
@@ -117,6 +121,7 @@ const SPECIAL_RULES: Record<SpecialKind, { minU: number; weight: number; themes?
   whiteout: { minU: 0.35, weight: 1.4, themes: [FROZEN], motifs: ['frost', 'ghost'] },
   wail: { minU: 0.35, weight: 1.5, themes: [KEEP], motifs: ['ghost'] },
   lure: { minU: 0.2, weight: 1.5, themes: [MARSH], motifs: ['glow', 'ghost'] },
+  pounce: { minU: 0.25, weight: 1.5, themes: [FROZEN, MEADOW], maxRadius: 6.5 },
   leap: { minU: 0.25, weight: 1.5, themes: [MARSH], minRadius: 4.5 },
   gust: { minU: 0.2, weight: 1.5, themes: [DUNES], motifs: ['ghost'] },
   pit: { minU: 0.3, weight: 1.4, themes: [DUNES] },
@@ -130,7 +135,12 @@ for (const kind of Object.keys(SPECIAL_RULES) as SpecialKind[]) {
     id: kind, group: 'special', on: behaviours, minU: r.minU, weight: r.weight, themes: r.themes, maxRadius: r.maxRadius, minRadius: r.minRadius, motifs: r.motifs, excl: ['charge', 'burrow'],
     apply: (m, d, c) => {
       m.special = makeSpecial(kind, d, c.u, { swarm: c.swarm, frost: c.biome === FROZEN, bog: c.biome === MARSH });
-      if (m.behavior === Behavior.Caster) m.windup = m.special.windup;
+      if (m.behavior === Behavior.Caster) {
+        m.windup = m.special.windup;
+        // a power that goes off around the caster only does so inside 0.9x its radius, and a caster parks at ~1.1x its reach
+        const around = m.special as { radius?: number };
+        if ((kind === 'wail' || kind === 'lure' || kind === 'whiteout' || kind === 'nova' || kind === 'gust') && around.radius !== undefined) m.reach = Math.min(m.reach, Math.floor(around.radius * 0.7));
+      }
     },
   });
 }
@@ -139,7 +149,7 @@ export const TRAITS: readonly Trait[] = T;
 export const TRAIT_BY_ID: ReadonlyMap<string, Trait> = new Map(T.map((t) => [t.id, t]));
 
 /** Traits a cheap slot (a fodder, a crowd filler, something summoned) may wear: light ones that never need a lesson. */
-export const CHEAP_OK: ReadonlySet<string> = new Set(['weave', 'evade', 'pack', 'hop', 'retreat', 'slow', 'venom', 'armor', 'drain', PLAIN_SHOT, 'volley', 'harpoon', 'glob', 'firebolt', 'spores']);
+export const CHEAP_OK: ReadonlySet<string> = new Set(['lunge', 'backstep', 'swarm', 'weave', 'evade', 'pack', 'hop', 'retreat', 'slow', 'venom', 'armor', 'drain', PLAIN_SHOT, 'volley', 'harpoon', 'glob', 'firebolt', 'spores']);
 
 /** Do two traits clash (by id or by group-level rule)? */
 export function clash(a: Trait, b: Trait): boolean {

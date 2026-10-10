@@ -6,6 +6,7 @@
 // boon-heavy horde can chain, so one tick can never run away.
 import { CLASSES } from '../data/classes';
 import { UPGRADE_INDEX } from '../data/upgrades';
+import { costMul } from './abilityMods';
 import { cosTurns, sinTurns } from '../engine/math';
 import { rngFloat } from '../engine/rng';
 import { allocEntity, Kind } from './entities';
@@ -64,12 +65,15 @@ export function onKill(s: GameState, slot: number, x: number, y: number): void {
     if (p.kills % 8 === 0) pop(s, slot, 'bloodmoon');
   }
   // Death Dance: a kill thrown from hiding frees the dodge.
-  if (rank(s, slot, 'dance') > 0 && p.vanishT > 0) { p.cdDash = 0; pop(s, slot, 'dance'); }
-  // Bloodlust: each kill takes ticks off the special and the dodge.
+  if (rank(s, slot, 'dance') > 0 && p.vanishT > 0) {
+    const c = CLASSES[p.classId];
+    p.cdDash = 0; p.stamina = Math.min(c.staminaMax, p.stamina + c.dashCost * costMul(p.ranks, 3)); // the dodge is free
+    pop(s, slot, 'dance');
+  }
+  // Bloodlust: each kill gives some stamina back.
   const lust = rank(s, slot, 'lust');
   if (lust > 0) {
-    p.cdSpecial = Math.max(0, p.cdSpecial - 12 * lust);
-    p.cdDash = Math.max(0, p.cdDash - 6 * lust);
+    p.stamina = Math.min(CLASSES[p.classId].staminaMax, p.stamina + 3 * lust);
     if (p.kills % 5 === 0) pop(s, slot, 'lust');
   }
 }

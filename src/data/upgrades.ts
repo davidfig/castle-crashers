@@ -46,7 +46,7 @@ export const UPGRADES: readonly UpgradeDef[] = [
   { id: 'wind', icon: 'boon-wind', name: 'SECOND WIND', text: ['HEAL FULLY', 'NOW'], perRank: 0, maxRank: 255, kind: 'stat', tags: ['heal'] },
   // Triggers (roadmap "Progression", docs/04): the first of the boons that change what happens, not how much.
   { id: 'spark', icon: 'boon-spark', name: 'CHAIN SPARK', text: ['HITS ARC TO', 'NEARBY FOES'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['chain', 'lightning'] },
-  { id: 'lust', icon: 'boon-lust', name: 'BLOODLUST', text: ['KILLS SPEED', 'UP SPECIALS'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['streak', 'cooldown'] },
+  { id: 'lust', icon: 'boon-lust', name: 'BLOODLUST', text: ['KILLS GIVE', 'STAMINA'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['streak', 'cooldown'] },
   { id: 'gift', icon: 'boon-gift', name: 'FAREWELL', text: ['DODGE DROPS', 'A BLAST'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['dodge', 'blast'] },
   { id: 'last', icon: 'boon-last', name: 'LAST STAND', text: ['LOW HEALTH', 'SHOCKWAVE'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['defense', 'blast'] },
   // Generic triggers.
@@ -65,7 +65,7 @@ export const UPGRADES: readonly UpgradeDef[] = [
   { id: 'wrath', icon: 'boon-wrath', name: 'HOLY WRATH', text: ['HEAL PULSE', 'ALSO SMITES'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['holy', 'blast', 'dodge'], classes: [2] },
   { id: 'vigil', icon: 'boon-vigil', name: 'VIGIL', text: ['REVIVES', 'COME SOONER'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['holy', 'heal', 'party'], classes: [2] },
   // Rogue (class 3).
-  { id: 'dance', icon: 'boon-dance', name: 'DEATH DANCE', text: ['AMBUSH KILL', 'FREES DODGE'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['dodge', 'streak', 'flank'], classes: [3] },
+  { id: 'dance', icon: 'boon-dance', name: 'DEATH DANCE', text: ['AMBUSH KILL', 'DODGE FREE'], perRank: 0, maxRank: 1, kind: 'trigger', tags: ['dodge', 'streak', 'flank'], classes: [3] },
   { id: 'keen', icon: 'boon-keen', name: 'KEEN EDGE', text: ['FLANKING', 'HITS HARDER'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['damage', 'flank'], classes: [3] },
   { id: 'pick', icon: 'boon-pick', name: 'PICKPOCKET', text: ['FLANK HITS', 'STEAL GOLD'], perRank: 0, maxRank: 3, kind: 'trigger', tags: ['gold', 'flank'], classes: [3] },
   // Archer (class 4).

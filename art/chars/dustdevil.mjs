@@ -94,7 +94,7 @@ frames.dead0 = [heap];
 
 export default {
   name: 'dustdevil', title: 'Dust Devil', notes: 'Hovering whirl of ochre sand with a hooded hollow and two sand arms (no legs: pivot set by hand; the tip hangs ~2px above the ground line).',
-  cell: [32, 24], shadow: [8, 3], pivot: [16, 21], palette, post, parts: {}, frames,
+  cell: [32, 24], hover: true, shadow: [8, 3], pivot: [16, 21], palette, post, parts: {}, frames,
   derived: {},
   anims: {
     walk: { fps: 6, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },

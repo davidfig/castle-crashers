@@ -20,6 +20,7 @@ import { activePlayers, hasBoss, partyScale, sceneHold, streamLevel } from './ge
 import { heatDamage, heatReward, heatSpeed } from '../data/heat';
 import { heroOffer } from './offers';
 import { onEliteDown, updateSites } from './sites';
+import { biteCaptive, lureOf, questKill, settleQuest, shotHitsWard, updateQuest } from './quests';
 
 export const REVIVE_TICKS = 600;
 const INPUT_BUFFER = 6;
@@ -28,7 +29,7 @@ export const PIERCE = 1;
 const TOUCH_PAD = 5;
 
 /** A chip hit (the cleric's aura, landing every few ticks): damage and a small shove, but no stun and no interrupting a wind-up, or it would lock everything in reach in place. */
-const CHIP = 2;
+export const CHIP = 2;
 /** damage flag: dealt by a boon's effect, so it does not set off hit triggers again (a kill it causes still can, within the tick's budget). */
 export const PROC = 4;
 /** Elites bite this much harder than their kind. */
@@ -48,6 +49,9 @@ const LUNGE_SPEED = 1.3;
 /** Mobs left this far behind the left edge of the screen are gone for good (closer ones can still rejoin). */
 const LEFT_BEHIND = 360;
 const COIN_CAP = 500;
+/** Gold is scarce so the merchant's and the chests' prices mean something: a mob's coin drops less often and is worth about half (never under 1). */
+const COIN_CHANCE_MUL = 0.55;
+const coinWorth = (value: number): number => Math.max(1, Math.round(value * 0.5));
 const COIN_MAGNET = 80;
 const COIN_PICKUP = 12;
 /** Potions: dropped by kills, walked over to drink (no magnet, and only a hurt hero can drink one). */
@@ -55,6 +59,8 @@ const POTION_CAP = 12;
 const POTION_PICKUP = 12;
 /** A potion heals this fraction of the drinker's full health. */
 const POTION_HEAL = 0.3;
+/** Chance a dropped flask is a yellow stamina potion (refills stamina and ends being winded) instead of a red health one. */
+const POTION_STAMINA_CHANCE = 0.5;
 /** Drops are rate limited: a bigger horde must not mean more healing. Budget per second per hero, and its cap. */
 const POTION_PER_SECOND = 0.1;
 const POTION_BUDGET_MAX = 2;
@@ -89,7 +95,11 @@ export function step(s: GameState, inputs: InputFrame[]): void {
     e.py[i] = e.y[i];
   }
   s.prevCamX = s.camX;
-  if (s.phase !== Phase.Playing) { retreatMobs(s); return; } // a won or lost field empties the way it filled
+  if (s.phase !== Phase.Playing) {
+    retreatMobs(s); // a won or lost field empties the way it filled
+    if (s.phase === Phase.Won && s.onward) walkOn(s, inputs);
+    return;
+  }
 
   if (s.hitStop > 0) {
     s.hitStop--;
@@ -109,6 +119,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   updateCoins(s);
   updatePotions(s);
   updateSites(s);
+  updateQuest(s);
   // A blast can kill something that queues a boon effect, and an effect can kill a bomber: settle both queues before the tick ends.
   for (let pass = 0; pass < 4; pass++) {
     flushBlasts(s);
@@ -123,6 +134,18 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   checkGate(s);
   checkBeat(s);
   checkEnd(s);
+  settleQuest(s);
+}
+
+/** A won field the road goes on from is not a stop: the party stays in control (to loot, to keep walking) while what is left of the horde leaves. */
+function walkOn(s: GameState, inputs: InputFrame[]): void {
+  rebuildGrid(s.grid, s.ents);
+  for (let slot = 0; slot < s.players.length; slot++) updatePlayer(s, slot, inputs[slot]);
+  flushBlasts(s);
+  updateProjectiles(s);
+  updateCoins(s);
+  updatePotions(s);
+  updateCamera(s);
 }
 
 /** Slots are reused (LIFO), so a target list can hold a slot that now belongs to a coin or arrow. */
@@ -278,7 +301,11 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   // The rogue is hidden from the moment he is up until he strikes, is hurt or is bumped; after that he waits out a cooldown to hide again.
   if (cls.hideCooldown) {
     if (p.revealT > 0) p.revealT--;
-    else if (p.vanishT === 0) p.vanishT = 1;
+    else if (p.vanishT === 0) {
+      p.vanishT = 1;
+      p.vanishX = s.ents.x[i];
+      p.vanishY = s.ents.y[i];
+    }
   }
   if (p.silenceT > 0) p.silenceT--;
   if (p.poisonT > 0) {
@@ -349,7 +376,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
     spendStamina(s, slot, dodgeCost);
     p.dashT = cls.dashTicks;
     p.rootT = 0; // a dodge-roll tears free of a snare
-    // Dodge scaling (sim/abilityMods.ts): Count chains extra dodges with a short gap; Speed shortens the long cooldown.
+    // Dodge scaling (sim/abilityMods.ts): Count chains extra dodges with a short gap; Speed shortens the gap between dodges.
     if (p.chainT === 0) p.dashChain = rankOf(p.ranks, 3, 1);
     if (p.dashChain > 0) { p.dashChain--; p.cdDash = DODGE_CHAIN_COOLDOWN; p.chainT = DODGE_CHAIN_WINDOW; }
     else p.cdDash = Math.round(cls.dashCooldown * Math.max(0.4, 1 - DODGE_QUICK * rankOf(p.ranks, 3, 2)));
@@ -412,9 +439,9 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
       nova(s, slot, cls);
       p.bufAbility1 = 0;
     } else if (p.silenceT === 0 && p.bufAbility2 > 0 && p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost * costMul(p.ranks, 1) && (p.cdAttack === 0 || p.auraOn)) {
-      // Ability 2: the big sweep. It costs stamina and has its own cooldown.
+      // Ability 2: the big sweep. Stamina is its cooldown; cdSpecial only spans the cast itself.
       spendStamina(s, slot, cls.specialCost * costMul(p.ranks, 1));
-      p.cdSpecial = cls.specialShot ? cls.specialCooldown : Math.round(cls.specialCooldown * (1 - QUICK_MELEE * rankOf(p.ranks, 1, 2))); // a quicker melee special also comes round sooner
+      p.cdSpecial = cls.specialShot ? cls.specialCooldown : Math.round(cls.specialCooldown * (1 - QUICK_MELEE * rankOf(p.ranks, 1, 2))); // a quicker melee special recovers sooner
       p.bufAbility2 = 0;
       if (cls.specialShot) {
         const split = rankOf(p.ranks, 1, 1) * (cls.specialShot.count > 1 ? 2 : 1); // Split: a fan gains two arrows a rank, a single ball one more ball
@@ -652,7 +679,7 @@ function radialBlast(s: GameState, slot: number, cls: ClassDef, big: boolean, sc
   // A nova let off from hiding is an ambush like any other strike from the shadows.
   const ambush = p.vanishT > 0 && cls.ambush ? cls.ambush + 0.5 * p.ranks[UPGRADE_INDEX.keen] : 1;
   const damage = (big ? cls.novaBigDamage : cls.novaDamage) * (1 + POWER_PER_RANK * rankOf(p.ranks, 2, 3)) * scale * ambush;
-  emit(s.events, Ev.Nova, cx, cy, radius, big ? 1 : 0);
+  emit(s.events, Ev.Nova, cx, cy, radius, big ? 1 : 0, cls.name === 'mage' ? 1 : 0); // (the last flag draws it as a ring of fire)
   const killsBefore = s.kills;
   const n = gatherCircle(s.grid, e, cx, cy, radius, s.scratch);
   for (let k = 0; k < n; k++) {
@@ -916,6 +943,7 @@ export function damageMob(s: GameState, m: number, dmg: number, dirX: number, di
     if (def.onDeath) onMobDeath(s, m, def.onDeath, dirX, dirY);
     if (def.behavior === Behavior.Boss) bossDeath(s, m);
     else { dropLoot(s, m, dirX, dirY); dropPotion(s, m, dirX, dirY); }
+    questKill(s, m);
     if (e.elite[m] === 1) onEliteDown(s, m);
     freeEntity(e, m);
   } else {
@@ -930,7 +958,7 @@ export function hurtPlayer(s: GameState, slot: number, dmg: number, slow = 0, fl
   const e = s.ents;
   const dot = (flags & HURT_DOT) !== 0;
   if (p.downed || (p.invuln > 0 && !dot)) return;
-  dmg *= takenMul(p.ranks) * wardMul(s, slot) * (p.hexT > 0 ? HEX_TAKEN : 1) * (dot ? 1 : heatDamage(s.heat));
+  dmg *= takenMul(p.ranks) * wardMul(s, slot) * (p.hexT > 0 ? HEX_TAKEN : 1) * (dot ? 1 : heatDamage(s.heat) * s.damageMul);
   if (slow > p.slowT) p.slowT = slow;
   const i = p.ent;
   const cls = CLASSES[p.classId];
@@ -1053,6 +1081,7 @@ function updateProjectiles(s: GameState): void {
       if (!a) { freeEntity(e, i); continue; }
       const pierce = (e.flags[i] & 2) !== 0;
       const ab: AbilityKind = (e.flags[i] & 4) ? 1 : 0;
+      if (a.lob) continue; // a lobbed ball flies over everything; it bursts only where it lands (above)
       const n = gatherCircle(s.grid, e, e.x[i], e.y[i], (a.radius ?? 5) * (1 + SIZE_RANGED * rankOf(pl.ranks, ab, 0)), s.scratch);
       let primary = -1;
       let spent = false;
@@ -1064,11 +1093,12 @@ function updateProjectiles(s: GameState): void {
         const r = damageMob(s, m, a.damage * (1 + POWER_PER_RANK * rankOf(pl.ranks, ab, 3)) * (1 + ((ocls.longShot ?? 0) + 0.4 * pl.ranks[UPGRADE_INDEX.eagle]) * flown), e.vx[i] / vl, e.vy[i] / vl, a.knock, owner, a.shieldPierce ? PIERCE : 0);
         if (r === 0) continue;
         if (r === 1) pl.fury = Math.min(ocls.furyMax, pl.fury + ocls.furyPerHit);
-        if (!pierce || r === 2) { primary = m; freeEntity(e, i); spent = true; }
+        if (!pierce || r === 2 || (a.maxHits !== undefined && ++e.rem[i] >= a.maxHits)) { primary = m; freeEntity(e, i); spent = true; }
       }
       if (spent && a.splash) explodeShot(s, owner, a, e.x[i], e.y[i], primary);
       continue;
     }
+    if (s.quest && shotHitsWard(s, i)) continue; // a quest's ward takes the arrow meant for the party
     for (let slot = 0; slot < s.players.length; slot++) {
       const p = s.players[slot];
       if (!p.active || p.downed) continue;
@@ -1134,8 +1164,8 @@ function bossDeath(s: GameState, m: number): void {
   for (let k = 0; k < 2; k++) spawnPotion(s, x, y, (k ? 1 : -1) * rngRange(s.rngLoot, 0.8, 1.6), rngRange(s.rngLoot, -0.5, 0.5));
   // A burst of coins, flung out in every direction.
   for (let k = 0; k < b.lootCoins; k++) {
-    const i = s.coinCount >= COIN_CAP ? -1 : allocEntity(e, Kind.Coin, b.lootValue, x, y, 1);
-    if (i < 0) { s.gold += b.lootValue; continue; }
+    const i = s.coinCount >= COIN_CAP ? -1 : allocEntity(e, Kind.Coin, coinWorth(b.lootValue), x, y, 1);
+    if (i < 0) { s.gold += coinWorth(b.lootValue); continue; }
     const ang = k / b.lootCoins + rngRange(s.rngLoot, -0.03, 0.03); // turns
     const sp = rngRange(s.rngLoot, 0.8, 2.2);
     e.vx[i] = cosTurns(ang) * sp;
@@ -1511,6 +1541,8 @@ function confusedStep(s: GameState, i: number, def: MobDef): void {
 const MOB_SPEED_MUL = 1.6;
 /** How far from a hero (px) a melee mob's flanking spot sits. */
 const FLANK_RADIUS = 60;
+/** How far to the side (px) a flanking melee mob swings before it turns in. */
+const FLANK_WIDE = 110;
 
 function updateMobs(s: GameState): void {
   const e = s.ents;
@@ -1588,8 +1620,13 @@ function updateMobs(s: GameState): void {
       let px = e.x[p.ent], py = e.y[p.ent];
       if (p.vanishT > 0) {
         const cx = px - x, cy = py - y;
-        if (cx * cx + cy * cy > VANISH_CONTACT * VANISH_CONTACT) continue; // unseen
-        revealRogue(s, p); // ran into him
+        if (cx * cx + cy * cy > VANISH_CONTACT * VANISH_CONTACT) {
+          // unseen; but half the mob fell for the decoy and carries on toward where he was last seen
+          if (!(i & 1)) continue;
+          px = p.vanishX; py = p.vanishY;
+        } else {
+          revealRogue(s, p); // ran into him
+        }
       }
       const dx = px - x, dy = py - y;
       const d2 = dx * dx + dy * dy;
@@ -1599,6 +1636,10 @@ function updateMobs(s: GameState): void {
       if (vanishedN > 0) confusedStep(s, i, def);
       continue;
     }
+    // A guard by a rescue's captive may go for the captive instead (sim/quests.ts): it walks, swings and shoots at them, and `target` stays
+    // the nearest hero for everything that needs one.
+    const lure = s.quest && (def.behavior === Behavior.Melee || def.behavior === Behavior.Ranged) && !(e.flags[i] & 2) ? lureOf(s, i, best) : -1;
+    if (lure >= 0) { aimX = e.x[lure]; aimY = e.y[lure] - 3; best = (aimX - x) * (aimX - x) + (aimY - y) * (aimY - y); }
 
     // Awake from the moment it exists.
     e.flags[i] |= 1;
@@ -1708,6 +1749,13 @@ function updateMobs(s: GameState): void {
     }
 
     let packMul = 1;
+    if (def.swarm) {
+      // courage in numbers: a crowd of its own kind rushes
+      const n = gatherCircle(s.grid, e, x, y, def.swarm.radius, s.scratch);
+      let mates = 0;
+      for (let k = 0; k < n && mates < def.swarm.max; k++) { const m = s.scratch[k]; if (m !== i && e.alive[m] === 1 && e.kind[m] === Kind.Mob && e.sub[m] === e.sub[i]) mates++; }
+      packMul = 1 + def.swarm.bonus * mates;
+    }
     if (def.pack) {
       // a pack hunts harder: every packmate close by (up to three) adds to its speed and its bite
       const n = gatherCircle(s.grid, e, x, y, def.pack.radius, s.scratch);
@@ -1758,7 +1806,10 @@ function updateMobs(s: GameState): void {
         if (--e.wind[i] === 0) {
           // Strike lands where the player is *now*; stepping away in time dodges it.
           const hpe = players[target].ent;
-          if (dist <= def.reach + 4 && Math.hypot(e.x[hpe] - e.x[i], e.y[hpe] - e.y[i]) <= def.reach + 4) { // (a swing at a decoy spot hits nothing)
+          if (lure >= 0) {
+            if (dist <= def.reach + 4) biteCaptive(s, lure, def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1) * (e.elite[i] ? ELITE_BITE : 1));
+            if (def.retreat !== undefined) e.rem[i] = def.retreat;
+          } else if (dist <= def.reach + 4 && Math.hypot(e.x[hpe] - e.x[i], e.y[hpe] - e.y[i]) <= def.reach + 4) { // (a swing at a decoy spot hits nothing)
             const hp = players[target];
             const open = hp.invuln === 0 && !hp.downed;
             hurtPlayer(s, target, def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1) * (e.elite[i] ? ELITE_BITE : 1), def.slowOnHit ?? 0);
@@ -1771,15 +1822,32 @@ function updateMobs(s: GameState): void {
           }
           e.atk[i] = def.atkCooldown;
         }
-      } else if (dist <= def.reach && e.atk[i] === 0) {
+      } else if (dist <= def.reach + (def.lunge ?? 0) && e.atk[i] === 0) {
         e.wind[i] = def.windup;
+        if (def.lunge) { e.vx[i] += dirX * def.lunge * 0.2; e.vy[i] += dirY * def.lunge * 0.2; } // (the knock-back decay is 0.8 a tick: five times the speed is how far it goes)
       } else if (dist > def.reach * 0.9) {
-        // Far out, each walks to its own spot on a ring round the hero (front, flanks, behind) and only then closes in, so a column fans out.
-        const a = (Math.imul(i, 2654435761) >>> 16) / 65536 * 6.283185307;
-        const ox = Math.cos(a) * FLANK_RADIUS, oy = Math.sin(a) * FLANK_RADIUS * 0.9;
-        const fx = tx - ox, fy = ty - oy;
+        // Far out, each picks a route. About two in three are flankers: they swing wide to a spot on one side of the hero (or round behind)
+        // relative to where they are coming from, so a column splits into a pincer instead of one blob. The rest walk to their own spot on a
+        // small ring round the hero and close in from there. Either way, within range they close in directly.
+        const h = Math.imul(i, 2654435761) >>> 0;
+        const flanker = (h & 0xff) < 170;
+        let fx: number, fy: number, reach: number;
+        if (flanker) {
+          // Angle off the hero→mob axis, 65°–110° to either side; the axis turns as the mob moves, so the path is an arc.
+          const turns = (0.18 + ((h >>> 8) & 0xff) / 255 * 0.13) * ((h & 0x100) ? 1 : -1);
+          const ux = -dirX, uy = -dirY;
+          const c = cosTurns(turns), sn = sinTurns(turns);
+          fx = tx + (ux * c - uy * sn) * FLANK_WIDE;
+          fy = ty + (ux * sn + uy * c) * FLANK_WIDE * 0.75;
+          reach = FLANK_WIDE * 1.2;
+        } else {
+          const a = (h >>> 16) / 65536 * 6.283185307;
+          fx = tx - Math.cos(a) * FLANK_RADIUS;
+          fy = ty - Math.sin(a) * FLANK_RADIUS * 0.9;
+          reach = FLANK_RADIUS * 1.25;
+        }
         const fd = Math.sqrt(fx * fx + fy * fy);
-        if (dist > FLANK_RADIUS * 1.25 && fd > 1) {
+        if (dist > reach && fd > 1) {
           mvX = fx / fd * speed;
           mvY = fy / fd * speed;
         } else {
@@ -1804,6 +1872,11 @@ function updateMobs(s: GameState): void {
           e.atk[i] = def.atkCooldown;
         }
       } else {
+        if (def.backstep && e.cool2[i] > 0) e.cool2[i]--;
+        else if (def.backstep && dist < def.backstep.trigger) {
+          e.cool2[i] = def.backstep.every;
+          e.vx[i] -= dirX * def.backstep.dist * 0.2; e.vy[i] -= dirY * def.backstep.dist * 0.2;
+        }
         if (dist > def.reach * 1.1) { mvX = dirX * speed; mvY = dirY * speed; }
         else if (dist < def.reach * 0.6) { mvX = -dirX * speed; mvY = -dirY * speed; }
         if (e.atk[i] === 0 && dist < def.reach * 1.4 && dist > 25) {
@@ -1860,8 +1933,8 @@ function updateMobs(s: GameState): void {
 function dropLoot(s: GameState, m: number, dirX: number, dirY: number): void {
   const e = s.ents;
   const def = MOBS[e.sub[m]];
-  if (def.coinChance <= 0 || rngFloat(s.rngLoot) >= def.coinChance) return;
-  const value = def.coinMin + rngInt(s.rngLoot, def.coinMax - def.coinMin + 1);
+  if (def.coinChance <= 0 || rngFloat(s.rngLoot) >= def.coinChance * COIN_CHANCE_MUL) return;
+  const value = coinWorth(def.coinMin + rngInt(s.rngLoot, def.coinMax - def.coinMin + 1));
   const x = e.x[m], y = e.y[m];
   const i = s.coinCount >= COIN_CAP ? -1 : allocEntity(e, Kind.Coin, value, x, y, 1);
   if (i < 0) {
@@ -1905,7 +1978,7 @@ function dropPotion(s: GameState, m: number, dirX: number, dirY: number): void {
 
 export function spawnPotion(s: GameState, x: number, y: number, vx: number, vy: number): void {
   const e = s.ents;
-  const i = allocEntity(e, Kind.Potion, 0, x, y, 1);
+  const i = allocEntity(e, Kind.Potion, rngFloat(s.rngLoot) < POTION_STAMINA_CHANCE ? 1 : 0, x, y, 1);
   if (i < 0) return;
   e.vx[i] = vx;
   e.vy[i] = vy;
@@ -1943,12 +2016,15 @@ function updatePotions(s: GameState): void {
     for (let k = 0; k < s.players.length; k++) {
       const p = s.players[k];
       if (!p.active || p.downed) continue;
-      const hpMax = CLASSES[p.classId].hp;
-      if (e.hp[p.ent] >= hpMax) continue; // a hero at full health walks past it, saving it for later
+      const cls = CLASSES[p.classId];
+      const stamina = e.sub[i] === 1;
+      // a hero who has no use for it walks past, saving it for later
+      if (stamina ? p.stamina >= cls.staminaMax && !p.winded : e.hp[p.ent] >= cls.hp) continue;
       const dx = e.x[p.ent] - e.x[i], dy = e.y[p.ent] - e.y[i];
       if (dx * dx + dy * dy >= POTION_PICKUP * POTION_PICKUP) continue;
-      e.hp[p.ent] = Math.min(hpMax, e.hp[p.ent] + hpMax * POTION_HEAL);
-      emit(s.events, Ev.Potion, e.x[i], e.y[i], k);
+      if (stamina) { p.stamina = cls.staminaMax; p.winded = false; }
+      else e.hp[p.ent] = Math.min(cls.hp, e.hp[p.ent] + cls.hp * POTION_HEAL);
+      emit(s.events, Ev.Potion, e.x[i], e.y[i], k, stamina ? 1 : 0);
       freePotion(s, i);
       break;
     }
@@ -2026,7 +2102,7 @@ function runDirector(s: GameState, advance: number): void {
   const t = levelProgress(s);
   const size = Math.round((6 + Math.floor(t * 10)) * scale);
   for (let k = 0; k < size; k++) {
-    const type = pickMobType(r, t, s.biome);
+    const type = pickMobType(r, t, s.biome, s.mix);
     const i = allocEntity(e, Kind.Mob, type, s.camX + VIEW_W + 24 + rngRange(r, 0, 40), rngRange(r, 6, WORLD_H - 6), MOBS[type].hp);
     if (i < 0) return;
     e.flags[i] = 1;
@@ -2054,7 +2130,7 @@ export function spawnFlankPack(s: GameState, top: boolean, size: number, t: numb
   const spreadX = 34 + size * 0.7;
   const stagger = 28 + size * 0.9;
   for (let k = 0; k < size; k++) {
-    const type = pickMobType(r, t, s.biome);
+    const type = pickMobType(r, t, s.biome, s.mix);
     const x = clamp(packX + rngRange(r, -spreadX, spreadX), lo - 12, hi);
     const y = top ? -10 - rngRange(r, 0, stagger) : WORLD_H + 26 + rngRange(r, 0, stagger);
     const i = allocEntity(e, Kind.Mob, type, x, y, MOBS[type].hp);
@@ -2105,10 +2181,16 @@ function updateCamera(s: GameState): void {
   if (n === 0) return;
   // A closed gate is the end of the world until the screen is clear.
   const gate = s.gates[s.gateIdx];
-  const target = clamp(sum / n - VIEW_W / 2 + 24, 0, gate ? gate.x - VIEW_W + GATE_INSET : s.worldW - VIEW_W);
+  // (a field carried on from the one before can start its camera a little short of 0, see newSim in main.ts: it is not pulled up to 0)
+  const target = clamp(sum / n - VIEW_W / 2 + 24, Math.min(0, s.camX), gate ? gate.x - VIEW_W + GATE_INSET : s.worldW - VIEW_W);
   // The camera only ever scrolls forward, so ground you have cleared stays behind you.
-  if (target > s.camX) s.camX += (target - s.camX) * 0.1;
+  // ...and never faster than CAM_MAX_SPEED, so a hero who starts well off centre (walking in from the last level or the store) walks
+  // across the screen on their own feet while the world scrolls gently, instead of being dragged across it by a camera catching up.
+  if (target > s.camX) s.camX += Math.min((target - s.camX) * 0.1, CAM_MAX_SPEED);
 }
+
+/** The fastest the camera pans (px/tick): a little over a hero's walking pace (1.4 to 1.9), so it keeps up with a walker and only a dash outruns it. */
+const CAM_MAX_SPEED = 2.2;
 
 /** A shut gate stands this far inside the right edge of the screen, so it is seen as a wall and not a line at the border. */
 const GATE_INSET = 56;

@@ -25,7 +25,7 @@ The game is about a bounty office and its books, and the repo's art direction al
 | Run summary | menu (text) | Same page; the Registrar beside his remark | vellum page + story font + the Registrar: **done** |
 | Camp: spoils | menu (text) | Campfire backdrop | vellum page + story font: **done**; backdrop planned |
 | Camp: level-up picks | menu (picks) | Card frames, upgrade icons | **done** (panels, cards, icons) |
-| Camp: merchant | menu (shop) | The peddler, ware icons, SOLD stamp | cards, icons, story-font names, the peddler (talks when you buy): **done**; a drawn SOLD stamp planned |
+| Store: merchant | in-world (no menu) | Ware icons on the ground, price tags, SOLD | icons bobbing on a pool of light with the price beside them; over the one a hero stands by, a panel like the quest-givers' (name, price, what it does in a sentence or two, and per hero there their button and what it would do for them, "RANK 1 TO 2" / "LEVEL 3 TO 4", or MAXED): **done** |
 | Camp: doors | menu (doors) | Door frames with node icons | framed panels, node icon, cursor: **done** |
 | Level-up panel (in the sky band) | `render/levelup.ts` | Card frames, upgrade icons, the pip | **done** (framed cards, icons, a star pip) |
 | Barks | `render/barks.ts` | Story font, speech bubble tail | vellum bubble with a tail, story font: **done** |
@@ -73,4 +73,4 @@ More NPCs as the story needs them (the Elder, the mapmaker), a backdrop for the 
 
 ## How to work on it
 
-`?camp=shop`, `?camp=picks&players=4&pending=2`, `?camp=doors` and `?camp=spoils` open the camp screens directly ([07](07-procgen.md)); the board and hub scenes show on a fresh load, and `?reset=1` starts a new campaign.
+`?camp=picks&players=4&pending=2`, `?camp=doors` and `?camp=spoils` open the camp screens directly ([07](07-procgen.md)); the board and hub scenes show on a fresh load, and `?reset=1` starts a new campaign.

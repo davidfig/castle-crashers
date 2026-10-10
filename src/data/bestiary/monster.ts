@@ -47,7 +47,7 @@ function baseStats(p: SlotPlan, role: number, d: Dice): MobDef {
   const M = (lo: number, hi: number): number => d.range(1 - (1 - lo) * K, 1 + (hi - 1) * K);
   const m: MobDef = { ...c, special: undefined, charge: undefined, shot: undefined, onDeath: undefined, shield: false, shieldHp: undefined };
   // drop every power the hand-made enemy had
-  for (const k of ['armored', 'slowOnHit', 'weave', 'regen', 'pack', 'revive', 'retreat', 'launch', 'poisonOnHit', 'rootOnHit', 'witherOnHit', 'hop', 'thorns', 'evade', 'burrow', 'drain', 'trail', 'flame', 'berserk', 'aura', 'surrender'] as const) delete (m as unknown as Record<string, unknown>)[k];
+  for (const k of ['armored', 'slowOnHit', 'weave', 'regen', 'pack', 'revive', 'retreat', 'launch', 'poisonOnHit', 'rootOnHit', 'witherOnHit', 'hop', 'thorns', 'evade', 'burrow', 'drain', 'trail', 'flame', 'berserk', 'aura', 'surrender', 'swarm', 'lunge', 'backstep'] as const) delete (m as unknown as Record<string, unknown>)[k];
   const fromMelee = c.behavior === Behavior.Melee;
   m.behavior = role;
 

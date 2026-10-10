@@ -26,12 +26,8 @@ export interface PickLane { active: boolean; slot: number; name: string; level: 
 /** A story figure standing beside the text, and whether they are speaking (their talk loop) or listening (idle). */
 export interface Figure { name: 'registrar' | 'peddler'; talking: boolean }
 export interface DoorView { biome: number; label: string; tag: string; icon: string }
-/** A row in the merchant's stock. */
-export interface ShopRow { name: string; text: string[]; price: number; sold: boolean; afford: boolean; icon: string }
-export interface ShopSeat { active: boolean; slot: number; name: string; ready: boolean; cursor: number }
 
 export type Screen =
-  | { kind: 'shop'; header: string; sub: string; gold: number; rows: ShopRow[]; seats: ShopSeat[]; note: string; footer: string; figure: Figure }
   | { kind: 'picks'; header: string; sub: string; lanes: PickLane[]; footer: string }
   | { kind: 'doors'; header: string; sub: string; doors: DoorView[]; sel: number; footer: string }
   | { kind: 'select'; header: string; sub: string; biome: number; slots: SelectSlot[]; footer: string }

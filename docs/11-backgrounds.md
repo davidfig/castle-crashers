@@ -14,9 +14,8 @@ The look of the world behind and under the action. The sim never sees any of thi
 ```
 BiomeDef
  ├─ name
- ├─ timeline: Mood[]            keyframes along level progress (0..1), blended linearly
- │    Mood = { at, sky: number[] (gradient bands, top→horizon), tint (multiplies bg art),
- │             sunY, moonY (screen y; below the horizon = down), stars (0..1) }
+ ├─ palette: { dawn, day, dusk, night }   four Looks, blended around the day's clock
+ │    Look = { sky: number[] (gradient bands, top→horizon), tint (multiplies bg art), stars (0..1), aurora? }
  ├─ layers: ParallaxLayer[]     far → near: { sprite (key), k (scroll factor), dy?, lights?, windows? }
  ├─ clouds: CloudLayer[]        { k, drift, count, y0, y1, alpha, tint? }
  ├─ moonScale?, haze: { height, alpha }, fog?: FogLayer[]
@@ -25,14 +24,15 @@ BiomeDef
  └─ crest, ridge                the hill crest and the foreground ridge colors
 ```
 
-- **Progress** = `camX / (WORLD_W - VIEW_W)`, clamped to 0..1. Camera only scrolls forward, so time of day only moves forward too.
+- **Time of day is a road-wide clock, not a biome's.** `dayPhase(levels)` runs from the number of levels played plus progress through the current one, one full day per `DAY_LEVELS` (2.5) levels, so sunset can fall anywhere in any level and the day runs on across biome changes. The sun and moon follow it (`sunMoonAt`: the sun up for phase 0 to 0.56, the moon from 0.5 to the end), identically in every biome; a biome only chooses the colors of its sky at each time (`palette`) and its clouds. Every biome handles night and day.
+- **Progress** = `camX / (WORLD_W - VIEW_W)`, clamped to 0..1.
 - **Biome selection:** `pickBiome(seed)`, a pure hash of the run/level seed (node types and run structure override it later, see [07](07-procgen.md)).
-- Moods interpolate per color channel. Layers and ground are tinted by the blended `tint`, so one art set serves day, dusk and night.
+- Looks interpolate per color channel. Layers and ground are tinted by the blended `tint`, so one art set serves day, dusk and night.
 
 ## Module layout
 
 - `src/data/biomes.ts`: `BiomeDef`s, `pickBiome` (a hash of the seed; `?biome=N` overrides it in dev builds), `moodAt`.
-- `src/render/background.ts`: the draw functions, called from `draw.ts` in the draw order from [02](02-rendering.md): `drawSky` (gradient, stars, sun, moon, clouds), `drawParallax` (strip layers, the destination landmark, torches and windows), `drawHaze`, `drawGround` (floor, mottle, path, patches, decor), `drawFog`, `drawCrest`, `drawRidge`. Also the shared geometry constants (`GROUND_TOP`, `FIELD_Y0`, `RIDGE_TOP`) and the small helpers `shade` (color x mood tint x brightness), `glow`, `depthShade`.
+- `src/render/background.ts`: the draw functions, called from `draw.ts` in the draw order from [02](02-rendering.md): `drawSky` (gradient, stars, sun, moon, clouds), `drawParallax` (strip layers, the destination landmark, torches and windows), `drawHaze`, `drawGround` (floor, mottle, path, patches, decor), `drawFog`, `drawCrest`, `drawRidge`. All take a `Scenery` (`src/render/scenery.ts`): the biome or two biomes on screen and which one owns which element (Biome transitions). Also the shared geometry constants (`GROUND_TOP`, `FIELD_Y0`, `RIDGE_TOP`) and the small helpers `shade` (color x mood tint x brightness), `glow`, `depthShade`.
 - `src/render/bgArt.ts`: the procedural builders for everything the background draws (ground tiles and patches, mountain, tree and ruin strips, clouds, moon, fog, the landmark and its bluff). `buildSprites` in `art.ts` packs their output into the atlas.
 - `src/render/pix.ts`: the pixel-buffer helpers they share (`Pix`, `setPix`, `hash2`, `darken`, `makeEllipse`, `silhouette`).
 
@@ -47,12 +47,34 @@ Rain, snow, fog and lightning drawn over the world. Render-only, like everything
   - **the ends**: it eases in over the first 5% of the biome and is gone by `WEATHER_END` (0.92 of the biome), so the biome finishes in clear air before the next one's weather begins.
 - **Drawing (`src/render/weather.ts`, `drawWeather`, after the particles and before the HUD):**
   - *Rain:* up to 340 slanted streaks (`wind` leans them), each at its own depth: nearer ones fall faster, land lower on the field and are brighter; each splashes for five ticks on landing. Heavy rain also dims the whole view.
+  - *Storm clouds:* drawn in the sky (`drawStormClouds`, `background.ts`) over the sun and moon, driven by `stormCover` (the rain's strength sampled a little ahead and behind, so the banks roll in before the first drops and linger as it eases). 34 big dark clouds each fade in as the cover passes their own threshold, so the sky fills and empties one bank at a time.
   - *Snow:* up to 190 swaying flakes at several depths; white ones for the sky, blue-grey ones so they show on snow.
   - *Fog:* a veil that thickens toward the horizon (in the mood's horizon color) plus big mist banks drifting nearer the camera than the ground fog.
   - *Sandstorm:* a tan veil over everything (heavier toward the horizon), fast dust banks, and up to 520 streaks of grain racing along the wind (`wind`'s sign sets the direction), with a slow gust that swells and slackens it all.
   - *Lightning:* one strike at most per 240-tick window (`strikeAt`, a pure function of the tick): a jagged forked bolt from the clouds to the horizon for the first few ticks and a screen flash that goes hard, flickers, flashes again and fades. Strike odds follow the strength, so lulls are quiet. No thunder yet (the sim and audio never see it).
 - **Assigned:** Meadow, showers across all three levels (drizzle, then settling in, heaviest in the third); Haunted Keep, a storm that builds with lightning; Frozen Pass, snowfall and a late whiteout; Sunken Marsh, drizzle and fog. Scorched Dunes, a sandstorm that gathers toward the end.
 - **Preview:** in dev builds `?weather=rain,lightning:0.5,fog,sandstorm` forces weather on any level, held steady (no surges or fades; the number after the colon is its strength), and `?weather=none` turns it off. Combine with `?biome=N`.
+
+## Biome transitions (done)
+
+**The camera never drags the hero across a transition.** It pans at most `CAM_MAX_SPEED` (2.2 px/tick, just over a hero's walking pace, `updateCamera` in `step.ts`). The party arrives in the store and in the next level wherever it stood on screen (often near the right edge), and the camera used to snap to centre them in about half a second, so the world (and the sky turning) swept past them. Now they walk to the middle over a few seconds on their own feet.
+
+The road turns from one biome into the next **element by element**, never by blending colors or fading the whole view. Both biomes are drawn at once; every element (a ground tile, a decal, a stretch of path, a parallax strip, a cloud, a cell of sky, a column of the crest and ridge) belongs to one of them, and the share that belongs to the new biome rises along the road. Render-only, a pure function of the camera. Code: `src/render/scenery.ts` (`Scenery`), used by every draw function in `background.ts`.
+
+- **Road coordinates.** The scenery is drawn in road coordinates: a level's camera plus where the level starts along the road (`roadOffset(index)`, a level and its store are `ROAD_STRIDE` long), the store's camera plus the level's length. So the horizon, ground and every hash carry on across the store and into the next level with no seam, and the two biomes' elements sit on the same grids.
+- **When.** The turn runs from `TURN_FROM` (2000 px into a level's stretch of road, a screen and a bit before its end) to `TURN_TO` (the start of the next level), eased. `main.ts` tells the renderer the next level's biome (`setSceneryRoute`, `-1` when the next level is in the same biome or there is none); the store knows it as `nextBiome`.
+- **Ownership.** `Scenery.keep(i, x, h)`: biome `i` owns an element at road `x` with noise `h` when `h < share(x)` (the new biome) or not (the old one). Exactly one biome owns each element, and an element's noise is fixed, so as the share rises an element changes hands once and never flickers. `patchNoise` makes neighbouring elements agree (blobs of a few dozen px), so the new biome arrives in islands. `weight` is the same question answered softly (a short fade), for things that move or overlap (clouds, fog, parallax strips, the landmark, ambient specks).
+- **Ground.** The old floor is drawn whole and the new floor over it, tile by tile (16 px) or slab by slab, where it owns the ground. Mottle, the path (per 2 px column), patches and decals each belong to one biome by the 16 px tile they stand on, so a decal never stands on the other biome's floor. The crest and ridge are drawn per column the same way.
+- **Horizon.** Each biome's parallax layers are drawn together by depth (so a near strip never ends up behind a far strip of the other biome). Each 256 px strip is one biome's. Strips are the cut because the art keeps its objects clear of strip edges.
+- **Sky.** A smooth wash, not patches: the old sky is drawn whole, then each 8 px column is redrawn as a complete sky whose bands (and the dither between them) are the old biome's color a fraction of the way to the new one's, the fraction being `Scenery.skyShare` at that column's road x. The horizon turns first and the top follows (`SKY_LEAN`), so the front leans. The front is fixed in the world, so a hero walks through it. Haze follows the horizon's share. Stars, aurora columns and clouds still belong to one biome each. The sun and moon are the clock's and do not change (the moon's size eases).
+- **Time of day** is the road's clock, so it runs on across levels and biomes and is the same for both; each biome's elements take their own biome's tint.
+- **No seam at the cuts.** Nothing may change on the frame one field hands over to the next (level to store, store to level):
+  - `weight` reaches exactly 0 and 1 at the ends of the turn (the noise is squeezed inside the fade), so no strip, cloud, wisp or speck is left half faded to pop in when the next level starts.
+  - A new field's camera starts as far short of 0 as the last camera stopped short of its far end (`newSim(..., cam0)` in `main.ts`), so the road coordinate, and every hash of the scenery, carries straight on; the camera is not pulled up to 0 (`updateCamera`).
+  - The music turns to the next biome's key at the peddler, halfway through the store, not on the level's first frame.
+- **Not blended:** weather ends in clear air anyway (`WEATHER_END`) and starts clear in the next biome.
+- **No stop.** The party keeps walking from the end of a level into the store and out into the next level: a won field the road goes on from (`GameState.onward`) leaves the heroes in control while what is left of the horde walks off (`walkOn` in `step.ts`), and the store follows within a few ticks. Only the last level (the final boss) ends in a banner and the summary.
+- **Dev:** `?seed=1&levels=4&at=2&goto=end&calm=1` starts the last level of the first biome a screen and a half from its end (`window.sim()` in the console can set `camX` to scrub along the turn).
 
 ## Phases
 

@@ -7,7 +7,7 @@ import { Dice, round } from './rand';
 export type SpecialKind = Special['kind'];
 
 /** Who can use a special well: a melee mob has to walk up to the hero, a caster keeps its distance. */
-export const MELEE_SPECIALS: readonly SpecialKind[] = ['blink', 'nova', 'trap', 'cling', 'whiteout', 'leap', 'gust'];
+export const MELEE_SPECIALS: readonly SpecialKind[] = ['blink', 'nova', 'trap', 'cling', 'whiteout', 'leap', 'pounce', 'gust'];
 export const CASTER_SPECIALS: readonly SpecialKind[] = ['lob', 'summon', 'heal', 'rally', 'beam', 'wail', 'ward', 'storm', 'lure', 'pit', 'hex', 'dazzle'];
 /** What a boss may cast (the moves the hand-made bosses use; the rest are too small to read at boss scale). */
 export const BOSS_SPECIALS: readonly SpecialKind[] = ['rally', 'lob', 'nova', 'storm', 'trap', 'ward', 'whiteout', 'beam', 'summon', 'blink', 'heal', 'wail', 'leap', 'lure', 'gust', 'pit'];
@@ -60,6 +60,8 @@ export function makeSpecial(kind: SpecialKind, d: Dice, u: number, c: Ctx): Spec
       return { kind, windup: cool(36, 44), cooldown: cool(250, 290), radius: cool(130, 150), pull: cool(58, 70), damage: 2 };
     case 'leap':
       return { kind, windup: cool(25, 31), cooldown: cool(250, 290), minRange: 50, maxRange: cool(140, 160), radius: cool(18, 22), damage: Math.round(lerp(7, 11, u)), slow: cool(50, 70), delay: cool(27, 33) };
+    case 'pounce':
+      return { kind, windup: cool(12, 16), cooldown: cool(140, 170), minRange: 34, maxRange: cool(120, 135), radius: cool(13, 15), damage: Math.round(lerp(8, 11, u)), delay: cool(14, 18) };
     case 'gust':
       return { kind, windup: cool(30, 38), cooldown: cool(260, 300), radius: cool(50, 62), damage: Math.round(lerp(3, 5, u)), push: cool(80, 100) };
     case 'pit':
@@ -91,6 +93,6 @@ export function bossSpecial(kind: SpecialKind, d: Dice, c: Ctx): Special {
     case 'lure': return { kind, windup: w(48, 52), cooldown: 0, radius: w(210, 230), pull: w(85, 95), damage: 4 };
     case 'gust': return { kind, windup: w(46, 50), cooldown: 0, radius: w(100, 120), damage: w(9, 11), push: w(95, 105) };
     case 'pit': return { kind, windup: w(42, 46), cooldown: 0, minRange: 0, maxRange: 420, radius: w(34, 38), delay: w(46, 50), linger: w(250, 270), pull: round(d.range(0.55, 0.65), 2), damage: 5, count: 3, spread: w(66, 74) };
-    case 'cling': case 'hex': case 'dazzle': return bossSpecial('nova', d, c);
+    case 'cling': case 'hex': case 'dazzle': case 'pounce': return bossSpecial('nova', d, c);
   }
 }

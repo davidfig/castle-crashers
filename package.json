@@ -11,7 +11,8 @@
     "check": "node tools/check-sim.mjs",
     "playtest": "node tools/playtest.mjs",
     "art": "node tools/art-dev.mjs",
-    "art:build": "node tools/art.mjs"
+    "art:build": "node tools/art.mjs",
+    "sim": "node tools/sim.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

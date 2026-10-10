@@ -100,7 +100,7 @@ frames.dead0 = [['corpse', 3, 13]];
 
 export default {
   name: 'wraith', title: 'Wraith', notes: 'Hovering spectre (no legs: pivot set by hand; wisps end ~3px above the ground line).',
-  cell: [22, 19], shadow: [8, 3], pivot: [11, 17], palette, post, parts, frames,
+  cell: [22, 19], hover: true, shadow: [8, 3], pivot: [11, 17], palette, post, parts, frames,
   derived: {},
   anims: {
     walk: { fps: 6, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },

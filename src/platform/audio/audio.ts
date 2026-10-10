@@ -100,9 +100,12 @@ export class Audio {
   private mbus: GainNode | null = null;
   music: Music | null = null;
   private holyKill = false;
+  /** Set by ?mute: no audio context is ever created, so nothing plays, and the remembered N / M choices are left alone. */
+  muted = false;
 
   /** Create or resume the context. Browsers only allow this from a user gesture; safe to call repeatedly. */
   unlock(): void {
+    if (this.muted) return;
     try {
       if (!this.ac) {
         const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -198,6 +201,7 @@ export class Audio {
         case Ev.Potion: this.play('potion', pan); break;
         case Ev.Proc: this.play('proc', pan); break;
         case Ev.Pick: this.play('pick', 0); break;
+        case Ev.Quest: if (a === 1) this.music?.stinger('level'); else if (a === 2) this.play('down', pan); else if (a === 5) this.play('potion', pan); break;
       }
     }
   }

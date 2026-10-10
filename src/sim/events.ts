@@ -5,8 +5,8 @@ export const Ev = {
   Swing: 1,       // a,b = facing * range, c = arc dot
   Hit: 2,         // a = damage
   Kill: 3,        // a = mob type, b = credited to a player, c,d = launch velocity
-  Nova: 4,        // a = radius
-  PlayerHurt: 5,  // a = slot
+  Nova: 4,        // a = radius, b = 1 for the big one, c = 1 for the mage's ring of fire
+  PlayerHurt: 5,  // a = slot, b = 1 for a stamina potion
   PlayerDown: 6,  // a = slot
   Dash: 7,        // a,b = direction, c = kind (0 roll, 1 charge, 2 vanish, 3 teleport, 4 heal)
   Revive: 8,      // a = slot
@@ -42,6 +42,7 @@ export const Ev = {
   Holy: 39,       // the next Kill was by a holy (aura) hero, the cleric
   Pick: 38,       // a hero chose an upgrade; a = slot, b = upgrade index
   Reroll: 40,     // a hero dealt a fresh level-up hand (a = slot, b = 0) or banished a boon (b = 1, c = upgrade index)
+  Quest: 42,      // a quest did something: a = what (QuestEv), b = detail (see sim/quests.ts)
   Site: 41,       // a shrine or chest did something: a = what (SiteEv), b = site sub-kind or value
 } as const;
 

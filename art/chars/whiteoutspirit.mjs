@@ -101,7 +101,7 @@ frames.dead0 = [['corpse', 3, 13]];
 
 export default {
   name: 'whiteoutspirit', title: 'Whiteout Spirit', notes: 'Hovering storm spirit (no legs: pivot set by hand; wisps end ~3px above the ground line). Blinks to the hero; the fade is the game tinting it.',
-  cell: [22, 19], shadow: [8, 3], pivot: [11, 17], palette, post, parts, frames,
+  cell: [22, 19], hover: true, shadow: [8, 3], pivot: [11, 17], palette, post, parts, frames,
   derived: {},
   anims: {
     walk: { fps: 6, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },

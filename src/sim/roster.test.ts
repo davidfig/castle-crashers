@@ -5,7 +5,7 @@ import { availableTypes, BIOME_COUNT, biomeIndex, entryWeight, ROSTERS } from '.
 import { BIOMES } from '../data/biomes';
 import { createRng, Stream } from '../engine/rng';
 import { allocEntity, freeEntity, Kind, ZoneKind } from './entities';
-import { onMobDeath, SP_CLING, SP_INIT } from './abilities';
+import { onMobDeath, SP_CLING, SP_INIT, SP_LEAP } from './abilities';
 import { BERSERK } from './entities';
 import { Ev, EV_STRIDE } from './events';
 import { pickMobType } from './gen/mix';
@@ -351,6 +351,9 @@ function abilities(type: number): string[] {
   if (d.shot?.homing) a.push('homing');
   if (d.onDeath?.cloud) a.push('spores');
   if (d.pack) a.push('pack');
+  if (d.swarm) a.push('swarm');
+  if (d.lunge) a.push('lunge');
+  if (d.backstep) a.push('backstep');
   if (d.revive) a.push('revive');
   if (d.onDeath?.split) a.push('split');
   if (d.onDeath?.pool) a.push('pool');
@@ -358,7 +361,7 @@ function abilities(type: number): string[] {
   return a;
 }
 
-test('no ability is used by two enemies, in any biome (plain fodder and the basic archer are the baseline)', () => {
+test('every enemy has an ability, and none is used by two enemies, in any biome', () => {
   const seen = new Map<string, string>();
   for (const roster of ROSTERS) {
     for (const en of roster.entries) {
@@ -369,7 +372,19 @@ test('no ability is used by two enemies, in any biome (plain fodder and the basi
     }
   }
   const bare = ROSTERS.flatMap((r) => r.entries).filter((en) => abilities(en.type).length === 0).map((en) => MOBS[en.type].name);
-  assert.deepEqual(bare.sort(), ['archer', 'goblin', 'skeleton'], 'only the baseline enemies have no ability');
+  assert.deepEqual(bare, [], 'no enemy is without an ability');
+});
+
+test('a caster parks within reach of its own ring, and a volley always has a shot down the aim line', () => {
+  for (const d of MOBS) {
+    const sp = d.special;
+    // a caster stops walking at 1.1x its reach; a ring around itself only goes off inside 0.9x its radius
+    if (d.behavior === Behavior.Caster && sp && (sp.kind === 'nova' || sp.kind === 'wail' || sp.kind === 'whiteout' || sp.kind === 'gust' || sp.kind === 'lure')) {
+      assert.ok(d.reach * 1.1 <= sp.radius * 0.9, `${d.name} stands out of range of its own ${sp.kind}`);
+    }
+    // an even fan straddles a lone hero (enemy shots hit within 6 px) and misses on both sides
+    if (d.shot && d.shot.count > 1) assert.equal(d.shot.count % 2, 1, `${d.name}'s volley has no shot down the middle`);
+  }
 });
 
 function held(buttons: number, moveX = 0): InputFrame[] {
@@ -474,6 +489,21 @@ test('yeti goes berserk below half health: frenzied, harder-hitting, and never s
   assert.ok(s.ents.buff[y] > 0, 'frenzied');
 });
 
+test('yeti pounces: a quick crouch, then a fast jump that lands on the hero', () => {
+  const s = arena();
+  const pe = s.players[0].ent;
+  const y = mob(s, MobType.Yeti, 190, 100);
+  s.ents.flags[y] |= SP_INIT;
+  s.ents.cool2[y] = 0;
+  const hp0 = s.ents.hp[pe];
+  assert.ok(run(s, 30, () => s.ents.mode[y] === SP_LEAP), 'it springs');
+  const sp = MOBS[MobType.Yeti].special!;
+  assert.ok(sp.kind === 'pounce' && sp.windup + sp.delay < 40, 'and the whole move is quick');
+  assert.ok(run(s, 30, () => s.ents.mode[y] !== SP_LEAP), 'it lands');
+  assert.ok(Math.abs(s.ents.x[y] - s.ents.x[pe]) < 16, 'on top of the hero');
+  assert.ok(s.ents.hp[pe] < hp0, 'and hurts them');
+});
+
 test('frost shaman wards its allies: the next hit on each is absorbed whole', () => {
   const s = arena();
   const sh = mob(s, MobType.FrostShaman, 150, 100);
@@ -538,4 +568,40 @@ test('storms from many witches never stack past the cap', () => {
   }
   assert.ok(most > 0, 'storms are cast');
   assert.ok(most <= (MOBS[MobType.BlizzardWitch].special as { cap: number }).cap, `at most the cap at once (saw ${most})`);
+});
+
+test('skeleton: its thrust starts from outside its apparent reach and steps in', () => {
+  const s = arena();
+  s.ents.hp[s.players[0].ent] = 1e6;
+  const k = mob(s, MobType.Skeleton, 100 + 24, 100);
+  s.ents.atk[k] = 0;
+  assert.ok(run(s, 30, () => s.ents.wind[k] > 0), 'it begins to swing from 24 px, beyond its 9 px reach');
+  const gap0 = Math.abs(s.ents.x[k] - 100);
+  run(s, 12, () => false);
+  assert.ok(Math.abs(s.ents.x[k] - 100) < gap0 - 8, 'and closes the gap as it does');
+});
+
+test('archer: skips back when a hero runs it down, then not again at once', () => {
+  const s = arena();
+  s.ents.hp[s.players[0].ent] = 1e6;
+  const a = mob(s, MobType.Archer, 100 + 30, 100);
+  s.ents.wind[a] = 0;
+  run(s, 20, () => false);
+  assert.ok(s.ents.x[a] - 100 > 60, `it sprang away (${(s.ents.x[a] - 100).toFixed(0)} px)`);
+  const cool = s.ents.cool2[a];
+  assert.ok(cool > 100, 'and waits before it can again');
+});
+
+test('goblin: a crowd of goblins moves faster than a lone one (mob courage)', () => {
+  const travel = (n: number): number => {
+    const s = arena();
+    s.ents.hp[s.players[0].ent] = 1e6;
+    const ids: number[] = [];
+    for (let k = 0; k < n; k++) ids.push(mob(s, MobType.Goblin, 400 + (k % 3) * 8, 60 + Math.floor(k / 3) * 8));
+    for (const g of ids) { s.ents.flags[g] = 1; }
+    const x0 = ids.reduce((a, g) => a + s.ents.x[g], 0) / n;
+    run(s, 40, () => false);
+    return x0 - ids.reduce((a, g) => a + s.ents.x[g], 0) / n;
+  };
+  assert.ok(travel(9) > travel(1) * 1.2, 'the crowd covers more ground');
 });

@@ -47,6 +47,8 @@ test('every generated monster is a legal definition the sim can run', () => {
         assert.ok(d.boss.moves!.some((m) => m.kind === 'roar'), `${tag}: a boss calls its retinue`);
         assert.ok(d.radius <= 22, `${tag}: no wider than the grid allows for`);
       } else assert.ok(!d.boss, tag);
+      const sp0 = d.special as { radius?: number } | undefined;
+      if (d.behavior === Behavior.Caster && sp0 && ['wail', 'lure', 'whiteout', 'nova', 'gust'].includes(d.special!.kind)) assert.ok(d.reach * 1.1 <= sp0.radius! * 0.9, `${tag}: it parks inside its own power's radius`);
       if (d.shield) assert.ok((d.shieldHp ?? 0) > 0, `${tag}: a shield breaks`);
       if (d.burrow) assert.ok(!d.special && !d.charge && !d.revive && !d.hop && !d.retreat, `${tag}: a burrower only burrows`);
       const sp: Special[] = [...(d.special ? [d.special] : []), ...(d.boss?.moves ?? []).flatMap((m) => (m.kind === 'special' ? [m.special] : []))];

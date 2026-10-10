@@ -63,7 +63,7 @@ import sunguardMeta from '../../art/out/sunguard.json';
 import suntyrantMeta from '../../art/out/suntyrant.json';
 
 interface Rect { x: number; y: number; w: number; h: number }
-export interface SheetMeta { frames: Record<string, Rect>; anims: Record<string, { frames: string[] }> }
+export interface SheetMeta { ground?: number; frames: Record<string, Rect>; anims: Record<string, { frames: string[] }> }
 const MOB_METAS = [
   goblinMeta, orcMeta, mobarcherMeta, shieldbearerMeta, bomberMeta, bossMeta, wolfMeta, slingerMeta, shamanMeta, drummerMeta, trollMeta, skeletonMeta, bonearcherMeta, ghoulMeta, wraithMeta, skullMeta, bonebruteMeta, necromancerMeta, bansheeMeta, plaguezombieMeta, lichMeta, dreadknightMeta,
   trapperMeta, snowspriteMeta, harpoonerMeta, frostwolfMeta, ramMeta, icehuskMeta, yetiMeta, frostshamanMeta, blizzardwitchMeta, whiteoutspiritMeta, tundraguardMeta, rimekingMeta, dreadregentMeta,
@@ -95,7 +95,8 @@ export function buildMobArt(places: { x: number; y: number }[], W: number, H: nu
 export function buildMobArtFrom(metas: readonly SheetMeta[], places: { x: number; y: number }[], W: number, H: number): MobArt {
   const anims = metas.map((m, t) => {
     const out: Record<string, Frame[]> = {};
-    for (const [name, a] of Object.entries(m.anims)) out[name] = a.frames.map((fn) => uv(m.frames[fn], places[t], W, H));
+    const drop = m.ground ?? 0; // grounded bodies stand a few rows above the cell's bottom edge: sink them onto the ground line (a lying corpse already rests on it)
+    for (const [name, a] of Object.entries(m.anims)) out[name] = a.frames.map((fn) => (drop && name !== 'dead' ? { ...uv(m.frames[fn], places[t], W, H), drop } : uv(m.frames[fn], places[t], W, H)));
     return out;
   });
   const walk = anims.map((a) => a.walk);

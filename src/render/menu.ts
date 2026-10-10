@@ -4,7 +4,8 @@ import { hex } from '../platform/gl/batcher';
 import { VIEW_H, VIEW_W } from '../sim/constants';
 import { CARD_WIDTH_CHARS, wrap, type Screen, type Tone } from '../campaign/view';
 import { drawText } from './draw';
-import { BIOMES, makeBlendedMood, moodAt } from '../data/biomes';
+import { BIOMES, moodAt } from '../data/biomes';
+import { Scenery } from './scenery';
 import { drawCrest, drawFog, drawGround, drawHaze, drawParallax, drawSky } from './background';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { LINE_H, storyWidth } from '../data/storyFont';
@@ -28,7 +29,7 @@ function backdrop(b: Batcher, S: Sprites): void {
   bands.forEach((c, i) => rect(b, S, 0, i * h, VIEW_W, h, c));
 }
 
-const thumbMood = makeBlendedMood();
+const thumbScenery = new Scenery();
 /** The source row of the game's backdrop shown at the top of a thumbnail (the horizon sits at row 112). */
 const THUMB_TOP = 74;
 
@@ -36,15 +37,16 @@ const THUMB_TOP = 74;
 function biomeThumb(b: Batcher, S: Sprites, biome: number, x: number, y: number, w: number, h: number, tick: number): void {
   const def = BIOMES[biome];
   if (!def) return;
-  moodAt(def, 0.1, thumbMood);
+  thumbScenery.set(def, undefined, 0);
+  moodAt(def, 0.2, thumbScenery.mood[0]); // morning
   const oy = y - THUMB_TOP;
   b.setClip(x, y, x + w, y + h);
-  drawSky(b, S, def, thumbMood, 0, tick, x, oy);
-  drawParallax(b, S, def, thumbMood, 0, 0, x, oy, tick);
-  drawHaze(b, S, def, thumbMood, oy);
-  drawGround(b, S, def, thumbMood, -x, oy, tick);
-  drawCrest(b, S, def, thumbMood, -x, oy);
-  drawFog(b, S, def, thumbMood, -x, oy, tick, 0.1);
+  drawSky(b, S, thumbScenery, 0, tick, x, oy);
+  drawParallax(b, S, thumbScenery, 0, 0, x, oy, tick);
+  drawHaze(b, S, thumbScenery, 0, oy);
+  drawGround(b, S, thumbScenery, -x, oy, tick);
+  drawCrest(b, S, thumbScenery, -x, oy);
+  drawFog(b, S, thumbScenery, -x, oy, tick, 0.1);
   b.clearClip();
   // a frame, and the biome's name on a dark plate
   rect(b, S, x - 1, y - 1, w + 2, 1, 0x000000, 0.8);
@@ -165,38 +167,6 @@ export function drawScreen(b: Batcher, S: Sprites, scr: Screen, tick: number, ov
         });
       }
     });
-  } else if (scr.kind === 'shop') {
-    drawStory(b, S, scr.sub, MARGIN, 36, TONE.dim);
-    const gt = `GOLD ${scr.gold}`;
-    drawIcon(b, S, 'coin', VIEW_W - MARGIN - gt.length * 8 - 14, 16, 1);
-    drawText(b, S, gt, VIEW_W - MARGIN - gt.length * 8, 16, hex(TONE.gold), 2);
-    const rx = MARGIN + 20, rw = 400, rh = 40;
-    scr.rows.forEach((r, i) => {
-      const y = 58 + i * (rh + 6);
-      const here = scr.seats.filter((s) => s.active && s.cursor === i);
-      drawCard(b, S, rx, y, rw, rh, here.length ? 4 : 0, here.length > 0);
-      const pic = r.icon.startsWith('boon-'); // a boon's badge is 16x16, so it is drawn at the old icons' 2x and the words move over
-      drawIcon(b, S, r.icon, rx + 8, y + (pic ? 4 : 12), 2);
-      const tx = rx + (pic ? 46 : 34);
-      drawStory(b, S, r.name[0] + r.name.slice(1).toLowerCase(), tx, y + 6, r.sold ? TONE.dim : TONE.normal);
-      r.text.forEach((t, j) => drawText(b, S, t, tx, y + 20 + j * 8, hex(0xa8b4d8)));
-      const pt = String(r.price);
-      drawText(b, S, pt, rx + rw - 12 - pt.length * 8, y + 14, hex(r.sold ? TONE.dim : r.afford ? TONE.gold : TONE.red), 2);
-      here.forEach((s, k) => b.drawScaled(S.px, rx - 8 - k * 5, y + 2, 4, rh - 4, hex(PLAYER_COLORS[s.slot])));
-      if (r.sold) {
-        b.drawScaled(S.px, rx, y, rw, rh, hex(0x000000, 0.55));
-        drawStory(b, S, 'Sold', rx + rw / 2 - 18, y + 12, TONE.dim, 2);
-      }
-    });
-    const sx = rx + rw + 24;
-    scr.seats.forEach((s) => {
-      if (!s.active) return;
-      const y = 58 + s.slot * 30;
-      drawStory(b, S, `P${s.slot + 1} ${s.name[0]}${s.name.slice(1).toLowerCase()}`, sx, y, PLAYER_COLORS[s.slot]);
-      drawStory(b, S, s.ready ? 'Done' : 'Shopping', sx, y + 12, s.ready ? 0x4fd05a : TONE.dim);
-    });
-    drawNpc(b, S, scr.figure.name, VIEW_W - 76, 306, 4, scr.figure.talking, tick);
-    if (scr.note) drawText(b, S, scr.note, MARGIN, VIEW_H - 34, hex(TONE.gold));
   } else if (scr.kind === 'doors') {
     drawText(b, S, scr.sub, MARGIN, 42, hex(TONE.dim));
     const n = scr.doors.length, gap = 16;

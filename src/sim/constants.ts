@@ -31,6 +31,9 @@ export const STORE_EXIT_SCREEN = 420;
 export const STORE_EXIT_X = STORE_CAM_END + STORE_EXIT_SCREEN;
 /** The camera at the far end of a level: the store's scenery for the old biome carries on from here, so the cut from level to store is invisible. */
 export const LEVEL_CAM_END = WORLD_W - VIEW_W;
-/** A hero this close to the peddler (px, along the field and across it) can trade. */
-export const STORE_REACH_X = 70;
-export const STORE_REACH_Y = 60;
+/** The peddler's goods lie on the ground in a row in front of his stall: `WARE_GAP` apart, `WARE_DY` below him. */
+export const WARE_GAP = 52;
+export const WARE_DY = 34;
+/** A hero this close to a ware (px, along the field and across it) can buy it. */
+export const WARE_REACH_X = 24;
+export const WARE_REACH_Y = 20;

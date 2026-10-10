@@ -4,7 +4,7 @@ import { STORY_CHARS, storyWidth } from '../storyFont';
 import { NPC_NAMES } from '../../render/npcArt';
 import { beatsOf, fieldCalm, lineTicks, wrapStory } from '../../render/roadCast';
 import { FINAL_CHAPTER } from './chapters';
-import { ROAD_REACTIONS, ROAD_SCENES, roadSceneFor, roadSceneT } from './road';
+import { ROAD_REACTIONS, ROAD_SCENES, roadSceneFor, roadSceneT, scriptFor } from './road';
 import { CLASSES } from '../classes';
 import { LEVELS_PER_BIOME } from '../../campaign/route';
 import { createSim } from '../../sim/state';
@@ -23,16 +23,53 @@ test('scenes are well formed: real figures, real speakers, text the font can dra
   for (const sc of ROAD_SCENES) {
     assert.ok(sc.cast.length >= 2 && sc.cast.length <= 4, sc.id);
     for (const f of sc.cast) assert.ok((NPC_NAMES as readonly string[]).includes(f.npc), `${sc.id} ${f.npc}`);
-    assert.ok(sc.lines.length >= 4, sc.id);
-    const spoke = new Set<number>();
-    for (const l of sc.lines) {
-      assert.ok(l.who >= 0 && l.who < sc.cast.length, `${sc.id} speaker`);
-      spoke.add(l.who);
-      for (const ch of l.text) assert.ok(STORY_CHARS.includes(ch), `${sc.id}: "${ch}" in "${l.text}"`);
-      for (const row of wrapStory(l.text, 150)) assert.ok(storyWidth(row) <= 150 || !row.includes(' '), `${sc.id} wraps`);
-      assert.ok(wrapStory(l.text, 150).length <= 4, `${sc.id}: "${l.text}" is too long for a bubble`);
+    for (const script of [sc.lines, ...sc.variants]) {
+      assert.ok(script.length >= 4, sc.id);
+      const spoke = new Set<number>();
+      for (const l of script) {
+        assert.ok(l.who >= 0 && l.who < sc.cast.length, `${sc.id} speaker`);
+        spoke.add(l.who);
+        for (const ch of l.text) assert.ok(STORY_CHARS.includes(ch), `${sc.id}: "${ch}" in "${l.text}"`);
+        for (const row of wrapStory(l.text, 150)) assert.ok(storyWidth(row) <= 150 || !row.includes(' '), `${sc.id} wraps`);
+        assert.ok(wrapStory(l.text, 150).length <= 4, `${sc.id}: "${l.text}" is too long for a bubble`);
+      }
+      assert.ok(spoke.size >= 2, `${sc.id} is a conversation`);
     }
-    assert.ok(spoke.size >= 2, `${sc.id} is a conversation`);
+  }
+});
+
+test('every scene has alternates, all different, and a scene with a king lets the guards and the herald talk too', () => {
+  for (const sc of ROAD_SCENES) {
+    assert.ok(sc.variants.length >= 9, `${sc.id} has ${sc.variants.length} variants: every scene needs ten versions`);
+    const keys = [sc.lines, ...sc.variants].map((s) => s.map((l) => l.text).join('|'));
+    assert.equal(new Set(keys).size, keys.length, `${sc.id} repeats a conversation`);
+    const lineSets = [sc.lines, ...sc.variants].flatMap((s) => s.map((l) => l.text));
+    assert.equal(new Set(lineSets).size, lineSets.length, `${sc.id} reuses a line`);
+    const king = sc.cast.findIndex((f) => f.npc === 'king');
+    if (king >= 0) {
+      const others = sc.cast.map((_, i) => i).filter((i) => i !== king);
+      const talked = new Set(sc.variants.flatMap((s) => s.map((l) => l.who)));
+      assert.ok(others.every((i) => talked.has(i) || sc.cast[i].npc === 'registrar'), `${sc.id}: someone besides the king never speaks in an alternate`);
+    }
+  }
+});
+
+test('the first meeting is the set script, then the alternates rotate without repeating back to back', () => {
+  for (const sc of ROAD_SCENES) {
+    assert.equal(scriptFor(sc, 0), sc.lines);
+    const n = sc.variants.length;
+    const seen = new Set<unknown>();
+    let prev: unknown;
+    for (let h = 1; h <= n * 2; h++) {
+      const s = scriptFor(sc, h);
+      assert.notEqual(s, sc.lines, 'the set script is only for the first meeting');
+      assert.notEqual(s, prev, `${sc.id} repeats at hearing ${h}`);
+      prev = s;
+      if (h <= n) seen.add(s);
+    }
+    assert.equal(seen.size, n, `${sc.id} hears every alternate before any repeats`);
+    assert.equal(scriptFor(sc, 5, 0), sc.lines, 'forced 0 is the first-time script');
+    assert.equal(scriptFor(sc, 0, 2), sc.variants[1]);
   }
 });
 
@@ -63,7 +100,7 @@ test('every class has a partway and a closing reaction for every chapter, drawab
 
 test('a scene is its lines with a reaction partway and one at the end', () => {
   for (const sc of ROAD_SCENES) {
-    const beats = beatsOf(sc);
+    const beats = beatsOf(sc.lines);
     assert.equal(beats.length, sc.lines.length + 2);
     assert.deepEqual(beats[beats.length - 1], { react: 1 });
     assert.equal(beats.filter((b) => 'react' in b).length, 2);

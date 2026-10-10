@@ -40,6 +40,7 @@ export function hashState(s: GameState): number {
   h = mixNum(h, s.betrayed);
   for (let i = 0; i < s.spared.length; i++) h = mixNum(h, s.spared[i]);
   h = mixNum(h, e0(s));
+  h = mixNum(h, s.quest ? s.quest.status * 1e6 + s.quest.progress * 1e3 + s.quest.ent : -1);
   h = mixNum(h, s.gold);
   h = mixNum(h, s.heat);
   h = mixNum(h, s.chestsOpened);
@@ -83,6 +84,8 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.invuln);
     h = mixNum(h, p.dashT);
     h = mixNum(h, p.vanishT);
+    h = mixNum(h, p.vanishX);
+    h = mixNum(h, p.vanishY);
     h = mixNum(h, p.cursor);
     h = mixNum(h, p.revealT);
     h = mixNum(h, p.auraOn ? 1 : 0);

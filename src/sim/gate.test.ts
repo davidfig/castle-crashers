@@ -84,3 +84,19 @@ test('a gate cannot open before the encounter it guards has streamed in', () => 
   step(s, idle());
   assert.equal(s.gateIdx, 0);
 });
+
+test('a won field the road goes on from is not a stop: the party keeps walking while the horde leaves', () => {
+  for (const onward of [false, true]) {
+    const s = createSim(3, undefined, { boss: false, onward });
+    s.nextClump = s.plan.length; s.spawnTimer = 1e9; s.flankTimer = 1e9; s.gateIdx = s.gates.length;
+    const pe = s.players[0].ent;
+    s.ents.x[pe] = s.ents.px[pe] = s.exitX - 4;
+    s.camX = s.prevCamX = s.trigCamX = s.exitX - 300;
+    runRight(s, 6);
+    assert.equal(s.phase, 1, 'the far end wins the level');
+    const at = s.ents.x[pe];
+    runRight(s, 20);
+    if (onward) assert.ok(s.ents.x[pe] > at + 10, 'the hero is still in control');
+    else assert.equal(s.ents.x[pe], at, 'the last level stops dead (the banner and the summary follow)');
+  }
+});

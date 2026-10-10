@@ -255,7 +255,6 @@ function everyChar(scr: Screen): string[] {
   if (scr.kind === 'picks') return [scr.header, scr.sub, scr.footer, ...scr.lanes.flatMap((l) => [l.name, ...l.cards.flatMap((c) => [c.name, ...c.text])])];
   if (scr.kind === 'doors') return [scr.header, scr.sub, scr.footer, ...scr.doors.flatMap((d) => [d.label, d.tag])];
   if (scr.kind === 'scene') return [scr.header, scr.footer, ...scr.lines.map((l) => l.text)];
-  if (scr.kind === 'shop') return [scr.header, scr.footer, scr.note, ...scr.rows.flatMap((r) => [r.name, ...r.text]), ...scr.seats.map((s) => s.name)];
   if (scr.kind === 'title') return [];
   return [scr.header, scr.footer, ...scr.body.map((b) => b.text)];
 }

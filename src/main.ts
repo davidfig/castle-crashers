@@ -8,12 +8,12 @@ import { installMonsterArt } from './render/monsterSprites';
 import { loadHeroImages } from './render/heroSheets';
 import { loadMobImages } from './render/mobSheets';
 import { loadNpcImages } from './render/npcSheets';
-import { drawFrame } from './render/draw';
+import { drawFrame, setSceneryRoute } from './render/draw';
 import { Fx } from './render/fx';
 import { Audio } from './platform/audio/audio';
 import { dangerOf } from './platform/audio/music';
 import { CLASSES, classForBotSlot } from './data/classes';
-import { MAX_PLAYERS, STORE_REACH_X, STORE_REACH_Y, STORE_X, STORE_Y, TICK_RATE, VIEW_H, VIEW_W, WORLD_W } from './sim/constants';
+import { LEVEL_CAM_END, MAX_PLAYERS, STORE_CAM_END, STORE_X, TICK_RATE, WARE_REACH_X, WARE_REACH_Y, VIEW_H, VIEW_W, WORLD_W } from './sim/constants';
 import { HEAT_MAX } from './data/heat';
 import { createSim } from './sim/state';
 import { step } from './sim/step';
@@ -21,6 +21,8 @@ import { applyCarry, arriveAt, captureCarry, restCarry, type Carry } from './sim
 import { lerp } from './engine/math';
 import { FrameStats } from './platform/perf';
 import { botInput } from './sim/bot';
+import { Pilot } from './ai/pilot';
+import { resolveSkill } from './ai/skill';
 import { Btn } from './sim/input';
 import { Phase, activatePlayer } from './sim/state';
 import { Kind } from './sim/entities';
@@ -28,8 +30,11 @@ import { spawnClump } from './sim/gen/level';
 import { summarizeEnd } from './campaign/run';
 import { levelPlan, LEVELS_PER_BIOME, ROUTE_LEVELS, weatherSpan, type LevelPlan } from './campaign/route';
 import { setWeatherRoute } from './render/weather';
-import { shopScreen } from './campaign/camp';
-import { stockFor, WARES, type StockItem } from './data/wares';
+import { stockFor, WARES, wareSpot, wareStanding, type StockItem } from './data/wares';
+import type { StoreView } from './render/camp';
+import type { QuestView } from './render/quests';
+import { offerNear, offersAfter, questSpot } from './campaign/questBoard';
+import { makeQuest, type MissionKind, type QuestDef, type RewardKind } from './data/quests';
 import { buy } from './sim/shop';
 import { runEndScreen, selectScreen, type LobbySlot, type Screen } from './campaign/view';
 import { drawScreen } from './render/menu';
@@ -89,6 +94,8 @@ for (const type of ['keydown', 'pointerdown'] as const) window.addEventListener(
 });
 
 const params = new URLSearchParams(location.search);
+// ?mute=1 silences sound and music for this page load without touching the remembered N / M settings (automated playtests use it).
+if (params.has('mute') && params.get('mute') !== '0') audio.muted = true;
 // ?biome=N forces a biome (scenery and enemies; see biomeIndex). Read before any sim is created.
 if (__DEV__ && params.has('biome')) (globalThis as { __biome?: number }).__biome = Number(params.get('biome'));
 // ?scenery=frozen previews scenery that has no enemy roster yet (see FROZEN_PASS); the enemies stay those of the seed's biome.
@@ -116,6 +123,16 @@ if (__DEV__) {
   if (params.get('auto') === '1') botSlots.push(0);
   for (let k = 1; k <= n; k++) botSlots.push(k);
 }
+// Dev aid: ?skill=novice|casual|average|skilled|expert (or a number 0..1) drives the bot slots with a simulated player (src/ai) of that skill
+// instead of the plain scripted bot, and ?bclass=mage,archer picks the bots' classes in slot order. The same pilots play the headless balance runs.
+const pilotSkill = __DEV__ && params.has('skill') ? resolveSkill(params.get('skill')!) : undefined;
+const botClasses = __DEV__ ? (params.get('bclass') ?? '').split(',').filter(Boolean).map((n) => CLASSES.findIndex((c) => c.name === n)) : [];
+const pilots = new Map<number, Pilot>();
+function pilotFor(k: number): Pilot {
+  let p = pilots.get(k);
+  if (!p) { p = new Pilot(k, pilotSkill!, cfg.seed); pilots.set(k, p); }
+  return p;
+}
 
 
 // --- Campaign flow: title -> party select -> one straight road of levels, each followed by a store in the same field, then the next
@@ -123,7 +140,7 @@ if (__DEV__) {
 // ?seed=N is an entered seed: one level, no store, R restarts it.
 const devRun = params.has('seed') || (__DEV__ && params.has('store'));
 
-type Mode = 'title' | 'run' | 'shop' | 'summary' | 'select';
+type Mode = 'title' | 'run' | 'summary' | 'select';
 let mode: Mode = 'title';
 let cfg: RunConfig = devConfig(seed);
 let retreated = false;
@@ -132,6 +149,7 @@ let screen: Screen = { kind: 'title' };
 let frameTick = 0;
 const barks = new Barks();
 const cast = new RoadCast();
+if (__DEV__ && params.has('variant')) cast.forced = Number(params.get('variant')) || 0; // dev aid: ?variant=N plays a scene's N-th alternate (0 the first-time script)
 
 /** What a run is told about itself: its seed, and the chapter the barks speak in. The chapter follows the biome the road is in. */
 interface RunConfig {
@@ -151,18 +169,21 @@ interface Route {
   store: boolean;
   /** What the party carries into the sim being played (none for the first level). */
   carry: Carry | undefined;
+  /** The side quest the party took in the camp for the level being played (docs/15-quests.md). */
+  quest?: QuestDef;
 }
 let route: Route = { index: 0, total: 1, plan: levelPlan(seed, 0, 1), store: false, carry: undefined };
 
-// The peddler's counter: a shared purse, and each hero choosing for themselves at the same time. First to the counter gets the last one.
-let shopReady: boolean[] = [];
-let shopPrevBtn: number[] = [];
+// The peddler's goods lie on the ground: a shared purse, and any hero beside one buys it with the trade button. First there gets the last one.
 let storePrevBtn: number[] = new Array(MAX_PLAYERS).fill(0);
 let shopStock: StockItem[] = [];
 let shopSold: boolean[] = [];
-let shopCursor: number[] = [];
-let shopPrevY: number[] = [];
-let shopNote = '';
+let shopNote: { ware: number; text: string } | undefined;
+// The people in the camp with a favour to ask: the party takes one (or none) for the next level, with the same trade button.
+let questList: QuestDef[] = [];
+let questTaken = -1;
+let questNote: { offer: number; text: string } | undefined;
+let questNoteUntil = 0;
 let shopNoteUntil = 0;
 /** Off-ledger dev runs are one level unless ?levels=N asks for a route. */
 function routeTotal(): number {
@@ -229,9 +250,18 @@ function roadSceneOf(plan: LevelPlan): { id: string; t: number } | undefined {
   return sc ? { id: sc.id, t: roadSceneT(plan.seed) } : undefined;
 }
 
-function newSim(plan: LevelPlan, store = false): ReturnType<typeof createSim> {
+/** `cam0`: where the new sim's camera starts. A field's camera normally starts at 0, but one carried on from the field before starts
+ * as far behind that as the last camera stopped short of its far end, so the road (and every hash of the scenery) runs on without a jump. */
+/** Dev aid: ?quest=escort|bounty|cull|rescue|flawless|swift puts that quest on every level, without going through the camp (&giver=0-4, &reward=purse|lesson|relic|fortune). */
+function devQuest(plan: LevelPlan): QuestDef | undefined {
+  if (!__DEV__ || !params.has('quest')) return undefined;
+  return makeQuest(Number(params.get('giver') ?? 0) || 0, params.get('quest') as MissionKind, (params.get('reward') ?? 'purse') as RewardKind, { level: route.index, boss: plan.boss, biome: plan.biome });
+}
+
+function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof createSim> {
   const nextBiome = store ? levelPlan(cfg.seed, Math.min(route.index + 1, route.total - 1), route.total).biome : undefined;
   const sd = plan.seed;
+  setSceneryRoute(!store && route.index + 1 < route.total ? levelPlan(cfg.seed, route.index + 1, route.total).biome : -1, route.index);
   setWeatherRoute(weatherSpan(cfg.seed, route.index, route.total), weatherSpan(cfg.seed, Math.min(route.index + 1, route.total - 1), route.total));
   const s = createSim(sd, route.index === 0 && !store ? cfg.reservedBeat : undefined, {
     surrender: plan.chapter >= 2 || (__DEV__ && params.get('surrender') === '1'),
@@ -239,10 +269,15 @@ function newSim(plan: LevelPlan, store = false): ReturnType<typeof createSim> {
     boss: plan.boss,
     scale: plan.scale,
     heat: runHeat,
+    damage: plan.damage,
+    mix: plan.mix,
+    quest: store ? undefined : route.quest ?? devQuest(plan),
     store,
     nextBiome,
+    onward: store || route.index + 1 < route.total,
     scene: store ? undefined : roadSceneOf(plan),
   });
+  s.camX = s.prevCamX = s.trigCamX = cam0;
   if (route.carry) { applyCarry(s, route.carry); arriveAt(s, route.carry); }
   for (let k = 0; k < picks.length && !route.carry; k++) {
     if (!picks[k].joined) continue;
@@ -251,7 +286,7 @@ function newSim(plan: LevelPlan, store = false): ReturnType<typeof createSim> {
     else activatePlayer(s, k, 60, 40 + k * 40);
   }
   // Dev aid: bot-controlled slots each take a different class (the warrior stays in slot 1; the seed picks which others), so a bot party shows several.
-  if (!route.carry) for (const k of botSlots) s.players[k].classId = classForBotSlot(k, sd);
+  if (!route.carry) botSlots.forEach((k, n) => { s.players[k].classId = botClasses[n] >= 0 && botClasses[n] !== undefined ? botClasses[n] : classForBotSlot(k, sd); });
   // Dev aid: ?boons=spark:2,lust gives every hero those boons (id[:rank]) and ?pending=N waits N level-ups, to see the HUD strip and the level-up panel in a run.
   if (__DEV__ && !route.carry) {
     for (const part of (params.get('boons') ?? '').split(',').filter(Boolean)) {
@@ -270,6 +305,12 @@ function newSim(plan: LevelPlan, store = false): ReturnType<typeof createSim> {
     s.ents.x[pe] = s.ents.px[pe] = WORLD_W - 760;
     s.ents.y[pe] = s.ents.py[pe] = 100;
   }
+  // Dev aid: ?goto=scene walks the party up to the level's road scene.
+  if (__DEV__ && params.get('goto') === 'scene' && !store && s.sceneIndex >= 0) {
+    const pe = s.players[0].ent, sx = s.plan[s.sceneIndex].x;
+    s.camX = s.prevCamX = Math.max(0, sx - 320 - 120);
+    s.ents.x[pe] = s.ents.px[pe] = sx - 140; s.ents.y[pe] = s.ents.py[pe] = 110;
+  }
   // Dev aid: ?goto=chest|curse|charge|greed|mercy|elite walks the party up to the first such thing on the field (?gold=N fills the purse).
   if (__DEV__ && params.has('goto') && !store) {
     const want = params.get('goto');
@@ -285,6 +326,13 @@ function newSim(plan: LevelPlan, store = false): ReturnType<typeof createSim> {
       e.x[pe] = e.px[pe] = e.x[at] - 60; e.y[pe] = e.py[pe] = e.y[at];
     }
   }
+  // Dev aid: ?goto=end walks the party to a screen and a half before the end of the field (with ?calm=1, nothing is in the way): the biome turn and the store.
+  if (__DEV__ && params.get('goto') === 'end' && !store) {
+    const pe = s.players[0].ent;
+    s.camX = s.prevCamX = WORLD_W - VIEW_W - 700;
+    s.ents.x[pe] = s.ents.px[pe] = s.camX + 300; s.ents.y[pe] = s.ents.py[pe] = 100;
+    s.nextClump = s.plan.length; s.gateIdx = s.gates.length;
+  }
   if (__DEV__ && params.has('calm') && !store) { s.spawnTimer = s.flankTimer = 1e9; s.nextClump = s.plan.length; } // dev aid: ?calm=1 leaves the field empty so a chest or a panel can be looked at in peace
   if (__DEV__ && params.has('gold')) s.gold = Number(params.get('gold')) || 0;
   return s;
@@ -292,8 +340,8 @@ function newSim(plan: LevelPlan, store = false): ReturnType<typeof createSim> {
 let sim = newSim(route.plan);
 
 const stats = new FrameStats();
-/** After a level is won, its horde gets this long (at least, at most) to walk off before the store takes over. */
-const WIND_DOWN_MIN = 24;
+/** After a level is won the party keeps walking and the horde gets this long (at least, at most) to leave before the store takes over: the least lets the camera settle at the end of the field. */
+const WIND_DOWN_MIN = 12;
 const WIND_DOWN_MAX = 180;
 
 function startRun(c: RunConfig, keepSlots = false): void {
@@ -340,22 +388,27 @@ function enterStore(): void {
   const levelCam = sim.camX;
   route.carry = restCarry(captureCarry(sim)); // everyone is on their feet, at full health
   route.store = true;
-  sim = newSim(route.plan, true);
+  sim = newSim(route.plan, true, Math.min(0, levelCam - LEVEL_CAM_END));
   shopStock = stockFor(cfg.seed, route.index);
   shopSold = shopStock.map(() => false);
-  beginSim(undefined, -levelCam); // the corpses and arrows on the ground stay where they lay, on screen
+  questList = offersAfter(cfg.seed, route.index, route.total);
+  questTaken = -1;
+  questNote = undefined;
+  route.quest = undefined;
+  beginSim(undefined, sim.camX - levelCam); // the corpses and arrows on the ground stay where they lay, on screen
 }
 
 /** Out of the store and on to the next level, with the party as the store left it. */
 function enterNextLevel(): void {
   const storeCam = sim.camX;
   route.carry = captureCarry(sim);
+  route.quest = questTaken >= 0 ? questList[questTaken] : undefined; // the quest the party took plays on the level they are walking into
   route.index++;
   route.plan = levelPlan(cfg.seed, route.index, route.total);
   route.store = false;
   cfg = { ...cfg, chapter: route.plan.chapter };
-  sim = newSim(route.plan);
-  beginSim(undefined, -storeCam);
+  sim = newSim(route.plan, false, Math.min(0, storeCam - STORE_CAM_END));
+  beginSim(undefined, sim.camX - storeCam);
 }
 
 /** Nothing of the horde is left on the field. */
@@ -365,52 +418,66 @@ function fieldEmpty(): boolean {
   return true;
 }
 
-/** Is hero `k` standing close enough to the peddler to trade? */
-function nearPeddler(k: number): boolean {
+/** The ware lying beside hero `k` (nearest first), or -1 if they are not standing by one. */
+function nearWare(k: number): number {
   const p = sim.players[k];
-  if (!p.active || p.downed) return false;
-  return Math.abs(sim.ents.x[p.ent] - STORE_X) < STORE_REACH_X && Math.abs(sim.ents.y[p.ent] - STORE_Y) < STORE_REACH_Y;
+  if (!p.active || p.downed) return -1;
+  let best = -1, bestD = Infinity;
+  shopStock.forEach((_, i) => {
+    const sp = wareSpot(i, shopStock.length);
+    const dx = Math.abs(sim.ents.x[p.ent] - sp.x), dy = Math.abs(sim.ents.y[p.ent] - sp.y);
+    if (dx < WARE_REACH_X && dy < WARE_REACH_Y && dx < bestD) { best = i; bestD = dx; }
+  });
+  return best;
 }
 
-function openShop(): void {
-  shopCursor = new Array(MAX_PLAYERS).fill(0);
-  shopPrevY = new Array(MAX_PLAYERS).fill(0);
-  shopNote = '';
-  shopReady = new Array(MAX_PLAYERS).fill(false);
-  for (const k of botSlots) shopReady[k] = true;
-  shopPrevBtn = input.sample().map((f) => f.buttons);
-  screen = shopScreen(sim, shopStock, shopSold, shopCursor, shopReady, route.plan.chapter, shopNote);
-  mode = 'shop';
+/** Hero `k` pressed the trade button beside ware `i`: they buy it if the purse covers it. */
+function tryBuy(k: number, i: number): void {
+  if (shopSold[i]) return;
+  const ware = WARES[shopStock[i].ware];
+  const res = buy(sim, k, ware, shopStock[i].price);
+  if (res === 'ok') { shopSold[i] = true; shopNote = { ware: i, text: `P${k + 1} BOUGHT` }; }
+  else shopNote = { ware: i, text: res === 'broke' ? 'NOT ENOUGH GOLD' : `P${k + 1} HAS THE MOST` };
+  shopNoteUntil = frameTick + 120;
 }
 
-function shopUpdate(): void {
-  const frames = input.sample();
-  for (let k = 0; k < MAX_PLAYERS; k++) {
-    const f = frames[k];
-    const edge = f.buttons & ~shopPrevBtn[k];
-    shopPrevBtn[k] = f.buttons;
-    const y = f.moveY > 60 ? 1 : f.moveY < -60 ? -1 : 0;
-    const dy = y !== shopPrevY[k] ? y : 0;
-    shopPrevY[k] = y;
-    if (!sim.players[k].active || shopReady[k]) continue;
-    if (dy !== 0) shopCursor[k] = (shopCursor[k] + dy + shopStock.length) % shopStock.length;
-    if (edge & (Btn.Attack | Btn.Confirm)) {
-      const i = shopCursor[k];
-      if (shopSold[i]) continue;
-      const res = buy(sim, k, WARES[shopStock[i].ware], shopStock[i].price);
-      if (res === 'ok') { shopSold[i] = true; shopNote = `P${k + 1} BOUGHT ${WARES[shopStock[i].ware].name}`; }
-      else shopNote = res === 'broke' ? `NOT ENOUGH GOLD FOR ${WARES[shopStock[i].ware].name}` : `P${k + 1} CANNOT TAKE ANY MORE OF THAT`;
-      shopNoteUntil = frameTick + 150;
-    }
-    if (edge & (Btn.Level | Btn.Interact)) shopReady[k] = true; // done: the Level button, or B
-  }
-  if (frameTick > shopNoteUntil) shopNote = '';
-  screen = shopScreen(sim, shopStock, shopSold, shopCursor, shopReady, route.plan.chapter, shopNote);
-  if (sim.players.every((p, k) => !p.active || shopReady[k])) {
-    mode = 'run'; // back to the counter's side of the field, nothing having moved
-    storePrevBtn = frames.map((f) => f.buttons);
-    input.consumeMenu();
-  }
+/** The quest-giver beside hero `k`, or -1. */
+function nearQuest(k: number): number {
+  const p = sim.players[k];
+  if (!p.active || p.downed) return -1;
+  return offerNear(questList, sim.ents.x[p.ent], sim.ents.y[p.ent]);
+}
+
+/** Hero `k` pressed the trade button beside giver `i`: the party takes their quest, or gives it back if it was already the one taken. */
+function tryQuest(k: number, i: number): void {
+  questTaken = questTaken === i ? -1 : i;
+  questNote = { offer: i, text: questTaken === i ? `P${k + 1} ACCEPTED` : 'GIVEN BACK' };
+  questNoteUntil = frameTick + 120;
+}
+
+/** The people with a favour to ask, as the renderer shows them. */
+function questView(): QuestView {
+  return {
+    offers: questList.map((def, i) => ({ ...questSpot(i), def })),
+    near: sim.players.map((_, k) => nearQuest(k)),
+    taken: questTaken,
+    note: questNote,
+  };
+}
+
+/** The goods on the ground as the renderer shows them. */
+function storeView(): StoreView {
+  return {
+    wares: shopStock.map((it, i) => {
+      const def = WARES[it.ware];
+      return {
+        ...wareSpot(i, shopStock.length), icon: def.icon, name: def.name, blurb: def.blurb, price: it.price, sold: shopSold[i], afford: sim.gold >= it.price,
+        standing: sim.players.map((p) => wareStanding(def, p)),
+      };
+    }),
+    near: sim.players.map((_, k) => nearWare(k)),
+    note: shopNote,
+  };
 }
 
 function menuUpdate(): void {
@@ -428,7 +495,7 @@ if (devRun) {
   // Dev aid: ?beat=R1 stages a story beat in an entered-seed run, to look at it without playing the campaign up to it.
   if (__DEV__ && params.has('beat')) c.reservedBeat = { id: params.get('beat')! };
   startRun(c);
-  // Dev aid: ?store=1 (or =shop to have the counter open) goes straight to the store after a won level, to work on it without playing the level.
+  // Dev aid: ?store=1 goes straight to the store after a won level, to work on it without playing the level.
   //   &players=N (1-4)  &gold=N  &pending=N (level-ups waiting per hero)  &level=N (their level)  &kills=N  &at=N (the route level, 0-based)
   if (__DEV__ && params.has('store')) {
     const want = Math.max(1, Math.min(MAX_PLAYERS, Number(params.get('players') ?? 1) || 1));
@@ -442,7 +509,6 @@ if (devRun) {
     sim.gold = Math.max(0, Number(params.get('gold') ?? 200) || 0);
     sim.kills = Math.max(0, Number(params.get('kills') ?? 320) || 0);
     enterStore();
-    if (params.get('store') === 'shop') openShop();
   }
 } else { mode = 'title'; screen = { kind: 'title' }; }
 
@@ -455,7 +521,6 @@ startLoop({
   update() {
     frameTick++;
     if (mode === 'select') { selectUpdate(); return; }
-    if (mode === 'shop') { shopUpdate(); return; }
     if (mode !== 'run') { menuUpdate(); return; }
     if (input.restartRequested) {
       if (devRun) { restart(); return; }
@@ -465,20 +530,25 @@ startLoop({
     }
     const frames = input.sample();
     for (const k of botSlots) {
-      botInput(sim, k, frames[k]);
+      if (pilotSkill) pilotFor(k).drive(sim, frames[k], route.store ? { stock: shopStock, sold: shopSold, allDone: [...pilots.values()].every((q) => q.storeDone && sim.players[q.slot].pending === 0) } : undefined);
+      else botInput(sim, k, frames[k]);
       if (k > 0 && sim.tick === 3) frames[k].buttons |= Btn.Join;
     }
     sim.players.forEach((p, k) => { panelBefore[k] = p.panel; });
     step(sim, frames);
-    // The peddler: the trade button, pressed beside him, opens his counter.
+    // The goods on the ground: the trade button, pressed beside one, buys it.
     if (route.store && sim.phase === Phase.Playing) {
-      let trade = false;
       for (let k = 0; k < MAX_PLAYERS; k++) {
         const edge = frames[k].buttons & ~storePrevBtn[k];
         storePrevBtn[k] = frames[k].buttons;
-        if ((edge & Btn.Interact) && !panelBefore[k] && nearPeddler(k)) trade = true;
+        if (!(edge & Btn.Interact) || panelBefore[k]) continue;
+        const q = nearQuest(k);
+        if (q >= 0) { tryQuest(k, q); continue; }
+        const i = nearWare(k);
+        if (i >= 0) tryBuy(k, i);
       }
-      if (trade) { openShop(); return; }
+      if (frameTick > shopNoteUntil) shopNote = undefined;
+      if (frameTick > questNoteUntil) questNote = undefined;
     }
     if (sim.phase === Phase.Playing) return;
     if (devRun && route.total === 1) return; // an entered seed: the banner stays until R
@@ -506,29 +576,29 @@ startLoop({
     lastPhase = sim.phase;
     const fighting = mode === 'run' && !route.store && sim.phase === Phase.Playing;
     const danger = fighting ? dangerOf(sim, sim.camX) : { danger: 0, boss: false };
-    audio.updateMusic(rawDt, { biome: mode === 'run' || mode === 'shop' ? sim.biome : 0, ...danger });
-    if (mode !== 'run' && mode !== 'shop') {
+    // The music turns to the next biome's key at the peddler, halfway through the store's turn of the scenery, and not when the next level
+    // begins, so nothing (seen or heard) changes at the cut between one field and the next.
+    const musicBiome = route.store && sim.nextBiome >= 0 && sim.camX + VIEW_W / 2 >= STORE_X ? sim.nextBiome : sim.biome;
+    audio.updateMusic(rawDt, { biome: mode === 'run' ? musicBiome : 0, ...danger });
+    if (mode !== 'run') {
       renderer.begin();
       titleToggles.sound = audio.soundOn; titleToggles.music = audio.musicOn;
       drawScreen(renderer.batcher, sprites, screen, frameTick + alpha);
       renderer.end();
       return;
     }
-    const counter = mode === 'shop'; // the counter is open over the store: the field behind it holds still
-    if (!counter) {
-      input.consumeHaptics(sim.events);
-      audio.consume(sim.events, sim.camX);
-      fx.camX = sim.camX;
-      fx.consume(sim.events);
-      fx.update(dt * 60);
-      barks.update(sim, cfg.chapter);
-      cast.update(sim);
-    }
+    input.consumeHaptics(sim.events);
+    audio.consume(sim.events, sim.camX);
+    fx.camX = sim.camX;
+    fx.consume(sim.events);
+    fx.update(dt * 60);
+    barks.update(sim, cfg.chapter);
+    cast.update(sim);
     const cam = lerp(sim.prevCamX, sim.camX, alpha);
     const routed = !devRun || route.total > 1;
     const lastLevel = !route.store && route.index === route.total - 1;
     renderer.begin();
-    drawFrame(renderer.batcher, sprites, sim, fx, cam, counter ? 1 : alpha, {
+    drawFrame(renderer.batcher, sprites, sim, fx, cam, alpha, {
       stats,
       simLag: stats.simLagging(performance.now()),
       drawCalls: renderer.batcher.lastDrawCalls,
@@ -538,11 +608,13 @@ startLoop({
       // a level won on the road is not a stopping point: the banner is only for the end of the road and for a party that is down
       hideEndBanner: routed && sim.phase === Phase.Won && !lastLevel,
       levelKeys: sim.players.map((_, k) => input.levelHint(k)),
-      storeHints: route.store ? sim.players.map((_, k) => (nearPeddler(k) ? input.interactHint(k) : '')) : undefined,
+      storeHints: route.store ? sim.players.map((_, k) => (nearWare(k) >= 0 || nearQuest(k) >= 0 ? input.interactHint(k) : '')) : undefined,
+      questView: route.store ? questView() : undefined,
+      storeView: route.store ? storeView() : undefined,
       routeLabel: route.total > 1 ? (route.store ? `STORE  LEVEL ${route.index + 1} OF ${route.total}` : `LEVEL ${route.index + 1} OF ${route.total}`) : undefined,
     });
-    if (!counter) { cast.drawBubbles(renderer.batcher, sprites, sim, cam, alpha); if (!cast.hearing()) barks.draw(renderer.batcher, sprites, sim, cam, alpha); }
-    if (counter) drawScreen(renderer.batcher, sprites, screen, frameTick + alpha, true);
+    cast.drawBubbles(renderer.batcher, sprites, sim, cam, alpha);
+    if (!cast.hearing()) barks.draw(renderer.batcher, sprites, sim, cam, alpha);
     renderer.end();
   },
 });

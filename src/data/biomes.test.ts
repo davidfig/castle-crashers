@@ -1,36 +1,39 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ALL_SCENERY, BIOMES, DESTINATION_LAYER, makeBlendedMood, moodAt, pickBiome } from './biomes';
+import { ALL_SCENERY, BIOMES, blendMoods, DAY_LEVELS, DESTINATION_LAYER, dayPhase, makeBlendedMood, moodAt, pickBiome, TRANSITION_FROM, transitionAt } from './biomes';
 
-test('mood: first keyframe before the start, last after the end, blended in between', () => {
-  const biome = BIOMES[0];
-  const first = biome.timeline[0], last = biome.timeline[biome.timeline.length - 1];
+test('mood: every biome is bright by day, dark and starry by night, and passes through in between', () => {
   const m = makeBlendedMood();
-  moodAt(biome, 0, m);
-  assert.deepEqual(m.sky, [...first.sky]);
-  assert.equal(m.tint, first.tint);
-  moodAt(biome, 1, m);
-  assert.deepEqual(m.sky, [...last.sky]);
-  assert.equal(m.tint, last.tint);
-  assert.equal(m.stars, last.stars);
-  assert.equal(m.moonY, last.moonY);
-  const mid = (biome.timeline[2].at + biome.timeline[3].at) / 2;
-  moodAt(biome, mid, m);
-  assert.notDeepEqual(m.sky, [...biome.timeline[2].sky]);
-  assert.notDeepEqual(m.sky, [...last.sky]);
+  for (const biome of ALL_SCENERY) {
+    moodAt(biome, 0.28, m);
+    assert.deepEqual(m.sky, [...biome.palette.day.sky], biome.name);
+    assert.equal(m.stars, biome.palette.day.stars);
+    moodAt(biome, 0.8, m);
+    assert.deepEqual(m.sky, [...biome.palette.night.sky], biome.name);
+    assert.equal(m.stars, biome.palette.night.stars);
+    moodAt(biome, 0.47, m);
+    assert.notDeepEqual(m.sky, [...biome.palette.day.sky]);
+    assert.notDeepEqual(m.sky, [...biome.palette.dusk.sky]);
+  }
 });
 
 test('pickBiome is a pure function of the seed', () => {
   for (let s = 0; s < 50; s++) assert.equal(pickBiome(s), pickBiome(s));
 });
 
-test('the sun sets and the moon rises over the level', () => {
-  const m = makeBlendedMood();
-  moodAt(BIOMES[0], 0, m);
-  const sun0 = m.sunY, moon0 = m.moonY;
-  moodAt(BIOMES[0], 1, m);
-  assert.ok(m.sunY > sun0);
-  assert.ok(m.moonY < moon0);
+test('the sun sets and the moon rises on the clock, the same in every biome, and the day runs on across levels', () => {
+  const m = makeBlendedMood(), o = makeBlendedMood();
+  moodAt(BIOMES[0], 0.28, m);
+  assert.ok(m.sunY < 50 && m.moonY > 136);
+  moodAt(BIOMES[0], 0.52, m);
+  assert.ok(m.sunY > 90 && m.sunY < 136, 'the sun is low');
+  assert.ok(m.moonY > 100, 'the moon is just coming up');
+  moodAt(BIOMES[0], 0.78, m);
+  assert.ok(m.sunY > 136 && m.moonY < 50);
+  moodAt(BIOMES[0], 0.4, m); moodAt(BIOMES[3], 0.4, o);
+  assert.equal(m.sunY, o.sunY); assert.equal(m.moonY, o.moonY);
+  assert.ok(Math.abs(dayPhase(DAY_LEVELS) - dayPhase(0)) < 1e-9);
+  assert.notEqual(dayPhase(0), dayPhase(1));
 });
 
 test('every parallax layer names a sprite the art builds', () => {
@@ -52,9 +55,30 @@ test('every biome names ground tiles and decor sprites the art builds', () => {
   }
 });
 
-test('every biome has a sorted timeline and a destination that exists', () => {
+test('every biome has all four looks with the same number of sky bands', () => {
   for (const biome of ALL_SCENERY) {
-    for (let i = 1; i < biome.timeline.length; i++) assert.ok(biome.timeline[i].at > biome.timeline[i - 1].at, biome.name);
-    assert.equal(biome.timeline[0].sky.length, biome.timeline[biome.timeline.length - 1].sky.length);
+    const p = biome.palette;
+    for (const look of [p.dawn, p.dusk, p.night]) assert.equal(look.sky.length, p.day.sky.length, biome.name);
+  }
+});
+
+test('the turn to the next biome starts late in a level, eases in, and is complete at the end', () => {
+  assert.equal(transitionAt(0), 0);
+  assert.equal(transitionAt(TRANSITION_FROM), 0);
+  assert.equal(transitionAt(1), 1);
+  let prev = 0;
+  for (let p = TRANSITION_FROM; p <= 1; p += 0.02) { const t = transitionAt(p); assert.ok(t >= prev); prev = t; }
+});
+
+test('blending moods lands on each end, even with different band counts', () => {
+  const a = makeBlendedMood(), b = makeBlendedMood(), out = makeBlendedMood();
+  for (const from of BIOMES) for (const to of BIOMES) {
+    moodAt(from, 1, a); moodAt(to, 0, b);
+    blendMoods(a, b, 0, out);
+    assert.deepEqual(out.sky, a.sky); assert.equal(out.tint, a.tint);
+    blendMoods(a, b, 1, out);
+    assert.equal(out.sky.length, a.sky.length);
+    assert.equal(out.sky[0], b.sky[0]); assert.equal(out.sky[out.sky.length - 1], b.sky[b.sky.length - 1]);
+    assert.equal(out.tint, b.tint);
   }
 });

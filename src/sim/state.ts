@@ -9,6 +9,8 @@ import { UPGRADES } from '../data/upgrades';
 import { biomeIndex } from '../data/roster';
 import { HEAT_MAX, heatHorde } from '../data/heat';
 import { placeSites } from './sites';
+import type { QuestDef } from '../data/quests';
+import { createQuestRun, placeQuest, type QuestRun } from './quests';
 import { planGates, planLevel, type ClumpPlan, type Gate, type SimBeat, type SimScene } from './gen/level';
 
 export const BLAST_CAP = 64;
@@ -33,6 +35,9 @@ export interface PlayerState {
   dashT: number;
   /** Non-zero while the rogue is hidden: unseen and untargetable until he strikes, is hurt, or a mob runs into him. */
   vanishT: number;
+  /** Where the rogue was when he slipped into hiding: mobs that did not see him go keep hunting this spot. */
+  vanishX: number;
+  vanishY: number;
   /** Ticks until a revealed rogue can slip back into hiding. */
   revealT: number;
   /** The cleric's holy aura is switched on: it pulses on its own and drains stamina. */
@@ -148,6 +153,8 @@ export interface GameState {
   surrender: boolean;
   /** This is the store between two levels: no enemies, no director, won by walking on to the far end. */
   store: boolean;
+  /** The road goes on after this field (another level or the store follows): winning it does not stop the party, who keep walking while what is left of the horde leaves. */
+  onward: boolean;
   /** The biome on the far side of the store (-1 outside one). */
   nextBiome: number;
   /** How long the field is, and the x at which a hero has reached its end (a level is won there; the store is left there). */
@@ -159,10 +166,15 @@ export interface GameState {
   surrenders: number;
   betrayed: number;
   spared: Int32Array;
+  /** The side quest the party took in the camp for this level (sim/quests.ts), or none. */
+  quest: QuestRun | null;
   /** Shared gold (docs/05: gold is shared). */
   gold: number;
   /** The difficulty the party chose (data/heat.ts, 0 = none), chests opened this run, and chests in a row that gave no boon (the pity timer). */
   heat: number;
+  /** Depth multiplier on damage dealt to heroes (from the route; constant over a level). */
+  damageMul: number;
+  mix: readonly [number, number];
   chestsOpened: number;
   chestMiss: number;
   /** Live coin pickups on the field (capped). */
@@ -198,7 +210,7 @@ export interface GameState {
 function createPlayer(): PlayerState {
   return {
     active: false, ent: -1, classId: 0, downed: false, downTimer: 0, invuln: 0,
-    dashT: 0, vanishT: 0, revealT: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
+    dashT: 0, vanishT: 0, vanishX: 0, vanishY: 0, revealT: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
     bufAbility1: 0, bufDodge: 0, prevButtons: 0, faceX: 1, faceY: 0, kills: 0, coins: 0,
     fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, cursor: 0, stickPrev: 0, ranks: new Uint8Array(UPGRADES.length), boonCd: new Uint16Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
     rootT: 0, dashChain: 0, chainT: 0, echoLeft: 0, echoT: 0, echoBig: false, silenceT: 0, confuseT: 0, poisonT: 0, burning: false, hexT: 0, witherT: 0, pullT: 0, pullX: 0, pullY: 0,
@@ -228,10 +240,18 @@ export interface SimOptions {
   store?: boolean;
   /** The biome the store leads into (its scenery takes over past the peddler). */
   nextBiome?: number;
+  /** Another field follows this one (see `GameState.onward`). */
+  onward?: boolean;
   /** A road scene to leave a clearing for (see `SimScene`). */
   scene?: SimScene;
   /** The party's chosen difficulty (data/heat.ts). */
   heat?: number;
+  /** Multiplier on the damage mobs deal this level (the road ramps up; 1 = as authored). */
+  damage?: number;
+  /** The side quest the party took for this level (data/quests.ts). */
+  quest?: QuestDef;
+  /** The slice (of 0..1) of the biome's cast this level draws its enemies from: later levels of a biome open where the last one ended. */
+  mix?: readonly [number, number];
 }
 
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
@@ -261,6 +281,7 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     beatPlayedTick: -1,
     surrender: opts.surrender === true && !store,
     store,
+    onward: opts.onward === true,
     nextBiome: store ? (opts.nextBiome ?? biomeIndex(seed)) : -1,
     worldW: store ? STORE_W : WORLD_W,
     exitX: store ? STORE_EXIT_X : WORLD_W - 70,
@@ -268,8 +289,11 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     surrenders: 0,
     betrayed: 0,
     spared: new Int32Array(MOBS.length),
+    quest: opts.quest && !store ? createQuestRun(opts.quest) : null,
     gold: 0,
     heat,
+    damageMul: opts.damage ?? 1,
+    mix: opts.mix ?? [0, 1],
     chestsOpened: 0,
     chestMiss: 0,
     coinCount: 0,
@@ -293,5 +317,6 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
   };
   activatePlayer(s, 0, 80, 100);
   if (!store) placeSites(s, opts.boss !== false);
+  if (s.quest) placeQuest(s);
   return s;
 }
