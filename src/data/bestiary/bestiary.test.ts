@@ -1,6 +1,7 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Behavior, CLASSIC_MOBS, MOBS, MobType, isBossType, type Special } from '../mobs';
+import { ELEMENTS } from '../elements';
 import { ROSTERS } from '../roster';
 import { activeBestiary, ensureBestiary, generateBestiary, installBestiary } from './index';
 
@@ -116,4 +117,88 @@ test('installing swaps the sim\'s roster, and restoring brings the hand-made one
   assert.equal(ensureBestiary(99), b, 'the same seed is not rebuilt');
   installBestiary(null);
   assert.equal(MOBS[MobType.Goblin].name, 'goblin');
+});
+
+// ---- elements and skills
+
+import { ELEMENT_COUNT } from '../elements';
+
+function allSpecials(seed: number): { kind: string; sp: Special; boss: boolean; el: number }[] {
+  const b = generateBestiary(seed);
+  const out: { kind: string; sp: Special; boss: boolean; el: number }[] = [];
+  b.defs.forEach((d) => {
+    if (d.special) out.push({ kind: d.special.kind, sp: d.special, boss: false, el: d.special.element ?? 0 });
+    for (const m of d.boss?.moves ?? []) if (m.kind === 'special') out.push({ kind: m.special.kind, sp: m.special, boss: true, el: m.special.element ?? 0 });
+  });
+  return out;
+}
+
+test('every element and every delivery turns up across the casts, in all their variations', () => {
+  const elements = new Set<number>(), kinds = new Set<string>(), patterns = new Set<number>(), shapes = new Set<number>();
+  let residue = 0, pierce = 0, splash = 0, homing = 0, shotEls = 0, hitEls = 0, auraEls = 0, deathEls = 0;
+  for (const seed of SEEDS) {
+    for (const { kind, sp, el } of allSpecials(seed)) {
+      kinds.add(kind);
+      if (el) elements.add(el);
+      const s = sp as { pattern?: number; residue?: unknown; pierce?: boolean; splash?: number; homing?: boolean; shape?: number };
+      if (s.pattern) patterns.add(s.pattern);
+      if (s.shape) shapes.add(s.shape);
+      if (s.residue) residue++;
+      if (s.pierce) pierce++;
+      if (s.splash) splash++;
+      if (s.homing) homing++;
+    }
+    for (const d of generateBestiary(seed).defs) {
+      if (d.shot?.element) shotEls++;
+      if (d.onHit) hitEls++;
+      if (d.elemAura) auraEls++;
+      if (d.onDeath?.element) deathEls++;
+    }
+  }
+  assert.equal(elements.size, ELEMENT_COUNT - 1, `all ten elements appear (saw ${[...elements]})`);
+  for (const k of ['lob', 'trap', 'storm', 'pit', 'bolt', 'ring', 'cone', 'totem', 'nova', 'beam', 'leap', 'gust', 'summon', 'heal']) assert.ok(kinds.has(k), `${k} appears`);
+  assert.ok(patterns.size >= 6, `the patterns are all used (${[...patterns]})`);
+  assert.ok(shapes.size >= 4, 'every projectile shape is used');
+  for (const [n, what] of [[residue, 'residue'], [pierce, 'pierce'], [splash, 'splash'], [homing, 'homing'], [shotEls, 'element shots'], [hitEls, 'element hits'], [auraEls, 'element auras'], [deathEls, 'element deaths']] as const) assert.ok(n > 5, `${what} are handed out (${n})`);
+});
+
+test('the new skills have sensible numbers, and an element only rides on a skill that can carry it', () => {
+  for (const seed of SEEDS) {
+    for (const { sp, boss } of allSpecials(seed)) {
+      const tag = `${sp.kind} (seed ${seed})`;
+      assert.ok(sp.windup > 0, tag);
+      if (sp.element !== undefined) assert.ok(sp.element >= 1 && sp.element < ELEMENT_COUNT && (sp.power ?? 1) > 0.3 && (sp.power ?? 1) < 3, `${tag}: element and power`);
+      if (sp.kind === 'bolt') assert.ok(sp.count >= 1 && sp.count <= 6 && sp.speed > 0.8 && sp.damage > 0 && sp.shape >= 7, tag);
+      if (sp.kind === 'ring') assert.ok(sp.count >= 6 && sp.count <= 18 && sp.speed > 0.8 && sp.maxRange > 60, tag);
+      if (sp.kind === 'cone') assert.ok(sp.arc > 0.03 && sp.arc < 0.25 && sp.range >= 50 && sp.maxRange >= sp.range * 0.9, tag);
+      if (sp.kind === 'totem') assert.ok(sp.lifetime > sp.interval * 3 && sp.interval >= 40 && sp.range > 100 && sp.cap >= 1, tag);
+      if (sp.kind === 'lob' || sp.kind === 'storm' || sp.kind === 'pit' || sp.kind === 'trap') {
+        const n = sp.count ?? 1;
+        if (n > 1 && sp.pattern) assert.ok(sp.spread !== undefined, `${tag}: a pattern has a spread`);
+        if (n > 1) assert.ok(n <= (boss ? 6 : 5), `${tag}: count ${n}`);
+      }
+      if (sp.kind === 'lob' && sp.residue) assert.ok(sp.element, `${tag}: only an element leaves a pool`);
+    }
+  }
+});
+
+test('a monster\'s powers read as a set: most of its elemental powers are made of the element it leans on', () => {
+  let match = 0, total = 0, plain = 0, withEl = 0;
+  for (const seed of SEEDS) {
+    const b = generateBestiary(seed);
+    b.defs.forEach((d, t) => {
+      if (d.behavior === Behavior.Boss) return;
+      const lean = b.elements[t][0];
+      if (!lean) { plain++; return; }
+      withEl++;
+      for (const id of b.traits[t]) {
+        const el = ELEMENTS.find((e) => e.id > 0 && id.endsWith(`:${e.name}`));
+        if (!el) continue;
+        total++;
+        if (el.id === lean || el.id === b.elements[t][1]) match++;
+      }
+    });
+  }
+  assert.ok(withEl > plain, 'most monsters lean on an element');
+  assert.ok(match / total > 0.7, `${match}/${total} elemental powers match the monster's elements`);
 });

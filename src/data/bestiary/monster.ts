@@ -1,20 +1,23 @@
-// Builds one ordinary generated monster for a slot: stats from the slot's budget and the dice, then a few traits (powers) dressed on,
-// then a picture recipe. See plan.ts for what a slot means and traits.ts for the powers.
+// Builds one ordinary generated monster for a slot: stats from the slot's budget and the dice, then an element it leans on and a few powers
+// (traits) dressed on, most of them made of that element, then a picture recipe. See plan.ts for what a slot means and traits.ts for the powers.
 import { Behavior, type MobDef } from '../mobs';
 import { SURRENDER_CHANCE } from '../surrender';
+import { ELEMENTS } from '../elements';
 import type { Motif, MonsterLook } from '../monsterLook';
 import { lookFor, type Faction } from './look';
 import { nameFor } from './names';
 import type { BiomePlan, SlotPlan } from './plan';
 import { Dice, clamp, round } from './rand';
 import { CASTER_SPECIALS } from './specials';
-import { CHEAP_OK, PLAIN_SHOT, TRAITS, TRAIT_BY_ID, clash, type Ctx, type Trait } from './traits';
+import { PLAIN_SHOT, TRAITS, TRAIT_BY_ID, affinity, clash, pickAffinity, type Ctx, type Trait } from './traits';
 
 export interface Made {
   def: MobDef;
   look: MonsterLook;
   /** Ids of the powers it wears. */
   traits: string[];
+  /** The elements its powers are made of (the first is the one it leans on), none for a plain brawler. */
+  elements: number[];
 }
 
 /** Per-biome book-keeping while a bestiary is built: which powers are spoken for, and which names are taken. */
@@ -47,7 +50,7 @@ function baseStats(p: SlotPlan, role: number, d: Dice): MobDef {
   const M = (lo: number, hi: number): number => d.range(1 - (1 - lo) * K, 1 + (hi - 1) * K);
   const m: MobDef = { ...c, special: undefined, charge: undefined, shot: undefined, onDeath: undefined, shield: false, shieldHp: undefined };
   // drop every power the hand-made enemy had
-  for (const k of ['armored', 'slowOnHit', 'weave', 'regen', 'pack', 'revive', 'retreat', 'launch', 'poisonOnHit', 'rootOnHit', 'witherOnHit', 'hop', 'thorns', 'evade', 'burrow', 'drain', 'trail', 'flame', 'berserk', 'aura', 'surrender', 'swarm', 'lunge', 'backstep'] as const) delete (m as unknown as Record<string, unknown>)[k];
+  for (const k of ['armored', 'slowOnHit', 'weave', 'regen', 'pack', 'revive', 'retreat', 'launch', 'poisonOnHit', 'rootOnHit', 'witherOnHit', 'hop', 'thorns', 'evade', 'burrow', 'drain', 'trail', 'flame', 'berserk', 'aura', 'surrender', 'swarm', 'lunge', 'backstep', 'onHit', 'elemAura'] as const) delete (m as unknown as Record<string, unknown>)[k];
   const fromMelee = c.behavior === Behavior.Melee;
   m.behavior = role;
 
@@ -93,26 +96,29 @@ export function makeMob(p: SlotPlan, bp: BiomePlan, faction: Faction, led: Ledge
   const d = new Dice(seed, p.slot * 7919 + 13);
   const role = pickRole(p, d);
   const def = baseStats(p, role, d);
-  const ctx: Ctx = { u: p.u, biome: p.biome, swarm: bp.swarm, slot: p.slot };
+  // the element it leans on (crowd filler is mostly plain) and, now and then, a second one
+  const element = p.fodder ? 0 : pickAffinity(d, p.biome, p.cheap ? 0.45 : 0.15);
+  const second = element !== 0 && d.chance(0.3) ? pickAffinity(d, p.biome, 0) : 0;
+  const ctx: Ctx = { u: p.u, biome: p.biome, swarm: bp.swarm, slot: p.slot, element, second: second === element ? 0 : second, power: p.cheap ? 0.6 : Math.round((0.75 + 0.4 * p.u) * 100) / 100 };
   const picked: Trait[] = [];
 
   const eligible = (t: Trait, mandatory: 'shot' | 'special' | null): boolean => {
     if (!t.on.includes(role)) return false;
     if (t.group === 'shot' && mandatory !== 'shot') return false;
     if (t.group === 'special' && mandatory === null && role !== Behavior.Melee) return false;
-    if (t.group === 'special' && t.id === 'summon' && p.slot === bp.swarm) return false;
+    if (t.group === 'special' && t.kind === 'summon' && p.slot === bp.swarm) return false;
     if (t.minU > p.u + 0.1) return false;
     if (t.maxRadius !== undefined && def.radius > t.maxRadius) return false;
     if (t.minRadius !== undefined && def.radius < t.minRadius) return false;
     if (t.id !== PLAIN_SHOT && led.used.has(t.id)) return false;
-    if (p.cheap && !CHEAP_OK.has(t.id)) return false;
-    if (p.tiny && (t.group === 'special' ? t.id !== 'cling' : false)) return false;
+    if (p.cheap && !t.cheap) return false;
+    if (p.tiny && t.group === 'special' && t.kind !== 'cling') return false;
     if (picked.some((x) => clash(x, t))) return false;
     return true;
   };
-  const choose = (mandatory: 'shot' | 'special' | null, pool: readonly Trait[] = TRAITS): Trait | undefined =>
-    d.weighted(pool.filter((t) => eligible(t, mandatory) && (mandatory === null || t.group === mandatory)),
-      (t) => t.weight * (t.themes?.includes(p.biome) ? 2.6 : 1));
+  const choose = (mandatory: 'shot' | 'special' | null): Trait | undefined =>
+    d.weighted(TRAITS.filter((t) => eligible(t, mandatory) && (mandatory === null || t.group === mandatory)),
+      (t) => t.weight * (t.themes?.includes(p.biome) ? 2.2 : 1) * affinity(t, ctx));
   const take = (t: Trait | undefined): void => { if (t) { picked.push(t); if (t.id !== PLAIN_SHOT) led.used.add(t.id); } };
 
   if (role === Behavior.Ranged) take(choose('shot') ?? TRAIT_BY_ID.get(PLAIN_SHOT));
@@ -120,8 +126,8 @@ export function makeMob(p: SlotPlan, bp: BiomePlan, faction: Faction, led: Ledge
     take(choose('special'));
     if (picked.length === 0) {
       // every special the biome could use is spoken for: repeat one rather than leave a caster with nothing to cast
-      const t = TRAIT_BY_ID.get(d.pick(CASTER_SPECIALS.filter((k) => !(k === 'summon' && p.slot === bp.swarm))))!;
-      picked.push(t);
+      const kind = d.pick(CASTER_SPECIALS.filter((k) => !(k === 'summon' && p.slot === bp.swarm)));
+      picked.push(TRAIT_BY_ID.get(kind)!);
     }
   }
   let more = wants(p, d) - (role === Behavior.Melee ? 0 : 1);
@@ -145,10 +151,18 @@ export function makeMob(p: SlotPlan, bp: BiomePlan, faction: Faction, led: Ledge
   if (sc && (role === Behavior.Melee || role === Behavior.Ranged)) def.surrender = sc;
 
   const motifs: Motif[] = [];
-  for (const t of picked) for (const m of t.motifs ?? []) if (!motifs.includes(m)) motifs.push(m);
+  const elements: number[] = [];
+  for (const t of picked) {
+    if (t.elem && !elements.includes(t.elem)) elements.push(t.elem);
+    for (const m of t.motifs ?? []) if (!motifs.includes(m)) motifs.push(m);
+  }
+  // its leaning element shows on it even where its powers are the odd ones out
+  if (element && !elements.includes(element)) elements.unshift(element);
+  else if (element) { elements.splice(elements.indexOf(element), 1); elements.unshift(element); }
+  if (element && !motifs.includes(ELEMENTS[element].motif)) motifs.unshift(ELEMENTS[element].motif);
   const ids = picked.map((t) => t.id);
-  const look = lookFor(d, { def, traits: new Set(ids), motifs, boss: false, faction, u: p.u });
-  def.name = nameFor(look, d, led.names);
+  const look = lookFor(d, { def, traits: new Set(picked.flatMap((t) => [t.id, ...(t.kind ? [t.kind] : [])])), motifs, boss: false, faction, u: p.u, elements });
+  def.name = nameFor(look, d, led.names, elements);
   led.names.add(def.name);
-  return { def, look, traits: ids };
+  return { def, look, traits: ids, elements };
 }

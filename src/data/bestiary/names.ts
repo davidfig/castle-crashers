@@ -1,6 +1,7 @@
 // Names for generated monsters: "<what marks it> <what it is>", e.g. "cinder hound", "bile mite", "rime brute". The name is what the
 // run summary tallies and what a player learns to dread, so it comes from the monster's look and powers, not from a dice roll alone.
 import type { MonsterLook } from '../monsterLook';
+import { ELEMENTS } from '../elements';
 import { Dice } from './rand';
 
 const NOUN_BY_BUILD: Record<MonsterLook['build'], readonly string[]> = {
@@ -43,7 +44,7 @@ const ADJ_BY_MOTIF: Record<string, readonly string[]> = {
 /** Fallbacks by size when nothing else marks it. */
 const ADJ_BY_SIZE = { small: ['tiny', 'sneaky', 'grubby', 'scrappy', 'pesky'], mid: ['grim', 'sour', 'crooked', 'ragged', 'dire'], big: ['hulking', 'grand', 'brutal', 'towering', 'savage'] };
 
-export function nameFor(look: MonsterLook, d: Dice, taken: ReadonlySet<string>): string {
+export function nameFor(look: MonsterLook, d: Dice, taken: ReadonlySet<string>, elements: readonly number[] = []): string {
   const nouns = [
     ...(look.held !== 'none' && look.held !== 'club' ? NOUN_BY_HELD[look.held] ?? [] : []),
     ...(NOUN_BY_HEAD[look.head] ?? []),
@@ -51,7 +52,7 @@ export function nameFor(look: MonsterLook, d: Dice, taken: ReadonlySet<string>):
   ];
   const weighted = look.held !== 'none' && NOUN_BY_HELD[look.held] ? [...NOUN_BY_HELD[look.held]!, ...nouns] : nouns;
   const size = look.size < 11 ? 'small' : look.size < 18 ? 'mid' : 'big';
-  const adjs = look.motifs.flatMap((m) => ADJ_BY_MOTIF[m] ?? []);
+  const adjs = [...elements.slice(0, 2).flatMap((el) => [...ELEMENTS[el].words, ...ELEMENTS[el].words]), ...look.motifs.flatMap((m) => ADJ_BY_MOTIF[m] ?? [])];
   for (let tries = 0; tries < 24; tries++) {
     const noun = d.pick(weighted);
     const adj = adjs.length > 0 && d.chance(0.85) ? d.pick(adjs) : d.pick(ADJ_BY_SIZE[size]);
@@ -66,11 +67,11 @@ export function nameFor(look: MonsterLook, d: Dice, taken: ReadonlySet<string>):
 }
 
 const BOSS_RANK = ['king', 'queen', 'lord', 'tyrant', 'baron', 'matron', 'overseer', 'warden', 'maw', 'father', 'mother', 'colossus'];
-const BOSS_OF = ['of the Hollow', 'of Ash', 'of the Deep', 'of Ruin', 'of the Last Road', 'of Teeth', 'of Sorrow', 'of the Pit', 'of Thorns', 'the Unwelcome'];
+const BOSS_OF = ['of the Hollow', 'of Ash', 'of the Deep', 'of Ruin', 'of the Last Road', 'of Teeth', 'of Sorrow', 'of the Pit', 'of Thorns', 'Unwelcome'];
 
 /** A boss's health-bar title (upper case): "CINDER HOUND KING". */
-export function bossTitle(look: MonsterLook, d: Dice, taken: ReadonlySet<string>): string {
-  const adj = look.motifs.length > 0 ? d.pick(ADJ_BY_MOTIF[d.pick(look.motifs)] ?? ADJ_BY_SIZE.big) : d.pick(ADJ_BY_SIZE.big);
+export function bossTitle(look: MonsterLook, d: Dice, taken: ReadonlySet<string>, elements: readonly number[] = []): string {
+  const adj = elements.length > 0 ? d.pick(ELEMENTS[elements[0]].words) : look.motifs.length > 0 ? d.pick(ADJ_BY_MOTIF[d.pick(look.motifs)] ?? ADJ_BY_SIZE.big) : d.pick(ADJ_BY_SIZE.big);
   const noun = d.pick(NOUN_BY_BUILD[look.build]);
   for (let tries = 0; tries < 24; tries++) {
     const t = (d.chance(0.5) ? `${adj} ${noun} ${d.pick(BOSS_RANK)}` : `the ${adj} ${d.pick(BOSS_RANK)} ${d.pick(BOSS_OF)}`).toUpperCase();

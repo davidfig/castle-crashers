@@ -3,6 +3,7 @@
 // otherwise dice, softened by a per-biome-per-run colour family so a biome's monsters read as kin. They do not have to make sense.
 import { Behavior, ProjStyle, type MobDef } from '../mobs';
 import type { BackKind, Build, CrownKind, HeadKind, HeldKind, LimbKind, MonsterLook, MonsterPalette, Motif } from '../monsterLook';
+import { ELEMENTS } from '../elements';
 import { Dice, clamp } from './rand';
 
 /** The colour family one biome's monsters share in one run. */
@@ -42,16 +43,31 @@ export interface LookInput {
   faction: Faction;
   /** 0..1 position in the biome's roster (a boss is 1). */
   u: number;
+  /** The elements its powers are made of, the one it leans on first (none: a plain brawler). They set its colours, its eyes and its motifs. */
+  elements?: readonly number[];
 }
 
 const has = (m: readonly Motif[], x: Motif): boolean => m.includes(x);
 
-function paletteFor(d: Dice, f: Faction, motifs: readonly Motif[], size: number): MonsterPalette {
+function paletteFor(d: Dice, f: Faction, motifs: readonly Motif[], size: number, elements: readonly number[] = []): MonsterPalette {
   let h = d.pick(f.hues) + d.range(-14, 14);
   let s = f.sat + d.range(-0.08, 0.1);
   let l = f.light + (size < 11 ? 0.08 : size > 20 ? -0.04 : 0) + d.range(-0.05, 0.06);
   let eye = hsl(d.pick([0, 48, 180, 300, 90]), 0.9, 0.58);
   const roll = d.f();
+  if (elements.length > 0 && roll < 0.85) {
+    // made of an element: its hue, its glow in the eyes, and the second element (if any) in the trim
+    const def = ELEMENTS[elements[0]];
+    h = def.hue + d.range(-10, 10);
+    s = elements[0] === 6 || elements[0] === 8 ? 0.45 : d.range(0.5, 0.7);
+    l = (elements[0] === 5 ? 0.3 : elements[0] === 2 || elements[0] === 6 || elements[0] === 8 ? 0.58 : 0.4) + (size < 11 ? 0.06 : 0) + d.range(-0.04, 0.05);
+    eye = def.glow;
+    const base = hsl(h, s, l);
+    const trim = ELEMENTS[elements[1] ?? elements[0]];
+    const accent = elements.length > 1 ? trim.core : hsl(h + d.pick([-40, 35, 180]), clamp(s + 0.1, 0.3, 0.8), clamp(l + d.range(0.05, 0.18), 0.3, 0.75));
+    const metal = f.warmMetal ? hsl(d.range(24, 40), 0.35, 0.52) : hsl(d.range(205, 225), 0.14, 0.6);
+    return { base, accent, eye, metal };
+  }
   if (has(motifs, 'fire') && roll < 0.7) { h = d.range(4, 34); s = 0.7; l = 0.42; eye = hsl(d.range(40, 56), 1, 0.62); }
   else if (has(motifs, 'frost') && roll < 0.7) { h = d.range(185, 220); s = 0.5; l = 0.6; eye = hsl(190, 0.9, 0.8); }
   else if (has(motifs, 'poison') && roll < 0.65) { h = d.range(80, 135); s = 0.5; l = 0.4; eye = hsl(d.range(70, 95), 1, 0.6); }
@@ -73,6 +89,8 @@ function heldFor(d: Dice, def: MobDef, traits: ReadonlySet<string>, boss: boolea
       case ProjStyle.Harpoon: return 'spear';
       case ProjStyle.Glob: return d.pick(['sling', 'none']);
       case ProjStyle.Falcon: return 'none';
+      case ProjStyle.Orb: case ProjStyle.Mote: return d.pick(['orb', 'staff', 'orb', 'none']);
+      case ProjStyle.Spike: case ProjStyle.Comet: return 'bow';
       case ProjStyle.Fire: return d.pick(['bow', 'orb']);
       default: return 'bow';
     }
@@ -153,7 +171,7 @@ export function lookFor(d: Dice, inp: LookInput): MonsterLook {
     stout: Math.round(d.range(boss ? 0.95 : 0.78, boss ? 1.3 : traits.has('armor') || traits.has('shield') ? 1.45 : 1.3) * 100) / 100,
     build, head, limbs, arms, back, crown, held, eyes, teeth,
     motifs: uniq,
-    palette: paletteFor(d, faction, uniq, size),
+    palette: paletteFor(d, faction, uniq, size, inp.elements),
     boss,
   };
 }

@@ -24,6 +24,7 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 | [13 UI & Screen Art](13-ui-art.md) | The illuminated-ledger look, what every screen needs, the kit and its status |
 | [14 Simulated Players](14-ai-playtesting.md) | Skill-graded AI players for every class, and headless full-route balance runs (`npm run sim`) |
 | [15 The Random Bestiary](15-random-bestiary.md) | Per-run generated monsters and bosses: slots, powers, looks, determinism, tools |
+| [16 Skills and Elements](16-skills-and-elements.md) | Skills = delivery x element x modifiers: the ten elements and what they do, deliveries, patterns, how monsters and (later) heroes use them |
 | [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster) |
 | [Open Questions](open-questions.md) | Things we haven't decided |
 | [Decisions (ADRs)](decisions/README.md) | Log of decisions and why |

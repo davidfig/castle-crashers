@@ -6,7 +6,7 @@ import { clamp, cosTurns, sinTurns } from '../engine/math';
 import { rngFloat, rngRange } from '../engine/rng';
 import { VIEW_W, WORLD_H, WORLD_W } from './constants';
 import { allocEntity, ELEM_MASK, freeEntity, Kind, PROJ_HOMING, PROJ_PIERCE, ZoneKind } from './entities';
-import { elementPulse, powerOf, pulseHero, storePower, strikeHero } from './elements';
+import { elementHit, elementPulse, powerOf, pulseHero, storePower, strikeHero } from './elements';
 import type { Entities } from './entities';
 import { Ev, emit } from './events';
 import { activePlayers, partyScale } from './gen/level';
@@ -397,21 +397,21 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
     }
     case 'hex':
     case 'dazzle': {
-      emit(s.events, Ev.Burst, e.ax[i], e.ay[i], sp.radius, sp.kind === 'hex' ? BurstStyle.Hex : BurstStyle.Flash);
+      emit(s.events, Ev.Burst, e.ax[i], e.ay[i], sp.radius, burstOf(sp.element, sp.kind === 'hex' ? BurstStyle.Hex : BurstStyle.Flash));
       for (let k = 0; k < s.players.length; k++) {
         const p = s.players[k];
         if (!p.active || p.downed || p.invuln > 0) continue; // a dodge-roll slips the mark
         const dx = e.x[p.ent] - e.ax[i], dy = e.y[p.ent] - e.ay[i];
         if (dx * dx + dy * dy > sp.radius * sp.radius) continue;
-        if (sp.kind === 'hex') { p.hexT = Math.max(p.hexT, sp.duration); continue; }
-        hurtPlayer(s, k, sp.damage);
+        if (sp.kind === 'hex') { p.hexT = Math.max(p.hexT, sp.duration); if (sp.element) elementHit(s, k, sp.element, sp.power ?? 1, 0, e.ax[i], e.ay[i], i); continue; }
+        strikeHero(s, k, sp.damage, sp.element, sp.power ?? 1, e.ax[i], e.ay[i], i);
         p.rootT = Math.max(p.rootT, sp.duration);
         p.silenceT = Math.max(p.silenceT, sp.duration);
       }
       break;
     }
     case 'lure': {
-      emit(s.events, Ev.Burst, x, y, sp.radius, BurstStyle.Wisp);
+      emit(s.events, Ev.Burst, x, y, sp.radius, burstOf(sp.element, BurstStyle.Wisp));
       for (let k = 0; k < s.players.length; k++) {
         const p = s.players[k];
         if (!p.active || p.downed || p.invuln > 0) continue; // a dodge-roll resists the pull
@@ -419,7 +419,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d > sp.radius || d < 1) continue;
         shovePlayer(s, k, dx / d, dy / d, Math.min(sp.pull, d - 8));
-        if (sp.damage > 0) hurtPlayer(s, k, sp.damage);
+        if (sp.damage > 0) strikeHero(s, k, sp.damage, sp.element, sp.power ?? 1, x, y, i);
       }
       break;
     }
@@ -437,25 +437,25 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
       break;
     }
     case 'whiteout': {
-      emit(s.events, Ev.Burst, x, y, sp.radius, BurstStyle.Frost);
+      emit(s.events, Ev.Burst, x, y, sp.radius, burstOf(sp.element, BurstStyle.Frost));
       for (let k = 0; k < s.players.length; k++) {
         const p = s.players[k];
         if (!p.active || p.downed || p.invuln > 0) continue; // a dodge-roll slips through the gust
         const dx = e.x[p.ent] - x, dy = e.y[p.ent] - y;
         if (dx * dx + dy * dy > sp.radius * sp.radius) continue;
-        hurtPlayer(s, k, sp.damage);
+        strikeHero(s, k, sp.damage, sp.element, sp.power ?? 1, x, y, i);
         p.confuseT = Math.max(p.confuseT, sp.duration);
       }
       break;
     }
     case 'wail': {
-      emit(s.events, Ev.Burst, x, y, sp.radius, BurstStyle.Scream);
+      emit(s.events, Ev.Burst, x, y, sp.radius, burstOf(sp.element, BurstStyle.Scream));
       for (let k = 0; k < s.players.length; k++) {
         const p = s.players[k];
         if (!p.active || p.downed || p.invuln > 0) continue;
         const dx = e.x[p.ent] - x, dy = e.y[p.ent] - y;
         if (dx * dx + dy * dy > sp.radius * sp.radius) continue;
-        hurtPlayer(s, k, sp.damage);
+        strikeHero(s, k, sp.damage, sp.element, sp.power ?? 1, x, y, i);
         p.silenceT = Math.max(p.silenceT, sp.duration);
       }
       break;

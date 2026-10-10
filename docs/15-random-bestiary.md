@@ -26,6 +26,7 @@ run seed ──► generateBestiary(seed) ──► Bestiary { defs[], looks[], 
   generated cast within a few percent of the hand-made roster's difficulty.
 - **Role.** Melee, ranged or caster, re-rolled for the middle and late slots (a brute stays a brute nine times in ten; an archer sometimes
   becomes a caster). The bomber slot stays a bomber. The first enemy of every biome is always plain melee with no powers.
+- **Skills and elements** (docs/16): most powers are *elemental*: a delivery made of an element (fire burns, ice chills, lightning jumps...) with modifiers (patterns, pierce, residue...). A monster leans on one element, so its powers read as a set.
 - **Powers** (`data/bestiary/traits.ts`). A monster wears 0-3 powers from one kit: a melee hit that slows/launches/poisons/roots/withers/drains,
   a movement quirk (weave, hop, retreat, evade, burrow), a bull charge, a body trait (armour, shield, thorns, regen, berserk, pack, revive, mud trail),
   an aura (flame, chill), a death effect (burst into swarm, poison pool, ice shards, spore cloud), a way of shooting (volley, fan, harpoon, glob, firebolt,

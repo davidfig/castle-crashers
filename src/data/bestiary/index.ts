@@ -16,8 +16,10 @@ export interface Bestiary {
   /** Indexed by MobType. */
   defs: MobDef[];
   looks: MonsterLook[];
-  /** Ids of the powers each monster wears (a boss: the specials it casts). For logs, tests and the bestiary page. */
+  /** Ids of the powers each monster wears (a boss: the specials it casts), as `kind:element` for the elemental ones. For logs, tests and the bestiary page. */
   traits: string[][];
+  /** The elements each monster is made of (the one it leans on first; none for a plain brawler). */
+  elements: number[][];
 }
 
 export function generateBestiary(seed: number): Bestiary {
@@ -26,18 +28,19 @@ export function generateBestiary(seed: number): Bestiary {
   const defs: MobDef[] = new Array(n);
   const looks: MonsterLook[] = new Array(n);
   const traits: string[][] = new Array(n);
+  const elements: number[][] = new Array(n);
   const names = new Set<string>();
   for (const bp of slotPlans()) {
     const faction = makeFaction(new Dice(seed, 0x1000 + bp.biome));
     const led = { used: new Set<string>(), names };
     for (const p of bp.entries) {
       const m = makeMob(p, bp, faction, led, seed);
-      defs[p.slot] = m.def; looks[p.slot] = m.look; traits[p.slot] = m.traits;
+      defs[p.slot] = m.def; looks[p.slot] = m.look; traits[p.slot] = m.traits; elements[p.slot] = m.elements;
     }
     const b = makeBoss(bp, faction, names, seed);
-    defs[bp.boss] = b.def; looks[bp.boss] = b.look; traits[bp.boss] = b.traits;
+    defs[bp.boss] = b.def; looks[bp.boss] = b.look; traits[bp.boss] = b.traits; elements[bp.boss] = b.elements;
   }
-  return { seed, defs, looks, traits };
+  return { seed, defs, looks, traits, elements };
 }
 
 let current: Bestiary | null = null;
