@@ -25,7 +25,9 @@ import { Pilot } from './ai/pilot';
 import { resolveSkill } from './ai/skill';
 import { Btn } from './sim/input';
 import { Phase, activatePlayer } from './sim/state';
-import { Kind } from './sim/entities';
+import { Kind, allocEntity } from './sim/entities';
+import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
+import { MOBS, MobType } from './data/mobs';
 import { spawnClump } from './sim/gen/level';
 import { summarizeEnd } from './campaign/run';
 import { levelPlan, LEVELS_PER_BIOME, ROUTE_LEVELS, weatherSpan, type LevelPlan } from './campaign/route';
@@ -106,7 +108,10 @@ let seed = params.has('seed') ? Number(params.get('seed')) >>> 0 : (Date.now() &
 
 // Every run fights its own randomly built monsters (data/bestiary): the same ones for the whole run, different next run. ?mobs=classic
 // brings back the hand-made roster. The cast is installed before any sim of the run is created, and its pictures drawn into the atlas.
-const classicMobs = __DEV__ && params.get('mobs') === 'classic';
+// Dev aid: ?demo=<kind>:<element>[:key=val...] stages one caster casting one skill over and over at the hero (see data/skillDemo.ts); it needs the hand-made roster.
+const demo = __DEV__ && params.has('demo') ? parseDemo(params.get('demo')!) : null;
+if (__DEV__ && params.has('demo') && !demo) console.warn('?demo=kind:element[:key=val...]: unknown kind or element in', params.get('demo'));
+const classicMobs = __DEV__ && (params.get('mobs') === 'classic' || demo !== null);
 let castEpoch = -1;
 function applyCast(runSeed: number): void {
   if (classicMobs) { if (activeBestiary() !== null) installBestiary(null); } else ensureBestiary(runSeed);
@@ -138,7 +143,7 @@ function pilotFor(k: number): Pilot {
 // --- Campaign flow: title -> party select -> one straight road of levels, each followed by a store in the same field, then the next
 // level, with no menus between and no cut on screen: the scenery and the party carry across. The sim only ever sees one level (or one store) at a time.
 // ?seed=N is an entered seed: one level, no store, R restarts it.
-const devRun = params.has('seed') || (__DEV__ && params.has('store'));
+const devRun = params.has('seed') || (__DEV__ && (params.has('store') || demo !== null));
 
 type Mode = 'title' | 'run' | 'summary' | 'select';
 let mode: Mode = 'title';
@@ -333,9 +338,27 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
     s.ents.x[pe] = s.ents.px[pe] = s.camX + 300; s.ents.y[pe] = s.ents.py[pe] = 100;
     s.nextClump = s.plan.length; s.gateIdx = s.gates.length;
   }
+  if (demo && !store) setUpDemo(s);
   if (__DEV__ && params.has('calm') && !store) { s.spawnTimer = s.flankTimer = 1e9; s.nextClump = s.plan.length; } // dev aid: ?calm=1 leaves the field empty so a chest or a panel can be looked at in peace
   if (__DEV__ && params.has('gold')) s.gold = Number(params.get('gold')) || 0;
   return s;
+}
+/** ?demo=: an empty field, the hero standing still and a tireless caster of the skill a little way off (it holds the skill's usual distance and casts it every cooldown). */
+function setUpDemo(s: ReturnType<typeof createSim>): void {
+  if (!demo) return;
+  s.spawnTimer = s.flankTimer = 1e9; s.nextClump = s.plan.length;
+  const e = s.ents, pe = s.players[0].ent, stand = demoStandoff(demo.kind);
+  s.camX = s.prevCamX = 0;
+  e.x[pe] = e.px[pe] = 150; e.y[pe] = e.py[pe] = 100;
+  const sp = demoSpecial(demo.kind, demo.element, demo.overrides);
+  MOBS[MobType.Slinger] = { ...MOBS[MobType.Slinger], hp: 30000, special: sp, reach: stand, speed: 0.3, knockResist: 1, onHit: undefined };
+  const m = allocEntity(e, Kind.Mob, MobType.Slinger, 150 + stand, 100, 30000);
+  if (m >= 0) { e.flags[m] = 1; e.face[m] = -1; }
+}
+/** ?demo=: the hero is never beaten, so the skill can be watched for as long as it takes. */
+function refillDemoHero(): void {
+  const e = sim.ents, p = sim.players[0];
+  if (p.active) e.hp[p.ent] = e.maxhp[p.ent];
 }
 let sim = newSim(route.plan);
 
@@ -535,6 +558,7 @@ startLoop({
       if (k > 0 && sim.tick === 3) frames[k].buttons |= Btn.Join;
     }
     sim.players.forEach((p, k) => { panelBefore[k] = p.panel; });
+    if (demo) refillDemoHero();
     step(sim, frames);
     // The goods on the ground: the trade button, pressed beside one, buys it.
     if (route.store && sim.phase === Phase.Playing) {

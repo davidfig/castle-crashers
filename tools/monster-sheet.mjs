@@ -20,10 +20,10 @@ const lookJson = opt('look', false);
 
 // bundle the composer for node
 const built = await esbuild.build({
-  stdin: { contents: "export * from './src/render/monsterArt.ts'; export * from './src/render/monsterLookRandom.ts'; export { generateBestiary } from './src/data/bestiary/index.ts';", resolveDir: process.cwd(), loader: 'ts' },
+  stdin: { contents: "export * from './src/render/monsterArt.ts'; export * from './src/render/monsterLookRandom.ts'; export { generateBestiary } from './src/data/bestiary/index.ts'; export { ELEMENTS } from './src/data/elements.ts';", resolveDir: process.cwd(), loader: 'ts' },
   bundle: true, write: false, platform: 'node', format: 'esm', target: 'node20', logLevel: 'warning', define: { __DEV__: 'true' },
 });
-const { composeMonster, randomLook, generateBestiary } = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].text).toString('base64'));
+const { composeMonster, randomLook, generateBestiary, ELEMENTS } = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].text).toString('base64'));
 
 // ---- tiny PNG encoder
 const crcTable = new Int32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c; });
@@ -41,6 +41,7 @@ function png(w, h, rgba) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
+function hsl(h, s, l) { h = ((h % 360) + 360) % 360 / 360; const f = (n) => { const k = (n + h * 12) % 12; const a = s * Math.min(l, 1 - l); return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255); }
 const BG = [0x5b8a4a, 0xc9b27c, 0x2a2040, 0xe8e4dc];
 class Img {
   constructor(w, h) { this.w = w; this.h = h; this.d = new Uint8ClampedArray(w * h * 4); }
@@ -63,18 +64,28 @@ class Img {
 
 const looks = [], sheets = [];
 const bestiary = opt('bestiary', false) ? generateBestiary(Number(opt('bestiary', 1))) : null;
-for (let i = 0; i < count; i++) {
+const motifList = opt('motifs', false) ? String(opt('motifs', '')).split(',') : null; // one row per motif, the same body plans in every row
+const total = motifList ? motifList.length * count : count;
+for (let i = 0; i < total; i++) {
+  if (motifList) {
+    const look = randomLook(seed * 1000 + (i % count), { boss, size: forcedSize, motifs: [motifList[Math.floor(i / count)]] });
+    const el = ELEMENTS.find((e) => e.motif === motifList[Math.floor(i / count)]);
+    if (el) { // colour it the way the generator colours an elemental monster
+      const L = el.id === 5 ? 0.3 : [2, 6, 8].includes(el.id) ? 0.58 : 0.4;
+      look.palette = { ...look.palette, base: hsl(el.hue, 0.6, L), eye: el.glow, accent: el.core };
+    }
+    looks.push(look); sheets.push(composeMonster(look)); continue; }
   const look = bestiary ? bestiary.looks[(i + Number(opt('from', 0))) % bestiary.looks.length] : lookJson ? JSON.parse(String(lookJson)) : randomLook(seed * 1000 + i, { boss, size: forcedSize });
   looks.push(look); sheets.push(composeMonster(look));
 }
 const cells = sheets.map((s) => { const f = s.meta.frames.walk_0; return { w: f.w, h: f.h }; });
 const cw = Math.max(...cells.map((c) => c.w)) * scale + 8, ch = Math.max(...cells.map((c) => c.h)) * scale + 8;
-const cols = Number(opt('cols', Math.min(count, Math.max(1, Math.floor(1400 / cw)))));
-const rowsN = Math.ceil(count / cols);
+const cols = Number(opt('cols', motifList ? count : Math.min(count, Math.max(1, Math.floor(1400 / cw)))));
+const rowsN = Math.ceil(total / cols);
 // pose rows
 const animOrder = ['walk', 'idle', 'hurt', 'dead', 'windup', 'strike', 'cast', 'aim', 'release', 'lit', 'paw', 'charge', 'dazed', 'rise', 'slam', 'roar', 'smash'];
 const poseRows = [];
-for (let i = 0; i < Math.min(poseN, count); i++) {
+for (let i = 0; i < Math.min(poseN, total); i++) {
   const s = sheets[i];
   const names = animOrder.flatMap((a) => (s.meta.anims[a] ? s.meta.anims[a].frames : []));
   for (let k = 0; k < names.length; k += 12) poseRows.push({ s, names: names.slice(k, k + 12) });
@@ -84,7 +95,7 @@ const poseH = poseRows.length ? Math.max(...poseRows.map((r) => pf(r).h)) * scal
 const poseWmax = poseRows.length ? Math.max(...poseRows.map((r) => r.names.length * (pf(r).w * scale + 6))) : 0;
 const W = Math.max(cols * cw, poseWmax), H = rowsN * ch + poseRows.length * poseH;
 const img = new Img(W, H);
-for (let i = 0; i < count; i++) {
+for (let i = 0; i < total; i++) {
   const x = (i % cols) * cw, y = Math.floor(i / cols) * ch;
   img.rect(x, y, cw, ch, BG[i % 4]);
   img.sprite(sheets[i], sheets[i].meta.frames.walk_0, x + cw / 2, y + ch - 4, scale);

@@ -11,7 +11,9 @@ export type CrownKind = 'horns' | 'antlers' | 'ears' | 'crest' | 'halo' | 'crown
 /** What it carries; baked into every pose, and shown striking/aiming/casting in the matching poses. */
 export type HeldKind = 'club' | 'sword' | 'axe' | 'spear' | 'bow' | 'staff' | 'shield' | 'bomb' | 'orb' | 'sling' | 'none';
 /** Tells of its powers painted onto the body (embers, frost, drips, bandages, plates...). A look may carry several. */
-export type Motif = 'fire' | 'frost' | 'poison' | 'ghost' | 'armor' | 'bones' | 'fur' | 'slime' | 'glow' | 'stone' | 'bandage' | 'thorns';
+export type Motif = 'fire' | 'frost' | 'poison' | 'ghost' | 'armor' | 'bones' | 'fur' | 'slime' | 'glow' | 'stone' | 'bandage' | 'thorns'
+  // element tells (data/elements.ts): each element paints its own
+  | 'lightning' | 'holy' | 'wind' | 'arcane' | 'blood' | 'shadow';
 
 export interface MonsterPalette {
   /** Main body colour (0xRRGGBB); the composer derives its shade and light. */

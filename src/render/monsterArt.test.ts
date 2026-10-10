@@ -92,7 +92,8 @@ test('fuzz: hundreds of looks across every enum value (and odd numbers) never th
   for (const back of BACKS) run({ ...base, back });
   for (const crown of CROWNS) for (const head of HEADS) run({ ...base, crown, head });
   for (const held of HELDS) for (const arms of [0, 1, 2] as const) run({ ...base, held, arms });
-  for (const mo of MOTIFS) run({ ...base, motifs: [mo] });
+  for (const mo of MOTIFS) for (const b of BUILDS) for (const size of [7, 9, 16, 25]) run({ ...base, motifs: [mo], build: b, size, boss: false });
+  for (const mo of MOTIFS) run({ ...base, motifs: [mo], size: 48, boss: true });
   run({ ...base, motifs: [...MOTIFS] });
   for (const size of [1, 7, 8, 9, 26, 44, 64, 200, -5, 12.6]) for (const boss of [false, true]) run({ ...base, size, boss });
   for (const stout of [0.1, 0.7, 1.4, 5]) run({ ...base, stout });

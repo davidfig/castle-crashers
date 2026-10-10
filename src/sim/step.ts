@@ -1125,7 +1125,7 @@ function updateProjectiles(s: GameState): void {
           const hitDmg = e.rem[i] > 0 ? e.rem[i] : ARROW_DAMAGE;
           hurtPlayer(s, slot, hitDmg);
           const hel = e.flags[i] & ELEM_MASK;
-          if (hel) elementHit(s, slot, hel, powerOf(e.elite[i]), hitDmg, e.x[i], e.y[i]);
+          if (hel) { elementHit(s, slot, hel, powerOf(e.elite[i]), hitDmg, e.x[i], e.y[i]); emit(s.events, Ev.Burst, e.x[i], e.y[i], 10, BurstStyle.Element + hel); }
           if (e.wind[i] > 0) burstShot(s, i, e.wind[i], slot);
           if (e.cool2[i] > 0) poisonPlayer(s, slot, e.cool2[i], e.mode[i] === ProjStyle.Fire); // a glob of venom, or a burning arrow
           if (e.buff[i] > 0 && !p.downed) {
@@ -1853,7 +1853,7 @@ function updateMobs(s: GameState): void {
             const open = hp.invuln === 0 && !hp.downed;
             const hitDmg = def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1) * (e.elite[i] ? ELITE_BITE : 1);
             hurtPlayer(s, target, hitDmg, def.slowOnHit ?? 0);
-            if (open && def.onHit) elementHit(s, target, def.onHit.element, def.onHit.power ?? 1, hitDmg, x, y, i);
+            if (open && def.onHit) { elementHit(s, target, def.onHit.element, def.onHit.power ?? 1, hitDmg, x, y, i); emit(s.events, Ev.Burst, e.x[players[target].ent], e.y[players[target].ent], 11, BurstStyle.Element + def.onHit.element); }
             if (def.launch && open) shovePlayer(s, target, dirX, dirY, def.launch);
             if (open && def.poisonOnHit) poisonPlayer(s, target, def.poisonOnHit);
             if (open && def.witherOnHit) hp.witherT = Math.max(hp.witherT, def.witherOnHit);

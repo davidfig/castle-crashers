@@ -5,7 +5,9 @@ import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { RAIN_FLIGHT, RAIN_HEIGHT, RAIN_SPREAD, rainLaunchTick, rainOffset } from '../sim/rain';
 import { LEVEL_CAM_END, TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
-import { Kind, ShrineKind, ZoneKind } from '../sim/entities';
+import { ELEM_MASK, Kind, ShrineKind, ZoneKind } from '../sim/entities';
+import { drawElemAura, drawElemProj, drawHeroElemCues, drawElemZone, elemTelegraph, Glyph, glyphColor } from './elementDraw';
+import { elemId } from './elementFx';
 import { CHANNEL, chargeFrac, chestCost, SiteState } from '../sim/sites';
 import { HEAT_NAMES } from '../data/heat';
 import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abilities';
@@ -429,6 +431,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         b.drawScaled(S.px, sx - dx * 2.5, sy - 7 - dy * 2.5, 2, 2, hex(0xa86f12));
         b.drawScaled(S.px, sx - 1, sy - 8, 4, 4, hex(0x3a2408, 0.8));
         b.drawScaled(S.px, sx, sy - 7, 2, 2, hex(0xf0b830));
+      } else if (!owner && e.mode[i] >= ProjStyle.Orb) {
+        drawElemProj(b, S, sx, sy, dx, dy, e.mode[i], e.flags[i] & ELEM_MASK, e.flags[i], s.tick, i);
       } else if (e.mode[i] === ProjStyle.Shard) {
         // a splinter of ice thrown off a shattering husk: a small pale blue sliver that glints
         b.drawScaled(S.px, Math.round(sx - dx * 2), Math.round(sy - 6 - dy * 2), 1, 1, hex(ICE.mid, 0.7));
@@ -525,6 +529,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         for (const [dx, dy] of [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]]) b.drawScaled(S.px, cx + dx, cy + dy, 1, 1, hex(0xb890ff));
       }
       if (p.rootT > 0) groundRing(b, S, sx, sy, 7, 10, hex(ICE.steel, 0.95)); // held fast in a snare
+      if (p.rootT > 0 && p.slowT > 0 && p.silenceT === 0) b.draw(f, place(f), sy - H.pivotY, flip, hex(0x6ad0ff, 0.6), 0.25); // frozen solid: the hero turns ice-blue
+      drawHeroElemCues(b, S, p, sx, sy - H.top, s.tick, i);
       if (p.hexT > 0) {
         // hexed: a violet sigil turning on the ground and a pip over the head
         groundRing(b, S, sx, sy, 8, 12, hex(0x9a4ad0, 0.55 + 0.3 * (((s.tick >> 3) & 1))));
@@ -923,6 +929,13 @@ function groundRing(b: Batcher, S: Sprites, cx: number, cy: number, r: number, d
 export function drawSpecialTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, sp: NonNullable<(typeof MOBS)[number]['special']>, sx: number, top: number, feetY: number, tick: number): void {
   const p = 1 - e.wind[i] / sp.windup;
   const blink = (tick >> 2) & 1 ? 0.8 : 0.45;
+  const glyph = elemTelegraph(b, S, e, i, sp, sx, feetY, tick, p); // elemental skills and the newer kinds draw their own tell
+  if (glyph !== Glyph.Unhandled) {
+    const gc = hex(glyphColor(elemId(sp.element)));
+    if (glyph === Glyph.Bang) drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), gc, 1);
+    else if (glyph === Glyph.Bang2) drawText(b, S, '!!', Math.round(sx - 3), Math.round(top - 8), gc, 1);
+    return;
+  }
   switch (sp.kind) {
     case 'nova': {
       const frost = sp.style === NovaStyle.Frost;
@@ -1094,6 +1107,7 @@ const rainP = [0, 0], rainQ = [0, 0];
 export function drawZone(b: Batcher, S: Sprites, e: GameState['ents'], i: number, sx: number, sy: number, tick: number): void {
   const r = e.rem[i];
   if (e.sub[i] === ZoneKind.Rain) { drawRain(b, S, e, i, sx, sy); return; }
+  if (drawElemZone(b, S, e, i, sx, sy, tick)) return; // zones made of an element (and pools, totems) have their own looks
   if (e.sub[i] === ZoneKind.Trap) {
     if (e.mode[i] !== 2) {
       // still being set: a faint ring that firms up as it arms
@@ -1314,6 +1328,7 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
       b.drawScaled(S.px, Math.round(sx + Math.cos(a) * def.flame.radius * 0.6), Math.round(sy + Math.sin(a) * def.flame.radius * 0.4 - t * 10), 1, 1, hex(k & 1 ? 0xffd060 : 0xff8a30, 0.9 * (1 - t)));
     }
   }
+  if (def.elemAura) drawElemAura(b, S, def.elemAura.element, def.elemAura.radius, sx, sy, tick, i);
   if (def.aura) {
     // the permafrost around it: a faint ring on the ground, and flakes drifting in it
     groundRing(b, S, sx, sy, def.aura.radius, 30, hex(ICE.deep, 0.32));

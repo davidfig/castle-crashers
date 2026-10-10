@@ -8,7 +8,7 @@ export const LIMBS: readonly LimbKind[] = ['biped', 'quad', 'many', 'tentacles',
 export const BACKS: readonly BackKind[] = ['wings', 'tail', 'shell', 'spikes', 'cape', 'tentacles', 'fins', 'flame', 'none'];
 export const CROWNS: readonly CrownKind[] = ['horns', 'antlers', 'ears', 'crest', 'halo', 'crown', 'antenna', 'none'];
 export const HELDS: readonly HeldKind[] = ['club', 'sword', 'axe', 'spear', 'bow', 'staff', 'shield', 'bomb', 'orb', 'sling', 'none'];
-export const MOTIFS: readonly Motif[] = ['fire', 'frost', 'poison', 'ghost', 'armor', 'bones', 'fur', 'slime', 'glow', 'stone', 'bandage', 'thorns'];
+export const MOTIFS: readonly Motif[] = ['fire', 'frost', 'poison', 'ghost', 'armor', 'bones', 'fur', 'slime', 'glow', 'stone', 'bandage', 'thorns', 'lightning', 'holy', 'wind', 'arcane', 'blood', 'shadow'];
 
 function mulberry(seed: number): () => number {
   let a = seed >>> 0;

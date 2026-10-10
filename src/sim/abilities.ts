@@ -187,6 +187,8 @@ export function startSpecialOf(s: GameState, i: number, sp: Special, target: num
     case 'totem':
       if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
       if (countZones(s, ZoneKind.Totem) >= Math.max(1, Math.round(sp.cap * partyScale(activePlayers(s))))) { e.cool2[i] = 60; return false; }
+      e.ax[i] = dirX; // where the post will stand is toward the hero (the telegraph shows it)
+      e.ay[i] = dirY;
       break;
     case 'ward': {
       const n = gatherCircle(s.grid, e, x, y, sp.radius, s.scratch);
@@ -256,6 +258,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
         const z = allocEntity(e, Kind.Zone, ZoneKind.Rock, clamp(e.ax[i] + ox, 0, WORLD_W), clamp(e.ay[i] + oy, 0, WORLD_H), 1);
         if (z < 0) break;
         e.wind[z] = Math.min(255, sp.delay + (lay ? lay[k * 3 + 2] : k * 3)); // a volley lands in a ripple, not all at once
+        e.stun[z] = e.wind[z]; // (the whole fall time, for the renderer's progress ring)
         e.rem[z] = sp.radius;
         e.hp[z] = sp.damage;
         e.flags[z] = sp.element ?? 0;

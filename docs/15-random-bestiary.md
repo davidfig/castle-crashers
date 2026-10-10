@@ -81,3 +81,35 @@ Tests (and tools) install explicitly; with nothing installed `MOBS` is the hand-
 - A "this run's bestiary" page (the title screen or the camp), showing what a player has met so far.
 - Story text still says "the Orc Warlord"; the boss in slot 5 is whatever the cast made it.
 - The shield bearer's broken-shield sprite variant: a generated monster keeps its shield picture after the shield breaks.
+
+## Element looks
+
+Skills are a delivery made of an element (`data/elements.ts`). The renderer gives every element its own colour (the table's `core`/`glow`/`deep`/`spark`), silhouette and motion, so a
+player can tell fire from ice from lightning at 1x without reading anything. Code: `render/elementFx.ts` (palette, pixel helpers, particle recipes for bursts, arcs, breaths and beams),
+`render/elementDraw.ts` (projectiles, zones, telegraphs, hero cues); `draw.ts` and `fx.ts` only dispatch into them. No element (0) keeps every hand-made look exactly.
+
+| element | ball / shot | ground (pool, storm, pit, trap) | burst | the tell |
+|---|---|---|---|---|
+| fire | flickering orange ball, ember trail rising | scorched patch with tall flame licks; lava pit; rune mine | embers rise, orange to red | orange ring, meteor on a slant |
+| ice | faceted blue diamond, glints | pale sheet with crystals; whirling snow; crystal cluster | white-blue shards that stop and fall | blue ring, icicle falls point down |
+| lightning | white core with crackling spokes, jagged tail | blue-grey patch, arcs jump across it; arcs pour into the pit; coil | white flash and jagged arcs | yellow ring, a two-pixel bolt from above |
+| poison | wobbling green blob, drips | green sheet with rising bubbles; bog | green bubbles rise | green ring, glob with drips |
+| shadow | dark orb with pale eyes, smoke trail | near-black pool breathing wisps; black hole; hole with wisps | violet wisps drift in | violet ring, orb with smoke |
+| holy | gold bead with a turning halo and sparkle | ring of light with rays and rising motes; light shaft | gold sparkles rise, a column of light | gold ring, a column of light |
+| earth | tumbling brown chunk, dust | cracked soil with stones; stone stakes | rock chunks in an arc, dust | brown ring, boulder on a slant |
+| wind | mint swirl with curling streaks | swirl of dust and leaves; tornado pit; pinwheel | tangential curving streaks | mint ring, a funnel falls |
+| arcane | magenta diamond with orbiting runes | rune circle with a hexagram; runes orbit | magenta sparkles and six runes | magenta ring, a sigil star falls |
+| blood | red droplet, drips | dark glossy pool with ripples; thorns | red droplets in arcs | red ring, a drop falls |
+
+Other pieces: `bolt` shows a dotted aim line per shot ending in a pip, with a bead charging at the hand; `ring` a closing ring of ticks; `cone` a wedge on the ground that fills from the mouth and
+then a breath that sweeps across it (`Fx` runs it for `CONE_TICKS`); `totem` a post whose gem brightens as its next shot nears; a lightning chain (`Ev.Arc`) a jagged crackle between heroes.
+Hero cues: a frozen hero turns ice-blue with crystals, a shocked one throws sparks, a blinded one has a flash over the head.
+
+**Looking at them**: `?demo=<kind>:<element>[:key=val...]` (dev) stages one caster casting that skill again and again at a hero who cannot die, e.g.
+
+- `?mute=1&seed=3&demo=lob:fire`, `?demo=lob:ice:pattern=ring:count=6:spread=50`, `?demo=lob:poison:count=4:pattern=spiral:spread=40:residue=1`
+- `?demo=bolt:lightning`, `?demo=bolt:arcane:count=3:spread=0.05:shape=comet:pierce=true`, `?demo=ring:poison:shape=mote:count=12`, `?demo=cone:fire`, `?demo=totem:shadow`
+- `?demo=storm:ice`, `?demo=trap:lightning`, `?demo=pit:earth`, `?demo=nova:arcane`, `?demo=beam:holy`, `?demo=leap:blood`
+
+Element by name or number; `pattern` by `Pattern` name (`ring`, `wall`, `spiral`...); `shape` by `ProjStyle` name (`orb`, `spike`, `comet`, `mote`); any other key overrides that field of the
+`Special`. `demoSpecial(kind, element, overrides)` (`data/skillDemo.ts`) builds the skill, the same function the tests cast through the sim. It uses the hand-made roster and `?auto=1` still works.

@@ -1218,6 +1218,197 @@ function drawMotifs(c: Ctx): void {
       if (c.bry > 5) cv.put(bx + lx + 1, ly + 1, 0xe2461e, T_BODY, 1, T_BODY);
     }
   }
+  drawElementMotifs(c);
+}
+
+// ----------------------------------------------------------- element tells: one readable mark per element, flickering between frames
+function drawElementMotifs(c: Ctx): void {
+  const { cv, m, p } = c;
+  const ms = m.motifs;
+  const P = m.P, S = m.S, seed = m.seed, t = p.t ?? 0;
+  const bx = ri(c.bx), bcy = ri(c.bcy);
+  const hasHead = m.headKind !== 'none';
+  const topY = hasHead ? c.hTop : c.bTop, topX = hasHead ? c.hx : c.bx;
+  const [x0, x1, y0, y1] = region(c);
+  const skin = (x: number, y: number): boolean => isSkin(cv.tag(x, y));
+  const dot = (x: number, y: number, col: number): void => { if (!cv.has(x, y)) cv.put(Math.floor(x), Math.floor(y), col, T_BACK, 1); };
+  /** Zig-zag bolt from (x,y) heading (dx,dy), n px long: a stair of two-pixel runs, white-hot with a blue flank. */
+  const bolt = (x: number, y: number, dx: number, dy: number, n: number, flip: number): void => {
+    const sgn = flip ? 1 : -1;
+    for (let k = 0; k < n; k++) {
+      const off = ((k >> 1) % 2 ? 1 : 0) * sgn;
+      const px = x + dx * k + (dx === 0 ? off : 0), py = y + dy * k + (dy === 0 ? off : 0);
+      dot(px, py, k === n - 1 ? 0xffffff : k % 2 ? 0xfff060 : 0xffffff);
+      if (k % 2 === 0 && k < n - 1) dot(px + (dx === 0 ? -sgn : 0), py + (dy === 0 ? -sgn : 0), 0x5a7aff);
+    }
+  };
+  if (ms.has('lightning')) {
+    const yel = 0xffe840;
+    // a jagged vein down the torso
+    let vx = bx - ri(c.brx * 0.3), vy = ri(c.bTop + c.bry * 0.3);
+    for (let k = 0; k < Math.max(3, ri(c.bry * 1.2)); k++) {
+      cv.put(vx, vy, k % 3 === 0 ? 0xffffff : yel, T_BODY, 1, T_BODY);
+      if (k % 2 === 0) vx += hash2(k, 11, seed) < 0.5 ? -1 : 1; else vy += 1;
+      if (k % 2 === 0) vy += 1;
+    }
+    // arcs crackling off the shoulders and the head, a different pattern each frame
+    const L = Math.max(3, ri(S * 0.22));
+    const pts: [number, number, number, number][] = [
+      [c.bx - c.brx, c.bTop + c.bry * 0.4, -1, 0], [c.bx + c.brx, c.bTop + c.bry * 0.4, 1, 0], [topX - 1, topY - 1, 0, -1], [topX + 2, topY - 1, 0, -1],
+    ];
+    const n = m.tier >= 1 ? 4 : 3;
+    for (let i = 0; i < n; i++) {
+      const f = (t + i) % 2;
+      const [px, py, dx, dy] = pts[i % 4];
+      bolt(px + dx, py + dy, dx, dy, L + f * 2 - (i === 3 ? 1 : 0), f);
+    }
+  }
+  if (ms.has('holy')) {
+    // a thin aura just outside the silhouette (not along the ground), a light wash on the lit side, and rising sparkles
+    const adds: number[][] = [];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (!skin(x, y) || y >= GY - 2) continue;
+      if (!cv.has(x, y - 1)) adds.push([x, y - 1]);
+      if (!cv.has(x - 1, y)) adds.push([x - 1, y]);
+      if (!cv.has(x + 1, y)) adds.push([x + 1, y]);
+    }
+    for (const [x, y] of adds) cv.put(x, y, hash2(x, y, seed) < 0.3 ? 0xffffff : 0xffe890, T_BACK, 1);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (isSkin(cv.tag(x, y)) && (cv.px[y * W + x] & 0xffffff) === P.base.l) cv.px[y * W + x] = mixc(P.base.l, 0xffffff, 0.6) | OP;
+    }
+    const n = 3 + (m.tier >= 2 ? 1 : 0);
+    for (let i = 0; i < n; i++) {
+      const lx = (hash2(i, 21, seed) - 0.5) * (c.brx * 2 + 6);
+      const ry = ((t * 2 + i * 3) % 6) + hash2(i, 22, seed) * 3;
+      const sx = ri(c.bx + lx), sy = ri(topY - 2 - ry + S * 0.1);
+      dot(sx, sy, 0xffffff);
+      if (m.tier >= 1 && (i + t) % 2 === 0) { dot(sx - 1, sy, 0xffe890); dot(sx + 1, sy, 0xffe890); dot(sx, sy - 1, 0xffe890); dot(sx, sy + 1, 0xffe890); }
+    }
+  }
+  if (ms.has('wind')) {
+    const lines = m.tier >= 2 ? 4 : 3;
+    const leftX = ri(c.bx - c.brx - 1);
+    for (let i = 0; i < lines; i++) {
+      const y = ri(c.bTop + c.bry * (0.2 + (1.5 * i) / lines));
+      const len = 2 + ((i + t) % 3) + (m.tier >= 2 ? 2 : 0), gap = (i * 2 + t) % 3;
+      for (let k = 0; k < len; k++) dot(leftX - gap - k, y, k === 0 ? 0xffffff : k < len - 1 ? 0xc8fff0 : P.base.l);
+      if (len >= 4) { dot(leftX - gap - len, y - 1, 0xc8fff0); }
+    }
+    // streaming hair / cloth off the head
+    for (let i = 0; i < 2; i++) for (let k = 0; k < 3 + m.tier; k++) dot(ri(topX - c.hrx * 0.4 - k), ri(topY + 1 + i * 2 - (k >> 1) + ((t + k) % 2)), k % 2 ? P.base.l : 0xe8fff8);
+    // a little swirl beside the body
+    const sx = ri(c.bx + c.brx + 2), sy = ri(c.bTop - 1 + (t % 2));
+    dot(sx, sy, 0xffffff); dot(sx + 1, sy, 0xc8fff0); dot(sx + 1, sy + 1, 0xc8fff0); dot(sx, sy + 2, 0xc8fff0);
+  }
+  if (ms.has('arcane')) {
+    // runes circling the head, and angular circuit lines on the body
+    const cx = topX, cy = hasHead ? c.hy : c.bTop;
+    const rx = (hasHead ? c.hrx : c.brx) + 3 + (m.tier >= 2 ? 1 : 0), ry = (hasHead ? c.hry : c.bry * 0.5) + 3;
+    for (let i = 0; i < 3; i++) {
+      const a = ((i * 2.0944) + t * 0.9 + hash2(1, 2, seed) * 6) % 6.2832;
+      const x = ri(cx + Math.cos(a) * rx), y = ri(cy - ry * 0.4 + Math.sin(a) * ry * 0.7 - (hasHead ? 1 : 0));
+      if (m.tier >= 1) { dot(x, y - 1, P.eyeHi); dot(x - 1, y, P.eye); dot(x + 1, y, P.eye); dot(x, y + 1, P.eyeHi); } else dot(x, y, P.eyeHi);
+    }
+    let x = bx - ri(c.brx * 0.4), y = ri(c.bTop + c.bry * 0.5);
+    for (let k = 0; k < Math.max(4, ri(c.bry * 1.2)); k++) {
+      cv.put(x, y, k % 4 === 0 ? P.eyeHi : P.eye, T_BODY, 1, T_BODY);
+      if (k % 3 === 2) x += hash2(k, 3, seed) < 0.5 ? 1 : -1; else y += 1;
+    }
+    if (c.brx >= 4) { cv.put(bx + ri(c.brx * 0.45), ri(c.bTop + c.bry * 0.8), P.eyeHi, T_BODY, 1, T_BODY); cv.put(bx + ri(c.brx * 0.45), ri(c.bTop + c.bry * 0.8) + 1, P.eye, T_BODY, 1, T_BODY); }
+  }
+  if (ms.has('blood')) {
+    const red = 0xd01a30, dk = 0x7a0c1c;
+    // a wet dark rim on the shaded edges, red veins, and drips from the mouth, hand and chin
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (!skin(x, y)) continue;
+      if (!cv.has(x + 1, y) || !cv.has(x, y + 1)) cv.px[y * W + x] = mixc(cv.px[y * W + x] & 0xffffff, dk, 0.55) | OP;
+    }
+    for (let v = 0; v < 2; v++) {
+      let vx = bx - ri(c.brx * 0.5) + v * ri(c.brx * 0.9), vy = ri(c.bTop + c.bry * 0.45);
+      for (let k = 0; k < Math.max(3, ri(c.bry * 0.9)); k++) {
+        cv.put(vx, vy, k % 2 ? red : 0xff4a5a, T_BODY, 1, T_BODY);
+        vy += 1; if (k % 3 === 1) vx += v ? 1 : -1;
+      }
+    }
+    const drip = (x: number, y: number, len: number): void => { for (let k = 0; k < len; k++) if (y + k < GY - 1 && !cv.has(x, y + k)) cv.put(x, y + k, k === len - 1 ? dk : red, T_BACK, 1); };
+    const dl = 1 + ((t + 1) % 2) + (S > 14 ? 1 : 0);
+    if (hasHead) drip(ri(c.hx + c.hrx * 0.3), ri(c.hy + c.hry), dl + 1);
+    if (m.look.arms > 0) drip(ri(c.handR[0]), ri(c.handR[1]) + 1, dl);
+    drip(ri(c.bx - c.brx * 0.4), ri(c.bBot) - 1, m.legL === 0 ? dl : 1);
+    cv.put(ri(c.bx + c.brx * 0.3), ri(c.bcy), red, T_BODY, 1, T_BODY);
+  }
+  if (ms.has('shadow')) {
+    // violet rim light, edges dissolving into dark smoke, wisps rising off the head and shoulders
+    const vio = mixc(P.eye, 0x8a50ff, 0.35);
+    const rm: number[][] = [], rem: number[][] = [];
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      if (!skin(x, y)) continue;
+      if (!cv.has(x - 1, y) || !cv.has(x, y - 1)) rm.push([x, y]);
+      else if (y < GY - 3 && !cv.has(x + 1, y) && hash2(x - bx, y - bcy, seed + 5) < 0.55) rem.push([x, y]);
+      else if ((m.legL === 0 || m.hover) && cv.tag(x, y) === T_BODY && y >= c.bBot - 3 && y < c.bBot - 1 && hash2(x - bx, y - bcy, seed + 6) < 0.45) rem.push([x, y]);
+    }
+    for (const [x, y] of rm) { cv.px[y * W + x] = mixc(cv.px[y * W + x] & 0xffffff, vio, 0.8) | OP; cv.nr[y * W + x] = 1; }
+    for (const [x, y] of rem) { cv.px[y * W + x] = 0; cv.tg[y * W + x] = 0; }
+    const smoke = mixc(P.base.s, 0x08040f, 0.4);
+    const wn = 2 + (m.tier >= 2 ? 2 : 0);
+    for (let i = 0; i < wn; i++) {
+      const wx = ri(c.bx + (hash2(i, 31, seed) - 0.5) * (c.brx * 2 + 2));
+      const wy = ri(Math.min(topY, c.bTop + c.bry * 0.5) - 1 - ((t + i) % 2));
+      const h = 3 + ((i + t) % 2) + (S > 14 ? 2 : 0);
+      for (let k = 0; k < h; k++) dot(wx + (k % 2 && i % 2 ? 1 : 0), wy - k, k === h - 1 ? vio : smoke);
+    }
+    // a trailing smoke pixel or two beside the feet
+    dot(ri(c.bx - c.brx - 1), GY - 2, smoke); dot(ri(c.bx + c.brx + 1 + (t % 2)), GY - 3, smoke);
+  }
+  if (ms.has('fire')) {
+    // flame licks on the head and shoulders, flickering
+    const lick = (x: number, y: number, h: number, f: number): void => {
+      poly(cv, [[x - 1.5, y], [x + (f ? 0.6 : -0.2), y - h], [x + 2, y]], flat(0xe2461e), T_BACK, { hi: 9, lo: -9 });
+      poly(cv, [[x - 0.5, y], [x + (f ? 0.8 : 0.2), y - h * 0.65], [x + 1.5, y]], flat(0xffa030), T_BACK, { hi: 9, lo: -9 });
+      if (h >= 4) cv.put(Math.floor(x + 0.5), Math.floor(y - 1), 0xffe070, T_BACK, 1);
+    };
+    const h = Math.max(2, ri(S * 0.17));
+    lick(c.hx - c.hrx * 0.5, topY + 1, h + (t % 2), t % 2);
+    if (m.tier >= 1) lick(c.hx + c.hrx * 0.5, topY + 1, h - 1 + ((t + 1) % 2), (t + 1) % 2);
+    if (m.tier >= 2) { lick(c.shL[0] - 1, c.shL[1] + 1, h - 1, t % 2); lick(c.shR[0], c.shR[1] + 1, h - 1, (t + 1) % 2); }
+  }
+  if (ms.has('frost')) {
+    // frosted edges: white snow along the top, crystal facets on the head, icicles under the hands and body
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (skin(x, y) && !cv.has(x, y - 1) && hash2(x, y, seed) < 0.7) cv.px[y * W + x] = 0xf2fbff | OP;
+    const L = Math.max(2, ri(S * 0.17));
+    if (hasHead) {
+      poly(cv, [[c.hx - 1.5, topY + 1], [c.hx - 0.5, topY - L], [c.hx + 1, topY + 1]], flat(0xcdeeff), T_BACK, { hi: 9, lo: -9 });
+      cv.put(ri(c.hx - 1), ri(topY - L + 1), 0xffffff, T_BACK, 1);
+    }
+    const ic = (x: number, y: number, n: number): void => { for (let k = 0; k < n; k++) if (!cv.has(x, y + k) && y + k < GY - 1) cv.put(x, y + k, k === n - 1 ? 0xffffff : 0x9fd8f4, T_BACK, 1); };
+    ic(ri(c.handR[0]), ri(c.handR[1]) + 1, 2); ic(ri(c.bx - c.brx * 0.5), ri(c.bBot), m.legL === 0 ? 2 : 1);
+  }
+  if (ms.has('poison')) {
+    // toxic bubbles rising off the head and drips from the mouth and hands
+    const g1 = 0xc7e84a, g2 = 0x8cc43a;
+    for (let i = 0; i < 2; i++) {
+      const bxp = ri(topX + (i ? 2 : -2) * Math.max(1, c.hrx * 0.5)), byp = ri(topY - 2 - ((t + i * 2) % 4));
+      dot(bxp, byp, g1); if (m.tier >= 1) { dot(bxp + 1, byp, g2); dot(bxp, byp - 1, g2); dot(bxp + 1, byp - 1, g1); }
+    }
+    const drip = (x: number, y: number, len: number): void => { for (let k = 0; k < len; k++) if (y + k < GY - 1 && !cv.has(x, y + k)) cv.put(x, y + k, k === len - 1 ? 0x4e7a1c : g2, T_BACK, 1); };
+    if (hasHead) drip(ri(c.hx + c.hrx * 0.3), ri(c.hy + c.hry), 1 + ((t + 1) % 2) + (S > 14 ? 1 : 0));
+    if (m.look.arms > 0) drip(ri(c.handR[0]), ri(c.handR[1]) + 1, 1 + (t % 2));
+  }
+  if (ms.has('stone')) {
+    // chunky plates on the shoulders and a few loose pebbles at the feet
+    const pr = Math.max(2, ri(S * 0.14));
+    const sm = matOf(mixc(P.base.b, 0xb0b0a8, 0.4));
+    for (const [sh, s] of [[c.shL, -1], [c.shR, 1]] as [Vec, number][]) {
+      poly(cv, [[sh[0] - pr + s * 0.5, sh[1] + pr * 0.6], [sh[0] - pr * 0.5 + s * 0.5, sh[1] - pr * 0.8], [sh[0] + pr * 0.7 + s * 0.5, sh[1] - pr * 0.5], [sh[0] + pr + s * 0.5, sh[1] + pr * 0.7]], sm, T_BODY);
+      cv.put(ri(sh[0] + s * 0.5), ri(sh[1]), sm.s, T_BODY);
+    }
+    if (hasHead && c.hrx >= 3) { rect(cv, c.hx - c.hrx * 0.6, c.hTop + 0.5, c.hx - c.hrx * 0.6 + 2, c.hTop + 1.5, sm, T_HEAD); }
+    for (let i = 0; i < 3; i++) {
+      const lx = ri((hash2(i, 41, seed) - 0.5) * c.brx * 1.5), ly = ri(c.bcy + (hash2(i, 42, seed) - 0.4) * c.bry * 1.2);
+      if (cv.tag(bx + lx, ly) === T_BODY) { cv.put(bx + lx, ly, sm.l, T_BODY); cv.put(bx + lx + 1, ly, sm.l, T_BODY); cv.put(bx + lx, ly + 1, sm.s, T_BODY); cv.put(bx + lx + 1, ly + 1, sm.s, T_BODY); }
+    }
+    dot(ri(c.bx - c.brx - 2), GY - 1, sm.b); dot(ri(c.bx + c.brx + 2), GY - 1, sm.s); dot(ri(c.bx + c.brx + 3), GY - 2, sm.l);
+  }
 }
 
 function drawFlourish(c: Ctx): void {

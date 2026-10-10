@@ -5,6 +5,7 @@ import { hex } from '../platform/gl/batcher';
 import { isBossType } from '../data/mobs';
 import { bloodColor } from './mobStyle';
 import { VIEW_W, WORLD_H } from '../sim/constants';
+import { burstTrauma, CONE_TICKS, elementArc, elementBeam, elementBurst, elementCone, ringColor, type Sink } from './elementFx';
 
 const MAX_P = 4000;
 const MAX_SPENT = 4000; // spent arrows lie where they fell, like corpses
@@ -12,6 +13,7 @@ const MAX_CORPSES = 20000; // corpses stay on the field for the whole run
 const MAX_RINGS = 8;
 const MAX_BODIES = 700;
 const MAX_SLASHES = 8;
+const MAX_CONES = 6;
 export const SLASH_TICKS = 8;
 /** How long (ticks) the mage's ring of fire takes to fly out; the other rings take 18. */
 export const FIRE_RING_LIFE = 34;
@@ -23,7 +25,7 @@ const BODY_MARGIN = 10;
 const MAX_POPS = 12;
 export const POP_TICKS = 46;
 
-export class Fx {
+export class Fx implements Sink {
   /** Crossing into the next field: what lies on the ground (corpses, spent arrows) keeps its place on screen, so the world coordinates move by `dx`. */
   shift(dx: number): void {
     for (let i = 0; i < this.cx.length; i++) this.cx[i] += dx;
@@ -41,6 +43,10 @@ export class Fx {
   life = new Float32Array(MAX_P);
   col = new Uint32Array(MAX_P);
   big = new Uint8Array(MAX_P);
+  /** Per particle: gravity (px/tick^2), velocity damping per tick (1 = none) and a turn of its sideways velocity per tick (radians). */
+  gr = new Float32Array(MAX_P);
+  dr = new Float32Array(MAX_P);
+  sp = new Float32Array(MAX_P);
 
   // spent arrow decals (ring buffer): x, y, direction
   ax = new Float32Array(MAX_SPENT);
@@ -98,6 +104,16 @@ export class Fx {
   slSlot = new Int8Array(MAX_SLASHES).fill(-1);
   private swingFlip = 1;
 
+  // breaths (cones) sweeping across their fans: origin, direction*length, half-arc (turns), element, ticks elapsed (-1 = free), sweep direction
+  cnx = new Float32Array(MAX_CONES);
+  cny = new Float32Array(MAX_CONES);
+  cnax = new Float32Array(MAX_CONES);
+  cnay = new Float32Array(MAX_CONES);
+  cnarc = new Float32Array(MAX_CONES);
+  cnel = new Uint8Array(MAX_CONES);
+  cnt = new Float32Array(MAX_CONES).fill(-1);
+  cnflip = new Uint8Array(MAX_CONES);
+
   // teleport blinks: origin ghost dissolving, destination re-forming
   blx0 = new Float32Array(MAX_BLINKS);
   bly0 = new Float32Array(MAX_BLINKS);
@@ -119,19 +135,20 @@ export class Fx {
   ky = 0;
   private seed = 0x1234567;
 
-  private rand(): number {
+  rand(): number {
     let s = this.seed;
     s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
     this.seed = s >>> 0;
     return (this.seed >>> 0) / 4294967296;
   }
 
-  private spawn(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, col: number, big = 0): void {
+  spawn(x: number, y: number, z: number, vx: number, vy: number, vz: number, life: number, col: number, big = 0, grav = 0.12, drag = 1, spin = 0): void {
     if (this.n >= MAX_P) return;
     const i = this.n++;
     this.x[i] = x; this.y[i] = y; this.z[i] = z;
     this.vx[i] = vx; this.vy[i] = vy; this.vz[i] = vz;
     this.life[i] = life; this.col[i] = col; this.big[i] = big;
+    this.gr[i] = grav; this.dr[i] = drag; this.sp[i] = spin;
   }
 
   /** Drain the sim's event buffer into effects. */
@@ -321,6 +338,13 @@ export class Fx {
           break;
         }
         case Ev.Burst: {
+          if (b >= 32) { // an element burst: 32 + the element id
+            const el = b - 32;
+            this.addRing(x, y, a, hex(ringColor(el)), 0);
+            this.trauma = Math.min(1, this.trauma + burstTrauma(el));
+            elementBurst(this, x, y, a, el);
+            break;
+          }
           // a = radius, b = style: 0 rock, 1 stomp, 2 scream, 3 bones, 4 poison, 5 frost, 6 mire, 7 sand, 8 wisp, 9 hex, 10 flash
           const style = b;
           const ring = style === 5 ? 0x3a9af0 : style === 2 ? 0xc8a8ff : style === 4 ? 0x9ad048 : style === 3 ? 0xefe9da : style === 6 ? 0x7a9a2a : style === 7 ? 0xd8a85a : style === 8 ? 0x40e0c0 : style === 9 ? 0x9a4ad0 : style === 10 ? 0xffe080 : 0xff9a4a;
@@ -356,11 +380,23 @@ export class Fx {
           for (let j = 0; j < 8; j++) this.spawn(x, y, 3, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.3 + this.rand() * 0.6, 20, hex(0xb78cff, 0.85), 1);
           for (let j = 0; j < 8; j++) this.spawn(a, b, 3, (this.rand() - 0.5) * 1.2, (this.rand() - 0.5) * 0.6, 0.3 + this.rand() * 0.6, 20, hex(0xd8c4ff, 0.9), 1);
           break;
+        case Ev.Arc:
+          elementArc(this, x, y, a, b, c);
+          break;
+        case Ev.Cone:
+          this.trauma = Math.min(1, this.trauma + 0.2);
+          for (let q = 0; q < MAX_CONES; q++) {
+            if (this.cnt[q] >= 0) continue;
+            this.cnx[q] = x; this.cny[q] = y; this.cnax[q] = a; this.cnay[q] = b; this.cnarc[q] = c; this.cnel[q] = f; this.cnt[q] = 0; this.cnflip[q] = this.rand() < 0.5 ? 1 : 0;
+            break;
+          }
+          break;
         case Ev.Beam: {
           // a,b = direction * length, c = width: a hot line of motes the length of the ray
           const len = Math.sqrt(a * a + b * b) || 1;
           const dx = a / len, dy = b / len;
           this.trauma = Math.min(1, this.trauma + 0.35);
+          if (f) { elementBeam(this, x, y, dx, dy, len, c, f); break; }
           for (let d = 4; d < len; d += 3) {
             const lat = (this.rand() - 0.5) * c * 1.4;
             this.spawn(x + dx * d - dy * lat, y + dy * d + dx * lat, 7 + this.rand() * 2, 0, 0, 0, 9 + this.rand() * 5, hex(this.rand() < 0.4 ? 0xffffff : 0xc070ff), 1);
@@ -478,12 +514,15 @@ export class Fx {
         this.x[i] = this.x[l]; this.y[i] = this.y[l]; this.z[i] = this.z[l];
         this.vx[i] = this.vx[l]; this.vy[i] = this.vy[l]; this.vz[i] = this.vz[l];
         this.life[i] = this.life[l]; this.col[i] = this.col[l]; this.big[i] = this.big[l];
+        this.gr[i] = this.gr[l]; this.dr[i] = this.dr[l]; this.sp[i] = this.sp[l];
         continue;
       }
+      if (this.sp[i] !== 0) { const t = this.sp[i] * dt, c = Math.cos(t), sn = Math.sin(t), vx = this.vx[i]; this.vx[i] = vx * c - this.vy[i] * sn; this.vy[i] = vx * sn + this.vy[i] * c; }
+      if (this.dr[i] !== 1) { const k = Math.pow(this.dr[i], dt); this.vx[i] *= k; this.vy[i] *= k; }
       this.x[i] += this.vx[i] * dt;
       this.y[i] += this.vy[i] * dt;
       this.z[i] += this.vz[i] * dt;
-      this.vz[i] -= 0.12 * dt;
+      this.vz[i] -= this.gr[i] * dt;
       if (this.z[i] < 0) { this.z[i] = 0; this.vz[i] *= -0.3; this.vx[i] *= 0.6; this.vy[i] *= 0.6; }
       i++;
     }
@@ -516,6 +555,13 @@ export class Fx {
     }
     for (let i = 0; i < MAX_POPS; i++) {
       if (this.pt[i] >= 0) { this.pt[i] += dt; if (this.pt[i] > POP_TICKS) this.pt[i] = -1; }
+    }
+    for (let i = 0; i < MAX_CONES; i++) {
+      if (this.cnt[i] < 0) continue;
+      const t0 = this.cnt[i];
+      this.cnt[i] += dt;
+      elementCone(this, this.cnx[i], this.cny[i], this.cnax[i], this.cnay[i], this.cnarc[i], this.cnel[i], t0 / CONE_TICKS, Math.min(1, this.cnt[i] / CONE_TICKS), this.cnflip[i] === 1);
+      if (this.cnt[i] >= CONE_TICKS) this.cnt[i] = -1;
     }
     for (let i = 0; i < MAX_BLINKS; i++) {
       if (this.blt[i] >= 0) { this.blt[i] += dt; if (this.blt[i] > BLINK_TICKS) this.blt[i] = -1; }
