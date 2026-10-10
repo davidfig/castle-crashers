@@ -1,7 +1,7 @@
 // The telegraphed special moves of ordinary enemies (docs/03-gameplay-combat.md, "Enemy roster"): lobbed rocks, healing and
 // rally pulses, summoning, blinking, stomps and screams, death rays, and what a mob leaves behind when it dies.
 // Everything here is data-driven by `MobDef.special` / `MobDef.onDeath`; step.ts only schedules it.
-import { Behavior, MOBS, MobType, NovaStyle, isBossType, ProjStyle, type ClingSpecial, type DeathDef, type LeapSpecial, type MobDef, type Special } from '../data/mobs';
+import { Behavior, MOBS, MobType, NovaStyle, isBossType, ProjStyle, type ClingSpecial, type DeathDef, type LeapSpecial, type MobDef, type PounceSpecial, type Special } from '../data/mobs';
 import { clamp, cosTurns, sinTurns } from '../engine/math';
 import { rngFloat, rngRange } from '../engine/rng';
 import { VIEW_W, WORLD_H, WORLD_W } from './constants';
@@ -19,7 +19,7 @@ export const SP_WIND = 6;
 /** `mode` of a snow sprite clinging to a hero (`rem` = the hero's slot). */
 export const SP_CLING = 7;
 
-/** `mode` of a mob in mid-leap (a bullfrog, the Fenlord): it arcs onto the spot it marked (`ax`, `ay`); `wind` counts the ticks left. */
+/** `mode` of a mob in mid-leap (a bullfrog, the Fenlord, a pouncing yeti): it arcs onto the spot it marked (`ax`, `ay`); `wind` counts the ticks left. */
 export const SP_LEAP = 9;
 
 /** `mode` of a boss casting one of its specials (modes 1-5 are its own moves; `rem` holds the index in its `moves`). */
@@ -150,6 +150,7 @@ export function startSpecialOf(s: GameState, i: number, sp: Special, target: num
       if (!onScreen(s, x) || dist > sp.radius * 0.9 || dist < 24) return false;
       break;
     case 'leap':
+    case 'pounce':
       if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
       e.ax[i] = e.x[tp]; // it comes down where the hero stands now; moving away dodges it
       e.ay[i] = e.y[tp];
@@ -288,7 +289,12 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
       }
       break;
     }
-    case 'leap': {
+    case 'leap':
+    case 'pounce': {
+      if (sp.kind === 'pounce' && target >= 0) { // it springs at where the hero is now, not where it crouched at them
+        e.ax[i] = e.x[s.players[target].ent];
+        e.ay[i] = e.y[s.players[target].ent];
+      }
       e.mode[i] = SP_LEAP;
       e.wind[i] = sp.delay;
       e.vx[i] = 0;
@@ -574,8 +580,8 @@ export function clingStep(s: GameState, i: number, def: MobDef): void {
 }
 
 /** The leap a mob can make: its own special, or (for a boss) the one among its moves. */
-function leapOf(def: MobDef): LeapSpecial | undefined {
-  if (def.special?.kind === 'leap') return def.special;
+function leapOf(def: MobDef): LeapSpecial | PounceSpecial | undefined {
+  if (def.special?.kind === 'leap' || def.special?.kind === 'pounce') return def.special;
   for (const mv of def.boss?.moves ?? []) if (mv.kind === 'special' && mv.special.kind === 'leap') return mv.special;
   return undefined;
 }
@@ -588,19 +594,20 @@ export function leapStep(s: GameState, i: number, def: MobDef): void {
   if (!sp || left <= 0) { e.mode[i] = 0; e.z[i] = 0; return; }
   e.x[i] += (e.ax[i] - e.x[i]) / left;
   e.y[i] += (e.ay[i] - e.y[i]) / left;
-  e.z[i] = sinTurns((1 - left / sp.delay) * 0.5) * (6 + def.radius);
+  e.z[i] = sinTurns((1 - left / sp.delay) * 0.5) * (sp.kind === 'pounce' ? 4 + def.radius * 0.5 : 6 + def.radius); // a pounce is a low, flat bound
   e.wind[i] = left - 1;
   if (e.wind[i] > 0) return;
   e.mode[i] = 0;
   e.z[i] = 0;
-  e.stun[i] = def.behavior === Behavior.Boss ? 20 : 16; // it lands heavily
-  emit(s.events, Ev.Burst, e.x[i], e.y[i], sp.radius, BurstStyle.Mire);
+  const pounce = sp.kind === 'pounce';
+  e.stun[i] = def.behavior === Behavior.Boss ? 20 : pounce ? 6 : 16; // it lands heavily (a pouncer lands ready to swing)
+  emit(s.events, Ev.Burst, e.x[i], e.y[i], sp.radius, pounce ? BurstStyle.Stomp : BurstStyle.Mire);
   stop(s, def.behavior === Behavior.Boss ? 5 : 2);
   for (let k = 0; k < s.players.length; k++) {
     const p = s.players[k];
     if (!p.active || p.downed) continue;
     const dx = e.x[p.ent] - e.x[i], dy = e.y[p.ent] - e.y[i];
-    if (dx * dx + dy * dy <= sp.radius * sp.radius) hurtPlayer(s, k, sp.damage, sp.slow);
+    if (dx * dx + dy * dy <= sp.radius * sp.radius) hurtPlayer(s, k, sp.damage, pounce ? 0 : sp.slow);
   }
 }
 

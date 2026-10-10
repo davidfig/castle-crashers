@@ -58,7 +58,7 @@ test('every track costs more stamina, and they add up', () => {
 test('the mage fireball grows, splits, flies faster and hits harder, each on its own track', () => {
   const blastHit = (id: string, rank: number) => {
     const s = arena(1); give(s, id, rank);
-    const g = mob(s, 150, 100), beside = mob(s, 150, 100 + 38);
+    const g = mob(s, 150, 100), beside = mob(s, 150, 100 + 56);
     for (let t = 0; t < 70; t++) step(s, t === 0 ? hold(Btn.Attack) : idle());
     return [1000 - s.ents.hp[g], 1000 - s.ents.hp[beside]];
   };
@@ -142,7 +142,7 @@ test('the dodge: dearer, farther, quicker to come back, chained with Count, and 
     assert.ok(dodge(cls, 'dpower', 4).spent > dodge(cls, 'dpower', 0).spent * 1.3, `class ${cls} pays for a stronger dodge`);
     assert.ok(dodge(cls, 'dsize', 4).moved > dodge(cls, 'dsize', 0).moved * 1.25, `class ${cls} goes farther`);
   }
-  const wait = (rank: number) => { const { s } = dodge(0, 'dspeed', rank); return s.players[0].cdDash; };
+  const wait = (rank: number) => { const s = arena(0); give(s, 'dspeed', rank); step(s, hold(Btn.Dodge)); return s.players[0].cdDash; };
   assert.ok(wait(4) < wait(0));
   // Count: a second dodge straight after the first, once, then the long cooldown
   const chain = (rank: number) => { const s = arena(4); give(s, 'dcount', rank); s.players[0].stamina = 1e6; let n = 0; for (let t = 0; t < 60; t++) { step(s, t % 2 === 0 ? hold(Btn.Dodge) : idle()); for (let k = 0; k < s.events.n; k++) if (s.events.data[k * EV_STRIDE] === Ev.Dash) n++; s.events.n = 0; } return n; };

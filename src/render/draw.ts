@@ -4,7 +4,7 @@ import { lerp } from '../engine/math';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { RAIN_FLIGHT, RAIN_HEIGHT, RAIN_SPREAD, rainLaunchTick, rainOffset } from '../sim/rain';
-import { LEVEL_CAM_END, STORE_CAM_END, STORE_X, TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
+import { LEVEL_CAM_END, TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
 import { Kind, ShrineKind, ZoneKind } from '../sim/entities';
 import { CHANNEL, chargeFrac, chestCost, SiteState } from '../sim/sites';
 import { HEAT_NAMES } from '../data/heat';
@@ -12,11 +12,13 @@ import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abili
 import { Phase, type GameState } from '../sim/state';
 import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, MobType, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
-import { drawWeather } from './weather';
+import { drawWeather, stormCover } from './weather';
 import { drawAmbient, drawCrest, drawFog, drawGround, drawHaze, drawParallax, drawRidge, drawSky, FIELD_Y0, GROUND_TOP } from './background';
-import { makeBlendedMood, moodAt, sceneryFor, type BiomeDef } from '../data/biomes';
-import { BLINK_TICKS, SLASH_TICKS, type Fx } from './fx';
-import { drawCamps, drawStore, drawStoreHints } from './camp';
+import { dayPhase, moodAt, sceneryFor } from '../data/biomes';
+import { roadOffset, Scenery } from './scenery';
+import { BLINK_TICKS, FIRE_RING_LIFE, SLASH_TICKS, type Fx } from './fx';
+import { drawCamps, drawStore, drawStoreHints, drawStoreWares, type StoreView } from './camp';
+import { drawQuestBoard, drawQuestGivers, drawQuestHud, drawQuestMarks, drawQuestNpc, type QuestView } from './quests';
 import { drawLevelUp } from './levelup';
 import { drawBoonPops, drawBoonStrip } from './boonHud';
 import { drawMercy } from './mercy';
@@ -25,41 +27,29 @@ import { mobPose } from './mobArt';
 import type { FrameStats } from '../platform/perf';
 import type { RoadCast } from './roadCast';
 
-const mood = makeBlendedMood();
-const moodNext = makeBlendedMood();
+/** The biomes on screen this frame (see scenery.ts): the level's, and the one the road is turning into. */
+const scenery = new Scenery();
+
+/** The biome the road enters after the current level (-1 for none) and the number of levels already played, set by the game whenever a level begins. */
+let nextSceneryBiome = -1;
+let levelsPlayed = 0;
+export function setSceneryRoute(next: number, played: number): void { nextSceneryBiome = next; levelsPlayed = played; }
 
 /**
- * The scenery of the store between levels: the old biome (drawn as the end of the level it follows, so the cut from the level is
- * invisible) up to the peddler, the next biome (drawn as the start of the level it leads into) past him. Each side is the whole
- * backdrop clipped to its half of the screen, so the seam is wherever the peddler stands and it scrolls with the field.
- * `layer`: 0 sky to fog, 1 foreground ridge and ambient specks, 2 weather.
+ * Sets `scenery` up for this frame and returns the road coordinate of the camera's zero. The level and the store after it are one
+ * stretch of road: the scenery is drawn in road coordinates (the level's camera plus where that level starts along the road; the
+ * store's plus the level's length), so the horizon, ground and hashes carry on across the store and into the next level, and the
+ * road turns from this level's biome into the next one's along the end of the level and the start of the store. The time of day is
+ * the road's clock, so it runs on across levels and biomes, and is the same for both biomes.
  */
-function drawStoreScenery(b: Batcher, S: Sprites, s: GameState, layer: number, camXf: number, camX: number, shx: number, oy: number, ft: number): void {
-  const seam = Math.max(0, Math.min(VIEW_W, Math.round(STORE_X - camX)));
-  for (let side = 0; side < 2; side++) {
-    const [x0, x1] = side === 0 ? [0, seam] : [seam, VIEW_W];
-    if (x1 <= x0) continue;
-    const biome = sceneryFor(side === 0 ? s.biome : s.nextBiome);
-    const md = side === 0 ? mood : moodNext;
-    const progress = side === 0 ? 1 : 0;
-    const shift = side === 0 ? LEVEL_CAM_END : -STORE_CAM_END;
-    moodAt(biome, progress, md);
-    b.setClip(x0, 0, x1, VIEW_H);
-    if (layer === 0) {
-      drawSky(b, S, biome, md, camXf + shift, ft, -shx, oy);
-      drawParallax(b, S, biome, md, camXf + shift, progress, -shx, oy, ft);
-      drawHaze(b, S, biome, md, oy);
-      drawGround(b, S, biome, md, camX + shift, oy, ft);
-      drawCrest(b, S, biome, md, camX + shift, oy);
-      drawFog(b, S, biome, md, camX + shift, oy, ft, progress);
-    } else if (layer === 1) {
-      drawRidge(b, S, biome, md, camX + shift, oy, ft);
-      drawAmbient(b, S, biome, md, camX + shift, oy, ft);
-    } else {
-      drawWeather(b, S, biome, md, camX + shift, oy, ft, progress, s.seed, side);
-    }
-    b.clearClip();
-  }
+function setUpScenery(s: GameState, progress: number): number {
+  const next = s.store ? s.nextBiome : nextSceneryBiome;
+  const biome = sceneryFor(s.biome);
+  const base = roadOffset(levelsPlayed);
+  scenery.set(biome, next >= 0 ? sceneryFor(next) : undefined, base);
+  const phase = dayPhase(levelsPlayed + (s.store ? 1 : progress));
+  for (let i = 0; i < scenery.n; i++) moodAt(scenery.biome[i], phase, scenery.mood[i]);
+  return base + (s.store ? LEVEL_CAM_END : 0);
 }
 
 /** Shadow size (0 small, 1 medium, 2 large) by MobType. */
@@ -127,8 +117,12 @@ export interface DebugInfo {
   routeLabel?: string;
   /** Per player slot: the key or button that opens the level-up panel on that player's device. */
   levelKeys?: string[];
-  /** In the store: per player slot, the key or button that trades, for a hero standing beside the peddler ('' for one who is not). */
+  /** In the store: per player slot, the key or button that buys, for a hero standing beside a ware ('' for one who is not). */
   storeHints?: string[];
+  /** In the store: the goods on the ground. */
+  storeView?: StoreView;
+  /** In the store: the people offering quests (render/quests.ts). */
+  questView?: QuestView;
   /** No "BATTLE WON" banner: the level was won and the road goes straight on. */
   hideEndBanner?: boolean;
   /** The road scene on this level, whose figures stand among the creatures (see roadCast.ts). */
@@ -167,16 +161,12 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   const ft = s.tick + alpha; // fractional tick: the drifting scenery moves every frame, not once per sim tick
 
   // --- sky + parallax layers (the light changes with how far the party has advanced)
-  const biome: BiomeDef = sceneryFor(s.biome);
-  const progress = Math.min(1, Math.max(0, camXf / (WORLD_W - VIEW_W)));
-  if (s.store) {
-    drawStoreScenery(b, S, s, 0, camXf, camX, shx, oy, ft);
-  } else {
-    moodAt(biome, progress, mood);
-    drawSky(b, S, biome, mood, camXf, ft, -shx, oy);
-    drawParallax(b, S, biome, mood, camXf, progress, -shx, oy, ft);
-    drawHaze(b, S, biome, mood, oy);
-  }
+  const progress = s.store ? 1 : Math.min(1, Math.max(0, camXf / (WORLD_W - VIEW_W)));
+  const road = setUpScenery(s, progress);
+  const biome = scenery.biome[0], mood = scenery.mood[0];
+  drawSky(b, S, scenery, camXf + road, ft, -shx, oy, stormCover(biome, progress, s.seed));
+  drawParallax(b, S, scenery, camXf + road, progress, -shx, oy, ft);
+  drawHaze(b, S, scenery, camXf + road, oy);
 
   // --- enemies coming over the top: they climb up from behind the hill (head first, the hill hiding their
   // lower body along its curved crest), stand on the crest, then walk down the near slope onto the field.
@@ -194,13 +184,11 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   }
 
   // --- ground, then the hill's crest in front of the climbers
-  if (!s.store) {
-    drawGround(b, S, biome, mood, camX, oy, ft);
-    drawCrest(b, S, biome, mood, camX, oy);
-    drawFog(b, S, biome, mood, camX, oy, ft, progress);
-  }
+  drawGround(b, S, scenery, camX + road, oy, ft);
+  drawCrest(b, S, scenery, camX + road, oy);
+  drawFog(b, S, scenery, camX + road, oy, ft, progress);
   drawCamps(b, S, s, camX, oy);
-  if (s.store) drawStore(b, S, s, camX, oy);
+  if (s.store) { drawStore(b, S, s, camX, oy); drawQuestGivers(b, S, s, camX, oy, dbg.questView); }
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);
@@ -286,18 +274,18 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     }
   }
 
-  // --- potions: a flask that bobs where it landed, with a green glint so a heal stands out in the melee
+  // --- potions: a flask that bobs where it landed, with a green (health) or yellow (stamina) glint so a pickup stands out in the melee
   for (let i = 0; i < e.highWater; i++) {
     if (e.kind[i] !== Kind.Potion) continue;
     const sx = lerp(e.px[i], e.x[i], alpha) - camX;
     if (sx < -8 || sx > VIEW_W + 8) continue;
-    const f = S.potion;
+    const f = e.sub[i] === 1 ? S.staminaPotion : S.potion;
     const sy = FIELD_Y0 + lerp(e.py[i], e.y[i], alpha) + oy;
     const bob = e.z[i] > 0 ? 0 : Math.round(Math.sin((s.tick + i * 7) * 0.12) + 1);
     b.drawScaled(S.px, sx - 2, sy - 0.5, 5, 1, hex(0x000000, 0.3));
     b.draw(f, sx - f.w / 2, sy - e.z[i] - f.h - bob, false);
     const ph = (s.tick + i * 13) % 40;
-    if (ph < 6) b.drawScaled(S.px, sx + 2, sy - e.z[i] - f.h - bob - 1 - (ph >> 1), 1, 1, hex(0x7dffa0, 0.9));
+    if (ph < 6) b.drawScaled(S.px, sx + 2, sy - e.z[i] - f.h - bob - 1 - (ph >> 1), 1, 1, hex(e.sub[i] === 1 ? 0xfff08a : 0x7dffa0, 0.9));
   }
 
   // --- chests and shrines: props on the ground with a price or a name over them and a ring that fills while a hero stands close
@@ -387,7 +375,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     let sh = S.shadow[1];
     let tint = shadowTint;
     if (e.kind[i] === Kind.Mob) sh = S.shadow[SHADOW_FOR[e.sub[i]]];
-    else tint = hex(PLAYER_COLORS[e.sub[i]], 0.55);
+    else if (e.kind[i] === Kind.Player) tint = hex(PLAYER_COLORS[e.sub[i]], 0.55);
     b.draw(sh, sx - sh.w / 2, sy - sh.h / 2 - 1, false, tint);
   }
 
@@ -412,7 +400,10 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       if (shot && shot.splash && (e.flags[i] & 4)) {
         // the mage's great fireball: a big, slow, flickering orb with a smoky ember trail
         const flick = ((s.tick >> 1) + i) & 1;
-        const cy = sy - 12;
+        // a lobbed ball climbs and falls in an arc over its flight, with a shadow marking where it will land
+        const lift = shot.lob ? 4 * 46 * Math.min(1, Math.max(0, (shot.ttl - e.hp[i]) / shot.ttl)) * (1 - Math.min(1, Math.max(0, (shot.ttl - e.hp[i]) / shot.ttl))) : 0;
+        if (shot.lob) drawDisc(b, S, sx, sy, 6 - lift / 14, hex(0x000000, 0.25));
+        const cy = sy - 12 - lift;
         for (let t = 6; t >= 1; t--) {
           const w = 12 - t;
           drawDisc(b, S, sx - dx * t * 5, cy - dy * t * 5, w / 2, hex(t > 3 ? 0xa02a1e : 0xd8402e, 0.5 - t * 0.06));
@@ -423,11 +414,15 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         drawDisc(b, S, sx, cy, 3, hex(0xffe890));
         drawDisc(b, S, sx - flick * 0.5, cy - flick * 0.5, 1.5, hex(0xffffff));
       } else if (shot && shot.splash) {
-        const flick = (s.tick + i) & 2 ? 1 : 0;
-        for (let t = 4; t >= 1; t--) b.drawScaled(S.px, sx - dx * t * 3 - 1, sy - 7 - dy * t * 3 - 1, 3 - (t >> 1), 3 - (t >> 1), hex(t > 2 ? 0xd8402e : 0xff8a30, 0.8 - t * 0.14));
-        drawDisc(b, S, sx, sy - 7, 3, hex(0xff8a30, 0.45 + flick * 0.15));
-        drawDisc(b, S, sx, sy - 7, 2, hex(0xffd35a));
-        drawDisc(b, S, sx, sy - 7, 1, hex(0xffffff));
+        // the mage's main fireball: the great one's orb at about two thirds its size, with a short ember trail
+        const flick = ((s.tick >> 1) + i) & 1;
+        const cy = sy - 10;
+        for (let t = 5; t >= 1; t--) drawDisc(b, S, sx - dx * t * 3.5, cy - dy * t * 3.5, (8 - t) / 2 * 0.9, hex(t > 2 ? 0xa02a1e : 0xd8402e, 0.55 - t * 0.09));
+        drawDisc(b, S, sx, cy, 6.8, hex(0xd8402e, 0.4 + flick * 0.1));
+        drawDisc(b, S, sx, cy, 5.4, hex(0xff8a30, 0.85));
+        drawDisc(b, S, sx, cy, 3.8, hex(0xffb340));
+        drawDisc(b, S, sx, cy, 2.3, hex(0xffe890));
+        drawDisc(b, S, sx - flick * 0.5, cy - flick * 0.5, 1.1, hex(0xffffff));
       } else if (shot) {
         // dark enough to read on snow: a deep brown tail, a burnt-gold shaft and a dark-edged amber head (no white)
         b.drawScaled(S.px, sx - dx * 5, sy - 7 - dy * 5, 2, 2, hex(0x5a3a12));
@@ -482,6 +477,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       drawBoss(b, S, e, i, s.tick, sx, sy, flip, flash);
     } else if (e.kind[i] === Kind.Mob) {
       drawMob(b, S, e, i, s.tick, sx, sy, flip, flash);
+    } else if (e.kind[i] === Kind.Npc) {
+      drawQuestNpc(b, S, s, i, sx, sy, flip, flash);
     } else {
       const slot = e.sub[i];
       const p = s.players[slot];
@@ -497,7 +494,9 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       }
       const moving = Math.abs(e.x[i] - e.px[i]) + Math.abs(e.y[i] - e.py[i]) > 0.05;
       const f = heroFrame(H, s, fx, slot, moving);
-      const blink = p.invuln > 0 && (s.tick & 2) !== 0;
+      // a charging hero is invulnerable but doesn't blink: he gets the orc's motion trail instead
+      const charging = p.dashT > 0 && CLASSES[p.classId].dashKind === 'charge';
+      const blink = p.invuln > 0 && !charging && (s.tick & 2) !== 0;
       const tint = p.vanishT > 0 ? hex(0xffffff, 0.3) : blink ? hex(0xffffff, 0.5) : 0xffffffff;
       // Teleport arrival: re-form from a thin bright column into the full sprite.
       let arrive = -1;
@@ -510,6 +509,14 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         const x0 = sx - (flip ? f.w - 1 - H.pivotX : H.pivotX) + (f.w - w) / 2;
         b.drawScaled(f, x0, sy - H.pivotY - (h - f.h), w, h, hex(0xd8c4ff, 0.7 + 0.3 * e1), flip, 0.7 * (1 - e1));
       } else {
+        if (charging) {
+          // motion trail: fading ghosts behind the charger, plus kicked-up dust at his heels
+          for (let g = 3; g >= 1; g--) b.draw(f, place(f) - p.dashX * g * 6, sy - H.pivotY - p.dashY * g * 6, flip, hex(0xffffff, 0.34 - g * 0.08), 0.3);
+          for (let k = 0; k < 2; k++) {
+            const t = ((s.tick * 0.7 + k * 7 + i * 3) % 12) / 12;
+            b.drawScaled(S.px, Math.round(sx - p.dashX * (4 + t * 10)), Math.round(sy - p.dashY * (4 + t * 10) - 1 - t * 3), 2, 1, hex(0xc8b488, 0.7 * (1 - t)));
+          }
+        }
         b.draw(f, place(f), sy - H.pivotY, flip, tint, flash);
       }
       if (p.silenceT > 0) {
@@ -603,6 +610,34 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const dots = Math.min(160, Math.ceil(radius * 1.6));
     const base = fx.rc[r];
     const col = ((base & 0x00ffffff) | (Math.round(255 * (1 - t)) << 24)) >>> 0;
+    if (fx.rbig[r] >= 4) {
+      // The mage's ring of fire: a ring of fireballs flying out from him, each with a smoky ember trail back toward where he stood,
+      // over a faint scorched ring on the ground. Slower than the other novas (the ring lives longer, see Fx.update).
+      const big = fx.rbig[r] === 5;
+      const tf = fx.rt[r] / FIRE_RING_LIFE;
+      const rad = fx.rr[r] * (1 - Math.pow(1 - tf, 1.6));
+      const cxr = fx.rx[r] - camX, cyr = FIELD_Y0 + fx.ry[r] + oy;
+      const a = Math.min(1, 2.2 * (1 - tf));
+      const balls = big ? 14 : 10;
+      for (let d = 0; d < 48; d++) {
+        const ang = (d / 48) * Math.PI * 2;
+        b.drawScaled(S.px, cxr + Math.cos(ang) * rad * 0.9, cyr + Math.sin(ang) * rad * 0.9, 2, 2, hex(0x3a1a10, a * 0.3));
+      }
+      for (let d = 0; d < balls; d++) {
+        const ang = (d / balls) * Math.PI * 2 + 0.3;
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        const px = cxr + ca * rad, py = cyr + sa * rad - 8;
+        const flick = ((s.tick >> 1) + d) & 1;
+        const size = (big ? 5.5 : 4.2) * (1 - tf * 0.35);
+        for (let k = 5; k >= 1; k--) drawDisc(b, S, px - ca * k * 4, py - sa * k * 4, size * (1 - k * 0.14), hex(k > 2 ? 0xa02a1e : 0xd8402e, a * (0.5 - k * 0.07)));
+        drawDisc(b, S, px, py, size + 1.8, hex(0xd8402e, a * (0.4 + flick * 0.1)));
+        drawDisc(b, S, px, py, size, hex(0xff8a30, a * 0.9));
+        drawDisc(b, S, px, py, size * 0.7, hex(0xffb340, a));
+        drawDisc(b, S, px, py, size * 0.4, hex(0xffe890, a));
+        drawDisc(b, S, px - flick * 0.5, py - flick * 0.5, size * 0.2, hex(0xffffff, a));
+      }
+      continue;
+    }
     if (fx.rbig[r] >= 2) {
       // A holy halo: a bold two-pixel ring squashed onto the ground, with big four-point stars turning around it. It stays bright
       // for most of its life and only fades at the end, and the stars have a dark gold edge so they read against any ground.
@@ -649,12 +684,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   }
 
   // --- foreground ridge along the bottom of the field
-  if (s.store) {
-    drawStoreScenery(b, S, s, 1, camXf, camX, shx, oy, ft);
-  } else {
-    drawRidge(b, S, biome, mood, camX, oy, ft);
-    drawAmbient(b, S, biome, mood, camX, oy, ft);
-  }
+  drawRidge(b, S, scenery, camX + road, oy, ft);
+  drawAmbient(b, S, scenery, camX + road, oy, ft);
 
   // --- launched bodies: tumbling mobs knocked out of the pack
   for (let i = 0; i < fx.nb; i++) {
@@ -663,7 +694,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const f = S.mob[fx.btype[i]][0];
     const spin = (Math.floor(fx.bage[i] / 3) & 1) === 1;
     const flash = fx.bage[i] < 4 ? 0.9 : 0;
-    b.draw(f, sx - f.w / 2, FIELD_Y0 + fx.by[i] - fx.bz[i] - f.h + oy, spin, 0xffffffff, flash);
+    b.draw(f, sx - f.w / 2, FIELD_Y0 + fx.by[i] - fx.bz[i] - f.h + (f.drop ?? 0) + oy, spin, 0xffffffff, flash);
   }
 
   // --- slash arcs: a bold arc with a bright leading edge sweeping through the swing
@@ -715,14 +746,15 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     b.drawScaled(S.px, sx, FIELD_Y0 + fx.y[i] - fx.z[i] + oy, sz, sz, c >>> 0);
   }
 
-  if (s.store) drawStoreScenery(b, S, s, 2, camXf, camX, shx, oy, ft);
-  else drawWeather(b, S, biome, mood, camX, oy, ft, progress, s.seed);
+  drawWeather(b, S, biome, mood, camX + (s.store ? LEVEL_CAM_END : 0), oy, ft, progress, s.seed);
 
   drawBoonPops(b, S, fx, camX, oy);
   drawMercy(b, S, s, camX, alpha, oy);
   drawHud(b, S, s, fx, dbg);
   drawLevelUp(b, S, s, dbg.levelKeys);
-  if (s.store) drawStoreHints(b, S, s, camX, oy, dbg.storeHints);
+  drawQuestMarks(b, S, s, camX, oy, alpha);
+  drawQuestHud(b, S, s);
+  if (s.store) { drawStoreWares(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawQuestBoard(b, S, s, camX, oy, dbg.questView, dbg.storeHints); drawStoreHints(b, S, s, camX, oy); }
 }
 
 function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): void {
@@ -950,6 +982,7 @@ export function drawSpecialTelegraph(b: Batcher, S: Sprites, e: GameState['ents'
       break;
     }
     case 'cling':
+    case 'pounce': // a crouch and a cry: the spring comes fast, so the warning is on the mob, not the ground
       drawText(b, S, '!', Math.round(sx - 1), Math.round(top - 8), hex(0xff5a3a), 1);
       break;
     case 'hex':
@@ -1225,12 +1258,13 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   const rising = def.revive !== undefined && e.rem[i] === 1 && e.stun[i] > 20;
   f = mobPose(S.mobArt, type, { winding, windP: p, striking, strikeQ: q, chargeWind, charging, dazed, cast: special, cling, rising, broken: def.shield && e.shieldHp[i] <= 0, moving, hurt: hurtFlash > 0, tick, salt: i });
 
+  const drop = f.drop ?? 0;
   let ox = 0, oy = 0;
   let flash = hurtFlash;
   if (leaping) {
     oy = -e.z[i]; // in the air, with its landing marked on the ground
     const sp = def.special;
-    if (sp && sp.kind === 'leap') groundRing(b, S, sx + (e.ax[i] - e.x[i]), sy + (e.ay[i] - e.y[i]), sp.radius, 22, hex(0xff3a2a, (tick >> 2) & 1 ? 0.8 : 0.45));
+    if (sp && (sp.kind === 'leap' || sp.kind === 'pounce')) groundRing(b, S, sx + (e.ax[i] - e.x[i]), sy + (e.ay[i] - e.y[i]), sp.radius, 22, hex(0xff3a2a, (tick >> 2) & 1 ? 0.8 : 0.45));
   } else if (cling) {
     oy = -9; // riding a hero's back, not at their feet
   } else if (charging) {
@@ -1258,12 +1292,12 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   if (def.behavior === Behavior.Bomber && winding) {
     const sc = 1 + 0.4 * p;
     const jx = ((tick & 1) ? 1 : -1) * p * 1.5;
-    b.drawScaled(f, sx - (f.w * sc) / 2 + jx, sy - f.h * sc, f.w * sc, f.h * sc, 0xffffffff);
-    drawTelegraph(b, S, e, i, def, sx, sy - f.h, sy, tick);
+    b.drawScaled(f, sx - (f.w * sc) / 2 + jx, sy - f.h * sc + drop, f.w * sc, f.h * sc, 0xffffffff);
+    drawTelegraph(b, S, e, i, def, sx, sy - f.h + drop, sy, tick);
     return;
   }
 
-  const x0 = sx - f.w / 2 + ox, y0 = sy - f.h + oy;
+  const x0 = sx - f.w / 2 + ox, y0 = sy - f.h + oy + drop;
   if (charging) {
     // motion trail: fading ghosts behind the charger
     for (let g = 3; g >= 1; g--) b.draw(f, x0 - e.ax[i] * g * 6, y0 - e.ay[i] * g * 6, flip, hex(0xffffff, 0.34 - g * 0.08), 0.3);
@@ -1288,11 +1322,11 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   }
   if (e.elite[i] > 0) {
     // an elite: half again as tall, standing in a ring (gold for a mini-boss, blood red when a curse called it), with a bar for its health
-    const gold = e.elite[i] === 1, ring = gold ? 0xffc02a : 0xe0442e;
+    const gold = e.elite[i] === 1, ring = gold ? 0xffc02a : e.elite[i] === 3 ? 0xc060ff : 0xe0442e;
     groundRing(b, S, sx, sy, 11 + 1.5 * f.w / 10, 22, hex(ring, 0.55 + 0.25 * (((tick >> 3) + i) & 1)));
     const w = f.w * 1.45, h = f.h * 1.45;
-    b.drawScaled(f, sx - w / 2 + ox, sy - h + oy, w, h, gold ? hex(0xffe8b0) : hex(0xffb8a8), flip, flash);
-    const bw = Math.max(16, Math.round(w)), bx = Math.round(sx - bw / 2), by = Math.round(sy - h + oy - 5);
+    b.drawScaled(f, sx - w / 2 + ox, sy - h + oy + drop * 1.45, w, h, gold ? hex(0xffe8b0) : hex(0xffb8a8), flip, flash);
+    const bw = Math.max(16, Math.round(w)), bx = Math.round(sx - bw / 2), by = Math.round(sy - h + oy + drop * 1.45 - 5);
     b.drawScaled(S.px, bx - 1, by - 1, bw + 2, 4, hex(0x000000, 0.75));
     b.drawScaled(S.px, bx, by, Math.max(0, Math.round(bw * e.hp[i] / e.maxhp[i])), 2, hex(ring));
   } else b.draw(f, x0, y0, flip, tint, flash);
@@ -1307,7 +1341,7 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   }
 
   // Animated weapons.
-  const pivotX = sx + face * (f.w / 2 - 2) + ox, pivotY = sy - f.h * 0.5 + oy;
+  const pivotX = sx + face * (f.w / 2 - 2) + ox, pivotY = sy - f.h * 0.5 + oy + drop;
   if (type === MobType.Goblin || type === MobType.Orc) {
     const orc = type === MobType.Orc;
     // The weapon is baked into the body frames (mobPose picks the windup/strike pose); only the swing trail is drawn here,

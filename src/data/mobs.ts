@@ -108,6 +108,8 @@ export interface WailSpecial extends SpecialBase { kind: 'wail'; radius: number;
 export interface LureSpecial extends SpecialBase { kind: 'lure'; radius: number; pull: number; damage: number }
 /** Spring onto the hero's spot: a ring marks the landing, `delay` ticks later it comes down, hitting everyone within `radius` and slowing them. */
 export interface LeapSpecial extends SpecialBase { kind: 'leap'; minRange: number; maxRange: number; radius: number; damage: number; slow: number; delay: number }
+/** A quick crouch, then a fast, low jump straight at the hero: it re-aims at the hero as it springs and lands `delay` ticks later, hitting whoever is within `radius`. A sidestep or a dodge-roll in the air time slips it. */
+export interface PounceSpecial extends SpecialBase { kind: 'pounce'; minRange: number; maxRange: number; radius: number; damage: number; delay: number }
 /** A gust around the caster: heroes inside `radius` take `damage` and are blown `push` px outward. */
 export interface GustSpecial extends SpecialBase { kind: 'gust'; radius: number; damage: number; push: number }
 /** Open a pit under the hero: after `delay` ticks it sucks heroes within `radius` toward its centre (`pull` px per tick) for `linger` ticks, biting whoever reaches the middle. */
@@ -123,7 +125,7 @@ export interface DazzleSpecial extends SpecialBase { kind: 'dazzle'; minRange: n
 export type Special =
   | HexSpecial | DazzleSpecial | LobSpecial | SummonSpecial | HealSpecial | RallySpecial | BlinkSpecial | NovaSpecial | BeamSpecial
   | TrapSpecial | ClingSpecial | WardSpecial | StormSpecial | WhiteoutSpecial | WailSpecial
-  | LureSpecial | LeapSpecial | GustSpecial | PitSpecial;
+  | LureSpecial | LeapSpecial | PounceSpecial | GustSpecial | PitSpecial;
 
 /** Nova looks. */
 export const NovaStyle = { Stomp: 0, Scream: 1, Frost: 2 } as const;
@@ -224,6 +226,12 @@ export interface MobDef {
   regen?: number;
   /** Hunts in packs: each other mob of its kind within `radius` (up to 3) makes it `bonus` faster and harder-hitting. */
   pack?: { radius: number; bonus: number };
+  /** Mob courage: each other mob of its own kind within `radius` (up to `max`) makes it `bonus` faster and harder-hitting, so a crowd of them rushes (unlike `pack`, a few strong hunters). */
+  swarm?: { radius: number; bonus: number; max: number };
+  /** A thrust: it starts its wind-up from this many px farther out and steps in that far as it begins, so its blow reaches well past its `reach`. */
+  lunge?: number;
+  /** A backstep: when a hero closes within `trigger` px it springs `dist` px away (then waits `every` ticks), keeping its distance like a kiter. */
+  backstep?: { trigger: number; dist: number; every: number };
   /** The first time it would die it rises again at this fraction of its health, after a moment on the ground. */
   revive?: number;
   /** After a bite lands it darts away for this many ticks before coming back (hit and run). */
@@ -284,10 +292,14 @@ export const MobType = {
 } as const;
 
 export const MOBS: MobDef[] = [
-  { name: 'goblin', behavior: Behavior.Melee, hp: 6, speed: 0.56, radius: 3.5, damage: 3, atkCooldown: 50, reach: 8, windup: 10, knockResist: 1, shield: false, coinChance: 0.5, coinMin: 1, coinMax: 1 },
+  { name: 'goblin', behavior: Behavior.Melee, hp: 6, speed: 0.56, radius: 3.5, damage: 3, atkCooldown: 50, reach: 8, windup: 10, knockResist: 1, shield: false, coinChance: 0.5, coinMin: 1, coinMax: 1,
+    // Mob courage: alone it is fodder, but every goblin close by (up to eight) makes it faster and bolder, so a crowd of them rushes.
+    swarm: { radius: 60, bonus: 0.05, max: 8 } },
   { name: 'orc', behavior: Behavior.Melee, hp: 30, speed: 0.38, radius: 5.5, damage: 12, atkCooldown: 80, reach: 14, windup: 24, knockResist: 0.35, shield: false, coinChance: 1, coinMin: 3, coinMax: 6,
     charge: { chance: 1 / 500, speed: 3.4, distance: 190, windup: 36, cooldown: 420, damage: 14, minRange: 60, maxRange: 240, dazed: 55 } },
-  { name: 'archer', behavior: Behavior.Ranged, hp: 5, speed: 0.5, radius: 3.5, damage: 6, atkCooldown: 110, reach: 100, windup: 30, knockResist: 1, shield: false, coinChance: 0.7, coinMin: 1, coinMax: 3 },
+  { name: 'archer', behavior: Behavior.Ranged, hp: 5, speed: 0.5, radius: 3.5, damage: 6, atkCooldown: 110, reach: 100, windup: 30, knockResist: 1, shield: false, coinChance: 0.7, coinMin: 1, coinMax: 3,
+    // Shoots and skips back: a hero who runs it down finds it already a leap away.
+    backstep: { trigger: 45, dist: 64, every: 150 } },
   { name: 'shield', behavior: Behavior.Melee, hp: 22, speed: 0.42, radius: 5, damage: 7, atkCooldown: 70, reach: 11, windup: 16, knockResist: 0.5, shield: true, shieldHp: 24, coinChance: 1, coinMin: 2, coinMax: 4 },
   { name: 'bomber', behavior: Behavior.Bomber, hp: 4, speed: 0.95, radius: 3.5, damage: 14, atkCooldown: 0, reach: 10, windup: 30, knockResist: 1, shield: false, coinChance: 0, coinMin: 0, coinMax: 0 },
   {
@@ -320,9 +332,12 @@ export const MOBS: MobDef[] = [
     special: { kind: 'nova', windup: 44, cooldown: 240, radius: 42, damage: 16, slow: 0, style: NovaStyle.Stomp } },
 
   // ---- Haunted Keep
-  { name: 'skeleton', behavior: Behavior.Melee, hp: 8, speed: 0.5, radius: 3.5, damage: 4, atkCooldown: 55, reach: 9, windup: 14, knockResist: 0.9, shield: false, coinChance: 0.5, coinMin: 1, coinMax: 2 },
+  { name: 'skeleton', behavior: Behavior.Melee, hp: 8, speed: 0.5, radius: 3.5, damage: 4, atkCooldown: 55, reach: 9, windup: 14, knockResist: 0.9, shield: false, coinChance: 0.5, coinMin: 1, coinMax: 2,
+    // A thrust: it begins its swing from well outside the reach it seems to have, and steps in as it does.
+    lunge: 20 },
   { name: 'bonearcher', behavior: Behavior.Ranged, hp: 6, speed: 0.45, radius: 3.5, damage: 5, atkCooldown: 130, reach: 105, windup: 34, knockResist: 1, shield: false, coinChance: 0.7, coinMin: 1, coinMax: 3,
-    shot: { count: 2, spread: 0.03, speed: 2.1, damage: 5, style: ProjStyle.Bone } },
+    // An odd count: one bone flies down the aim line (an even fan straddles a lone hero and misses on both sides).
+    shot: { count: 3, spread: 0.03, speed: 2.1, damage: 5, style: ProjStyle.Bone } },
   { name: 'ghoul', behavior: Behavior.Melee, hp: 14, speed: 0.8, radius: 4, damage: 6, atkCooldown: 50, reach: 9, windup: 10, knockResist: 0.8, shield: false, coinChance: 0.6, coinMin: 1, coinMax: 3, slowOnHit: 90 },
   { name: 'wraith', behavior: Behavior.Melee, hp: 11, speed: 0.55, radius: 4, damage: 8, atkCooldown: 70, reach: 11, windup: 16, knockResist: 1, shield: false, coinChance: 0.8, coinMin: 2, coinMax: 4,
     special: { kind: 'blink', windup: 26, cooldown: 240, minRange: 70, maxRange: 230 } },
@@ -331,7 +346,8 @@ export const MOBS: MobDef[] = [
     onDeath: { split: { type: MobType.Skull, count: 3 } } },
   { name: 'necromancer', behavior: Behavior.Caster, hp: 18, speed: 0.4, radius: 4, damage: 0, atkCooldown: 0, reach: 110, windup: 50, knockResist: 0.8, shield: false, coinChance: 1, coinMin: 4, coinMax: 8,
     special: { kind: 'summon', windup: 50, cooldown: 320, type: MobType.Skeleton, count: 3, cap: 12 } },
-  { name: 'banshee', behavior: Behavior.Caster, hp: 12, speed: 0.5, radius: 4, damage: 0, atkCooldown: 0, reach: 62, windup: 44, knockResist: 1, shield: false, coinChance: 0.9, coinMin: 2, coinMax: 5,
+  // reach < the wail's radius: a caster parks at 1.1x its reach, and the wail only goes off inside 0.9x its radius.
+  { name: 'banshee', behavior: Behavior.Caster, hp: 12, speed: 0.5, radius: 4, damage: 0, atkCooldown: 0, reach: 52, windup: 44, knockResist: 1, shield: false, coinChance: 0.9, coinMin: 2, coinMax: 5,
     special: { kind: 'wail', windup: 44, cooldown: 240, radius: 70, damage: 4, duration: 210 } },
   { name: 'plaguezombie', behavior: Behavior.Melee, hp: 38, speed: 0.3, radius: 5.5, damage: 9, atkCooldown: 90, reach: 12, windup: 26, knockResist: 0.4, shield: false, coinChance: 1, coinMin: 2, coinMax: 4,
     onDeath: { pool: { radius: 24, linger: 300, damage: 2, slow: 40 } } },
@@ -349,7 +365,9 @@ export const MOBS: MobDef[] = [
   { name: 'ram', behavior: Behavior.Melee, hp: 26, speed: 0.4, radius: 5.5, damage: 8, atkCooldown: 80, reach: 13, windup: 22, knockResist: 0.35, shield: false, coinChance: 1, coinMin: 2, coinMax: 4, launch: 84 },
   { name: 'icehusk', behavior: Behavior.Melee, hp: 36, speed: 0.3, radius: 5.5, damage: 9, atkCooldown: 90, reach: 12, windup: 26, knockResist: 0.4, shield: false, coinChance: 1, coinMin: 2, coinMax: 4,
     onDeath: { shards: { count: 6, speed: 1.9, damage: 4 } } },
-  { name: 'yeti', behavior: Behavior.Melee, hp: 48, speed: 0.34, radius: 6.5, damage: 12, atkCooldown: 88, reach: 15, windup: 24, knockResist: 0.28, shield: false, coinChance: 1, coinMin: 3, coinMax: 6, berserk: 0.4 },
+  { name: 'yeti', behavior: Behavior.Melee, hp: 48, speed: 0.34, radius: 6.5, damage: 12, atkCooldown: 88, reach: 15, windup: 24, knockResist: 0.28, shield: false, coinChance: 1, coinMin: 3, coinMax: 6, berserk: 0.4,
+    // Slow on its feet and slow to swing, so it closes the gap in one bound: a hero who keeps it at arm's length gets pounced on.
+    special: { kind: 'pounce', windup: 14, cooldown: 150, minRange: 34, maxRange: 130, radius: 14, damage: 10, delay: 16 } },
   { name: 'frostshaman', behavior: Behavior.Caster, hp: 16, speed: 0.4, radius: 4, damage: 0, atkCooldown: 0, reach: 110, windup: 50, knockResist: 0.8, shield: false, coinChance: 1, coinMin: 4, coinMax: 8,
     special: { kind: 'ward', windup: 50, cooldown: 300, radius: 90, duration: 480, need: 3 } },
   { name: 'blizzardwitch', behavior: Behavior.Caster, hp: 12, speed: 0.5, radius: 4, damage: 0, atkCooldown: 0, reach: 100, windup: 44, knockResist: 1, shield: false, coinChance: 0.9, coinMin: 2, coinMax: 5,

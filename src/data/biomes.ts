@@ -2,22 +2,24 @@
 // Render-only: nothing here may be read by the sim. (Which biome a level is comes from `biomeIndex` in roster.ts.)
 import { biomeIndex } from './roster';
 
-/** A look of the sky and light, reached at a point in the level; looks in between are blended. */
-export interface Mood {
-  /** Level progress (0..1) at which the look is fully in effect. */
-  at: number;
+/** The sky and light at one point of the day. The sun and moon are not part of it: they follow the clock (`sunMoonAt`), the same in every biome. */
+export interface Look {
   /** Sky gradient bands, top to horizon. */
   sky: readonly number[];
   /** Multiplies the background art (parallax layers, ground, clouds), 0xRRGGBB. */
   tint: number;
-  /** Screen y of the sun's center; below the horizon (> ~110) it is set. */
-  sunY: number;
-  /** Screen y of the moon's center; below the horizon it is down. */
-  moonY: number;
   /** Star brightness, 0..1. */
   stars: number;
   /** Northern lights, 0..1 (default none). */
   aurora?: number;
+}
+
+/** How a biome looks at the four times of day; the day's clock moves through them in turn (`lookAt`). Every biome has all four. */
+export interface Palette {
+  dawn: Look;
+  day: Look;
+  dusk: Look;
+  night: Look;
 }
 
 /** The pseudo-sprite that marks where the destination landmark sits among the parallax layers. */
@@ -233,7 +235,7 @@ export interface GroundDef {
 export interface BiomeDef {
   name: string;
   /** Sorted by `at`; the first is used before it and the last after it. */
-  timeline: readonly Mood[];
+  palette: Palette;
   /** Far to near. */
   layers: readonly ParallaxLayer[];
   clouds: readonly CloudLayer[];
@@ -261,12 +263,12 @@ export interface BiomeDef {
 const BASE_BIOMES: readonly BiomeDef[] = [
   {
     name: 'Meadow',
-    timeline: [
-      { at: 0, sky: [0x4a7fb5, 0x5a8fc2, 0x6c9fcc, 0x82b2d6, 0x9cc5df, 0xb4d6e8, 0xc9e3ee], tint: 0xffffff, sunY: 34, moonY: 170, stars: 0 },
-      { at: 0.55, sky: [0x4a7fb5, 0x5a8fc2, 0x6c9fcc, 0x82b2d6, 0x9cc5df, 0xb4d6e8, 0xc9e3ee], tint: 0xffffff, sunY: 52, moonY: 170, stars: 0 },
-      { at: 0.8, sky: [0x5a7fb0, 0x7a8fba, 0xa89cb0, 0xd8a890, 0xf0b878, 0xf8c880, 0xffd890], tint: 0xffe6c8, sunY: 96, moonY: 170, stars: 0 },
-      { at: 1, sky: [0x1c2048, 0x2e2e5e, 0x54427a, 0x8a5282, 0xc06482, 0xe48a7a, 0xf4a870], tint: 0xb0a0c8, sunY: 135, moonY: 40, stars: 0.7 },
-    ],
+    palette: {
+      dawn: { sky: [0x6a7ab0, 0x8a8ab8, 0xb094b0, 0xd8a0a0, 0xf0b490, 0xf8c890, 0xffd8a0], tint: 0xffe8d0, stars: 0 },
+      day: { sky: [0x4a7fb5, 0x5a8fc2, 0x6c9fcc, 0x82b2d6, 0x9cc5df, 0xb4d6e8, 0xc9e3ee], tint: 0xffffff, stars: 0 },
+      dusk: { sky: [0x5a7fb0, 0x7a8fba, 0xa89cb0, 0xd8a890, 0xf0b878, 0xf8c880, 0xffd890], tint: 0xffe6c8, stars: 0 },
+      night: { sky: [0x0a1030, 0x121a3c, 0x1c2650, 0x2a3260, 0x383e6c, 0x464a78, 0x545684], tint: 0x8e9ccc, stars: 1 },
+    },
     layers: [
       { sprite: 'mountFar', k: 0.08 },
       { sprite: 'mountNear', k: 0.2 },
@@ -314,11 +316,12 @@ const BASE_BIOMES: readonly BiomeDef[] = [
   {
     name: 'Haunted Keep',
     // dusk violet -> deep night -> a sickly pre-dawn
-    timeline: [
-      { at: 0, sky: [0x1a1838, 0x2a2050, 0x40285e, 0x5a3066, 0x7a3a68, 0x984a64, 0xb05a5c], tint: 0xc0b0d4, sunY: 190, moonY: 62, stars: 0.35 },
-      { at: 0.5, sky: [0x080a1c, 0x0e1230, 0x141a3e, 0x1c244e, 0x242e5a, 0x2c386a, 0x344276], tint: 0xaabae0, sunY: 190, moonY: 36, stars: 1 },
-      { at: 1, sky: [0x10141e, 0x1a2230, 0x24343a, 0x30463e, 0x405a44, 0x587050, 0x748a5c], tint: 0xb4c8b8, sunY: 190, moonY: 46, stars: 0.25 },
-    ],
+    palette: {
+      dawn: { sky: [0x10141e, 0x1a2230, 0x24343a, 0x30463e, 0x405a44, 0x587050, 0x748a5c], tint: 0xb4c8b8, stars: 0.25 },
+      day: { sky: [0x303848, 0x3c4658, 0x4a566a, 0x586678, 0x66767e, 0x748684, 0x829488], tint: 0xc8d4d0, stars: 0 },
+      dusk: { sky: [0x1a1838, 0x2a2050, 0x40285e, 0x5a3066, 0x7a3a68, 0x984a64, 0xb05a5c], tint: 0xc0b0d4, stars: 0.35 },
+      night: { sky: [0x080a1c, 0x0e1230, 0x141a3e, 0x1c244e, 0x242e5a, 0x2c386a, 0x344276], tint: 0xaabae0, stars: 1 },
+    },
     layers: [
       { sprite: 'spiresFar', k: 0.06 },
       { sprite: 'cragsNear', k: 0.18 },
@@ -366,12 +369,12 @@ const BASE_BIOMES: readonly BiomeDef[] = [
 export const FROZEN_PASS: BiomeDef = {
   name: 'Frozen Pass',
   // crisp morning -> bright midday -> a low rose-gold afternoon -> a deep blue night with the northern lights
-  timeline: [
-    { at: 0, sky: [0x7aa8d8, 0x8cb8e0, 0xa0c8e8, 0xb4d6ee, 0xc8e2f4, 0xdcecf8, 0xeef6fc], tint: 0xffffff, sunY: 70, moonY: 170, stars: 0 },
-    { at: 0.5, sky: [0x5a98d8, 0x70aae0, 0x88bce8, 0xa0cef0, 0xb8dcf6, 0xd0eafa, 0xe6f4fe], tint: 0xffffff, sunY: 52, moonY: 170, stars: 0 },
-    { at: 0.78, sky: [0x6a88c8, 0x8a98cc, 0xb0a4cc, 0xd8b0c0, 0xf0c0b0, 0xf8d0b0, 0xfce0c0], tint: 0xffe4e8, sunY: 100, moonY: 170, stars: 0 },
-    { at: 1, sky: [0x0a1030, 0x101a44, 0x182858, 0x20386c, 0x2c4a80, 0x3a5c92, 0x4c70a4], tint: 0x90a8d8, sunY: 140, moonY: 40, stars: 1, aurora: 0.9 },
-  ],
+  palette: {
+    dawn: { sky: [0x6a78b8, 0x8a90c4, 0xb09ac0, 0xd8a8b0, 0xf0bca8, 0xf8d0b8, 0xfce2cc], tint: 0xffe8e8, stars: 0.1 },
+    day: { sky: [0x5a98d8, 0x70aae0, 0x88bce8, 0xa0cef0, 0xb8dcf6, 0xd0eafa, 0xe6f4fe], tint: 0xffffff, stars: 0 },
+    dusk: { sky: [0x6a88c8, 0x8a98cc, 0xb0a4cc, 0xd8b0c0, 0xf0c0b0, 0xf8d0b0, 0xfce0c0], tint: 0xffe4e8, stars: 0 },
+    night: { sky: [0x0a1030, 0x101a44, 0x182858, 0x20386c, 0x2c4a80, 0x3a5c92, 0x4c70a4], tint: 0x90a8d8, stars: 1, aurora: 0.9 },
+  },
   layers: [
     { sprite: 'peaksFar', k: 0.06 },
     { sprite: 'peaksNear', k: 0.18 },
@@ -419,12 +422,12 @@ export const FROZEN_PASS: BiomeDef = {
 export const SUNKEN_MARSH: BiomeDef = {
   name: 'Sunken Marsh',
   // marsh: a grey-green murky dawn -> a heavy hazy day (low sun behind the overcast) -> a poisonous yellow-green dusk -> a dark bog night
-  timeline: [
-    { at: 0, sky: [0x4e5c52, 0x5c6c5e, 0x6c7c68, 0x7e8c72, 0x909c7a, 0xa0a882, 0xb0b48a], tint: 0xdce6d0, sunY: 112, moonY: 175, stars: 0 },
-    { at: 0.38, sky: [0x66766a, 0x76867a, 0x86948a, 0x96a292, 0xa6b09c, 0xb4bca6, 0xc2c8b0], tint: 0xeef4e4, sunY: 80, moonY: 175, stars: 0 },
-    { at: 0.7, sky: [0x2a3a2e, 0x3c4c2c, 0x546230, 0x6e7a30, 0x8a9234, 0xa8a83a, 0xc4b845], tint: 0xe6e8b0, sunY: 118, moonY: 175, stars: 0 },
-    { at: 1, sky: [0x0a1214, 0x0e1a1c, 0x14262a, 0x1a3234, 0x223e3c, 0x2a4a44, 0x34584c], tint: 0xb4d0c8, sunY: 190, moonY: 42, stars: 0.75 },
-  ],
+  palette: {
+    dawn: { sky: [0x4e5c52, 0x5c6c5e, 0x6c7c68, 0x7e8c72, 0x909c7a, 0xa0a882, 0xb0b48a], tint: 0xdce6d0, stars: 0 },
+    day: { sky: [0x66766a, 0x76867a, 0x86948a, 0x96a292, 0xa6b09c, 0xb4bca6, 0xc2c8b0], tint: 0xeef4e4, stars: 0 },
+    dusk: { sky: [0x2a3a2e, 0x3c4c2c, 0x546230, 0x6e7a30, 0x8a9234, 0xa8a83a, 0xc4b845], tint: 0xe6e8b0, stars: 0 },
+    night: { sky: [0x0a1214, 0x0e1a1c, 0x14262a, 0x1a3234, 0x223e3c, 0x2a4a44, 0x34584c], tint: 0xb4d0c8, stars: 0.85 },
+  },
   layers: [
     { sprite: 'mrShore', k: 0.06 },
     { sprite: 'mrReedFar', k: 0.2 },
@@ -481,12 +484,12 @@ export const SUNKEN_MARSH: BiomeDef = {
 export const SCORCHED_DUNES: BiomeDef = {
   name: 'Scorched Dunes',
   // dunes: pale gold dawn -> blinding bleached noon -> blazing orange-crimson sunset -> a cold deep-blue night with huge stars and a big moon
-  timeline: [
-    { at: 0, sky: [0xdcb878, 0xe8c888, 0xf0d498, 0xf6dea8, 0xfae6b8, 0xfcecc8, 0xfff2d6], tint: 0xfff0d8, sunY: 84, moonY: 170, stars: 0 },
-    { at: 0.45, sky: [0xdce6ea, 0xe6eeec, 0xeef2ec, 0xf4f4ea, 0xf8f6ec, 0xfcf8f0, 0xfffcf4], tint: 0xffffff, sunY: 34, moonY: 170, stars: 0 },
-    { at: 0.78, sky: [0x4a2858, 0x862c52, 0xc4403c, 0xe8662c, 0xf88c30, 0xfcb048, 0xffd070], tint: 0xffc090, sunY: 100, moonY: 170, stars: 0 },
-    { at: 1, sky: [0x03051a, 0x070b2a, 0x0d1538, 0x15214a, 0x1e3058, 0x2a4068, 0x3a5078], tint: 0x7c96dc, sunY: 140, moonY: 38, stars: 1 },
-  ],
+  palette: {
+    dawn: { sky: [0xdcb878, 0xe8c888, 0xf0d498, 0xf6dea8, 0xfae6b8, 0xfcecc8, 0xfff2d6], tint: 0xfff0d8, stars: 0 },
+    day: { sky: [0xdce6ea, 0xe6eeec, 0xeef2ec, 0xf4f4ea, 0xf8f6ec, 0xfcf8f0, 0xfffcf4], tint: 0xffffff, stars: 0 },
+    dusk: { sky: [0x4a2858, 0x862c52, 0xc4403c, 0xe8662c, 0xf88c30, 0xfcb048, 0xffd070], tint: 0xffc090, stars: 0 },
+    night: { sky: [0x03051a, 0x070b2a, 0x0d1538, 0x15214a, 0x1e3058, 0x2a4068, 0x3a5078], tint: 0x7c96dc, stars: 1 },
+  },
   layers: [
     { sprite: 'mesasFar', k: 0.05 },
     { sprite: 'dunesFar', k: 0.14, dy: 1 },
@@ -576,20 +579,67 @@ export function mix(a: number, b: number, t: number): number {
   return (r << 16) | (g << 8) | bl;
 }
 
-/** The sky and light at `progress` (0..1 through the level), written into `out`. */
-export function moodAt(biome: BiomeDef, progress: number, out: BlendedMood): BlendedMood {
-  const tl = biome.timeline;
+/** Levels (of the road) in one full day: sunrise, noon, sunset, moonrise, midnight. Unrelated to the biomes, so dusk falls at different points of different levels. */
+export const DAY_LEVELS = 2.5;
+/** Where in the day the road begins: just after sunrise. */
+const DAY_START = 0.05;
+
+/** The time of day, 0..1 (0 sunrise, 0.28 noon, 0.56 sunset, 0.78 midnight), after `levels` levels of the road (fractional: level index plus progress through it). */
+export function dayPhase(levels: number): number {
+  const d = DAY_START + levels / DAY_LEVELS;
+  return d - Math.floor(d);
+}
+
+// keyframes of the looks around the day: dawn at sunrise, full day across the middle of the sun's arc, dusk at sunset, night after moonrise
+const DAY_KEYS: readonly (readonly [at: number, look: keyof Palette])[] = [[0.03, 'dawn'], [0.2, 'day'], [0.38, 'day'], [0.56, 'dusk'], [0.74, 'night'], [0.92, 'night'], [1.03, 'dawn']];
+
+/** Sun up from phase 0 to this; the moon is up from MOON_RISE to the end of the day. */
+const SUN_SET = 0.56, MOON_RISE = 0.5;
+
+/** The sun's and moon's screen heights at day `phase` (below the horizon, > ~136, when down). The same on every biome. */
+export function sunMoonAt(phase: number, out: { sunY: number; moonY: number }): void {
+  const s = phase / SUN_SET;
+  out.sunY = s >= 0 && s <= 1 ? 150 - 116 * Math.sin(Math.PI * s) : 190;
+  const m = (phase - MOON_RISE) / (1 - MOON_RISE);
+  out.moonY = m >= 0 && m <= 1 ? 160 - 124 * Math.sin(Math.PI * m) : 190;
+}
+
+/** The sky and light at day `phase`, in `biome`'s palette, written into `out` (with the sun and moon heights from the clock). */
+export function moodAt(biome: BiomeDef, phase: number, out: BlendedMood): BlendedMood {
+  const p = phase < DAY_KEYS[0][0] ? phase + 1 : phase;
   let i = 0;
-  while (i < tl.length - 1 && progress >= tl[i + 1].at) i++;
-  const a = tl[i], b = tl[Math.min(i + 1, tl.length - 1)];
-  const t = b.at > a.at ? Math.min(1, Math.max(0, (progress - a.at) / (b.at - a.at))) : 0;
+  while (i < DAY_KEYS.length - 2 && p >= DAY_KEYS[i + 1][0]) i++;
+  const [t0, k0] = DAY_KEYS[i], [t1, k1] = DAY_KEYS[i + 1];
+  const t = Math.min(1, Math.max(0, (p - t0) / (t1 - t0)));
+  const a = biome.palette[k0], b = biome.palette[k1];
   out.sky.length = a.sky.length;
   for (let k = 0; k < a.sky.length; k++) out.sky[k] = mix(a.sky[k], b.sky[k], t);
+  out.tint = mix(a.tint, b.tint, t);
+  out.stars = a.stars + (b.stars - a.stars) * t;
+  out.aurora = (a.aurora ?? 0) + ((b.aurora ?? 0) - (a.aurora ?? 0)) * t;
+  sunMoonAt(phase, out);
+  return out;
+}
+
+/** Progress through a level at which the sky and horizon start to turn into the next biome's, when the next level is in another one. */
+export const TRANSITION_FROM = 0.5;
+
+/** How far the turn to the next biome has gone at level `progress`: 0 before `TRANSITION_FROM`, easing in and out to 1 at the very end. */
+export function transitionAt(progress: number): number {
+  const x = Math.min(1, Math.max(0, (progress - TRANSITION_FROM) / (1 - TRANSITION_FROM)));
+  return x * x * (3 - 2 * x);
+}
+
+/** `a` blended into `b` by `t`: gradient bands (resampled when the two have different counts), tint, stars, aurora (and the sun and moon, which the clock makes equal). */
+export function blendMoods(a: BlendedMood, b: BlendedMood, t: number, out: BlendedMood): BlendedMood {
+  const n = a.sky.length, m = b.sky.length;
+  out.sky.length = n;
+  for (let i = 0; i < n; i++) out.sky[i] = mix(a.sky[i], b.sky[n > 1 ? Math.round((i * (m - 1)) / (n - 1)) : 0], t);
   out.tint = mix(a.tint, b.tint, t);
   out.sunY = a.sunY + (b.sunY - a.sunY) * t;
   out.moonY = a.moonY + (b.moonY - a.moonY) * t;
   out.stars = a.stars + (b.stars - a.stars) * t;
-  out.aurora = (a.aurora ?? 0) + ((b.aurora ?? 0) - (a.aurora ?? 0)) * t;
+  out.aurora = a.aurora + (b.aurora - a.aurora) * t;
   return out;
 }
 

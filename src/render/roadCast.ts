@@ -5,7 +5,8 @@ import { CLASSES } from '../data/classes';
 import { storyWidth, LINE_H } from '../data/storyFont';
 import { createRng, rngInt, Stream } from '../engine/rng';
 import { BYSTANDER, Kind, SURRENDERED } from '../sim/entities';
-import { ROAD_REACTIONS, SCENE_BY_ID, type RoadScene } from '../data/story/road';
+import { ROAD_REACTIONS, SCENE_BY_ID, scriptFor, type RoadScene, type RoadScript } from '../data/story/road';
+import { markHeard, timesHeard } from '../data/story/roadMemory';
 import { lerp } from '../engine/math';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
@@ -15,6 +16,7 @@ import type { Sprites } from './art';
 import { FIELD_Y0 } from './background';
 import { npcFrame } from './npcArt';
 import { drawShadow, drawStory } from './ui';
+import { drawProp, PROP_REACH, propsFor, type Prop } from './roadProps';
 import { PLAYER_COLORS } from './art';
 
 /** A hero this close (px along the field) to the scene's centre can hear it. */
@@ -40,10 +42,10 @@ export function fieldCalm(s: GameState, x: number): boolean {
 /** One step of a scene: a line of the script, or a hero's reaction (0 = partway, 1 = at the end). */
 export type Beat = { line: number } | { react: 0 | 1 };
 
-export function beatsOf(sc: RoadScene): Beat[] {
+export function beatsOf(script: RoadScript): Beat[] {
   const out: Beat[] = [];
-  const mid = Math.floor(sc.lines.length / 2);
-  sc.lines.forEach((_, i) => {
+  const mid = Math.floor(script.length / 2);
+  script.forEach((_, i) => {
     out.push({ line: i });
     if (i === mid - 1) out.push({ react: 0 });
   });
@@ -51,7 +53,8 @@ export function beatsOf(sc: RoadScene): Beat[] {
   return out;
 }
 
-export interface Figure { k: number; npc: RoadScene['cast'][number]['npc']; x: number; y: number; rest: 1 | -1; dx: number }
+/** Something standing in the scene, sorted by depth: a cast member (`k` their index, `npc`) or a piece of set dressing (`prop`, `k` -1). */
+export interface Figure { k: number; npc: RoadScene['cast'][number]['npc']; x: number; y: number; rest: 1 | -1; dx: number; prop?: Prop }
 
 /** Greedy word wrap to `max` pixels in the story font. */
 export function wrapStory(text: string, max: number): string[] {
@@ -67,6 +70,12 @@ export function wrapStory(text: string, max: number): string[] {
 
 export class RoadCast {
   scene: RoadScene | undefined;
+  /** The conversation playing this time: the first-time script, or one of the scene's variants. */
+  script: RoadScript = [];
+  /** Dev aid (?variant=N): 0 the first-time script, k the k-th variant. */
+  forced: number | undefined;
+  /** This hearing has been counted (so the next meeting plays another conversation). */
+  private counted = false;
   /** Figures, sorted by depth (field y) so the renderer can weave them in among the creatures. */
   figures: Figure[] = [];
   x = 0;
@@ -91,6 +100,8 @@ export class RoadCast {
     this.listening = this.calm = this.done = false;
     this.heroSlot = this.lastHero = -1;
     this.scene = undefined;
+    this.script = [];
+    this.counted = false;
     this.figures = [];
     this.beats = [];
     const c = s.plan.find((p) => p.scene !== undefined);
@@ -98,9 +109,11 @@ export class RoadCast {
     if (!c || !scene) return;
     this.scene = scene;
     this.x = c.x;
-    this.beats = beatsOf(scene);
+    this.script = scriptFor(scene, timesHeard(scene.id), this.forced);
+    this.beats = beatsOf(this.script);
     this.figures = scene.cast
-      .map((f, k) => ({ k, npc: f.npc, x: c.x + f.dx, y: c.y + f.dy, rest: f.face, dx: f.dx }))
+      .map((f, k): Figure => ({ k, npc: f.npc, x: c.x + f.dx, y: c.y + f.dy, rest: f.face, dx: f.dx }))
+      .concat(propsFor(scene.id, scene.chapter).map((p): Figure => ({ k: -1, npc: scene.cast[0].npc, x: c.x + p.dx, y: c.y + p.dy, rest: 1, dx: p.dx, prop: p })))
       .sort((a, b) => a.y - b.y);
   }
 
@@ -113,7 +126,7 @@ export class RoadCast {
     if (!sc || this.done || !this.listening) return undefined;
     const b = this.beats[this.beat];
     let fig = -1, text: string;
-    if ('line' in b) { fig = sc.lines[b.line].who; text = sc.lines[b.line].text; } else { if (this.heroSlot < 0) return undefined; text = this.heroText; }
+    if ('line' in b) { fig = this.script[b.line].who; text = this.script[b.line].text; } else { if (this.heroSlot < 0) return undefined; text = this.heroText; }
     const ticks = lineTicks(text);
     return this.age < ticks ? { fig, text, age: this.age, ticks } : undefined;
   }
@@ -152,6 +165,7 @@ export class RoadCast {
     this.listening = near && this.calm;
     if (this.done) return;
     if (!this.listening) { this.age = 0; this.heroSlot = -1; return; } // walked off, or a fight broke out: the step begins again later
+    if (!this.counted) { this.counted = true; if (this.forced === undefined) markHeard(sc.id); }
     // a hero's step needs someone to speak it; with nobody on their feet it is skipped
     const b = this.beats[this.beat];
     if ('react' in b && this.heroSlot < 0 && !this.pickHero(s, b.react)) { this.advance(); return; }
@@ -161,7 +175,7 @@ export class RoadCast {
       this.heroX = s.ents.x[p.ent];
     }
     this.age += dt;
-    const text = 'line' in b ? sc.lines[b.line].text : this.heroText;
+    const text = 'line' in b ? this.script[b.line].text : this.heroText;
     if (this.age >= lineTicks(text) + GAP_TICKS) this.advance();
   }
 
@@ -177,8 +191,9 @@ export class RoadCast {
     const f = this.figures[n];
     if (!sc) return;
     const sx = Math.round(f.x - camX);
-    if (sx < -30 || sx > VIEW_W + 30) return;
+    if (sx < -PROP_REACH - 30 || sx > VIEW_W + PROP_REACH + 30) return;
     const sy = Math.round(FIELD_Y0 + f.y + oy);
+    if (f.prop) { drawProp(b, S, f.prop, sx, sy, tick); return; }
     const cur = this.current();
     const talking = cur !== undefined && cur.fig === f.k && cur.age < cur.ticks - 20;
     // listeners turn toward whoever is speaking (a hero too)

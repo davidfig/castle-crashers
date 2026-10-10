@@ -9,7 +9,7 @@ npm install
 npm run dev        # http://localhost:5188 (override with PORT=...)
 ```
 
-Optional URL params: `?seed=1234` for a reproducible battlefield; dev builds also take `?boss=1` (start at the boss arena), `?bots=3` (bot-controlled extra players) and `&auto=1` (a bot plays player 1 too).
+Optional URL params: `?seed=1234` for a reproducible battlefield, `?mute=1` for no sound or music (leaves the saved N / M toggles alone); dev builds also take `?boss=1` (start at the boss arena), `?bots=3` (bot-controlled extra players) and `&auto=1` (a bot plays player 1 too).
 
 ## Controls
 

@@ -46,14 +46,14 @@ export interface SimScene {
  * Room kept around a road scene (px): no enemy encounter within `SCENE_CLEARING` to its left or `SCENE_AHEAD` to its right, so the party can
  * stand and listen. The right side is wider because the road ahead streams in far past the screen (`STREAM_AHEAD`).
  */
-export const SCENE_CLEARING = 230;
-export const SCENE_AHEAD = 620;
+export const SCENE_CLEARING = 480;
+export const SCENE_AHEAD = 780;
 /** The encounters beyond a scene wait (and so do reinforcements and flank waves, see `sceneHold`) until the camera centre is this far past it. */
-export const SCENE_RELEASE = 210;
+export const SCENE_RELEASE = 260;
 /** Reinforcements and flank waves pause while the camera centre is this far before a scene (and until the release). */
-const SCENE_HOLD_BEFORE = 330;
-/** Field y of a road scene: up at the far edge of the field, so the figures and their speech bubbles stand against the sky, clear of the fighting. */
-export const SCENE_Y = 18;
+const SCENE_HOLD_BEFORE = 420;
+/** Field y of a road scene: the vertical middle of the field, inside a cleared area wide enough that no fight reaches it. */
+export const SCENE_Y = WORLD_H / 2 + 10;
 const SCENE_STREAM = 5001;
 
 /** A story beat the run was told to place. Mirrors the campaign layer's ReservedBeat; the sim knows nothing else about the campaign. */
@@ -131,7 +131,7 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
   if (rngFloat(createRng(seed, ELITE_STREAM)) < heatElites(opts.heat ?? 0)) minis.push(0.78);
   for (const t of minis) {
     const x = 760 + t * (WORLD_W - 1100);
-    if (plan.some((c) => (c.scene || c.beat) && Math.abs(c.x - x) < 320)) continue;
+    if (plan.some((c) => (c.scene ? Math.abs(c.x - x) < SCENE_AHEAD : c.beat && Math.abs(c.x - x) < 320))) continue;
     let at = 0;
     while (at < plan.length && plan[at].x <= x) at++;
     plan.splice(at, 0, { x, y: WORLD_H / 2, size: 10, line: false, t, elite: true, gate: true, rid: ELITE_STREAM + Math.round(t * 100) });
@@ -156,7 +156,7 @@ export function planGates(plan: readonly ClumpPlan[]): Gate[] {
 }
 
 function addMob(s: GameState, r: Rng, x: number, y: number, t: number): boolean {
-  const type = pickMobType(r, t, s.biome);
+  const type = pickMobType(r, t, s.biome, s.mix);
   const yy = y < 4 ? 4 : y > WORLD_H - 4 ? WORLD_H - 4 : y;
   const i = allocEntity(s.ents, Kind.Mob, type, x, yy, MOBS[type].hp);
   if (i < 0) return false;
@@ -207,10 +207,10 @@ export function eliteTypes(biome: number): number[] {
 }
 
 /** Elite health: a mini-boss soaks this many times an ordinary one's, a curse shrine's elite a bit less; a bigger party makes it tougher still. */
-export const ELITE_HP = [1, 6, 4] as const;
+export const ELITE_HP = [1, 6, 4, 5] as const;
 
-/** Spawn one elite (`kind` 1 mini-boss, 2 cursed) of `type` at (x, y). Returns its slot or -1. */
-export function spawnElite(s: GameState, type: number, kind: 1 | 2, x: number, y: number): number {
+/** Spawn one elite (`kind` 1 mini-boss, 2 cursed, 3 a quest's quarry) of `type` at (x, y). Returns its slot or -1. */
+export function spawnElite(s: GameState, type: number, kind: 1 | 2 | 3, x: number, y: number): number {
   const n = Math.max(1, Math.min(4, activePlayers(s)));
   const hp = MOBS[type].hp * ELITE_HP[kind] * (1 + 0.35 * (n - 1));
   const i = allocEntity(s.ents, Kind.Mob, type, x, y < 8 ? 8 : y > WORLD_H - 8 ? WORLD_H - 8 : y, hp);

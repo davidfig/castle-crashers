@@ -104,6 +104,8 @@ export interface Sprites {
   coin: Frame[][];
   /** The red health potion mobs drop. */
   potion: Frame;
+  /** The yellow stamina potion. */
+  staminaPotion: Frame;
   /** A treasure chest: [shut, open]. */
   chest: Frame[];
   /** Shrines by ShrineKind (curse, charge, greed, mercy): a stone pillar with a glowing crystal. */
@@ -163,6 +165,7 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   ];
   // a corked flask of red: dark glass rim, bright liquid, a glint
   const potion = add(bitmap(['..kk..', '..cc..', '.gwwg.', 'gRRRRg', 'gRWRRg', 'gRRRRg', '.gggg.'], { k: 0x6b4a2a, c: 0xc9a46a, g: 0x5a1020, w: 0xe8f0f0, R: 0xe02848, W: 0xffb0c0 }, 'potion'));
+  const staminaPotion = add(bitmap(['..kk..', '..cc..', '.gwwg.', 'gYYYYg', 'gYWYYg', 'gYYYYg', '.gggg.'], { k: 0x6b4a2a, c: 0xc9a46a, g: 0x6a5410, w: 0xe8f0f0, Y: 0xf2c818, W: 0xfff4a0 }, 'staminaPotion'));
 
   const chp = { k: 0x2a1608, B: 0x9a5a22, b: 0x6e3c14, Y: 0xffd84a, W: 0xfff6b0 };
   const chest = [
@@ -446,5 +449,5 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   // Corpses (the boss's too) are the authored `dead` frame of each enemy sheet (the first walk frame laid on its side, built by tools/art.mjs).
   const corpse = mobArt.anims.map((a) => a.dead[0]);
 
-  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, chest, shrine, heroes, mobArt, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, staminaPotion, chest, shrine, heroes, mobArt, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
 }

@@ -3,7 +3,9 @@
 import { rngFloat, type Rng } from '../../engine/rng';
 import { entryWeight, ROSTERS } from '../../data/roster';
 
-export function pickMobType(r: Rng, t: number, biome: number): number {
+/** `mix` is the slice of the biome's cast a level draws from (see `LevelPlan.mix`): its progress 0..1 is mapped into that slice. */
+export function pickMobType(r: Rng, t: number, biome: number, mix: readonly [number, number] = [0, 1]): number {
+  t = mix[0] + t * (mix[1] - mix[0]);
   const entries = ROSTERS[biome].entries;
   let total = 0;
   for (let k = 0; k < entries.length; k++) total += entryWeight(entries[k], t);

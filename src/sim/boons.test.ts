@@ -31,15 +31,14 @@ function goblin(s: GameState, x: number, y = 100, hp = 1): number {
 }
 const alive = (s: GameState, m: number) => s.ents.alive[m] === 1 && s.ents.kind[m] === Kind.Mob;
 
-test('Bloodlust: a kill takes time off the special and the dodge', () => {
+test('Bloodlust: a kill gives stamina back', () => {
   const s = arena();
   give(s, 'lust', 2);
   goblin(s, 130, 100, 1);
-  s.players[0].cdSpecial = 100; s.players[0].cdDash = 100;
+  s.players[0].stamina = 50; s.players[0].staminaDelay = 999;
   step(s, hold(Btn.Attack));
   assert.ok(s.kills >= 1);
-  assert.ok(s.players[0].cdSpecial <= 100 - 24 + 1, `special ${s.players[0].cdSpecial}`);
-  assert.ok(s.players[0].cdDash <= 100 - 12 + 1, `dodge ${s.players[0].cdDash}`);
+  assert.ok(s.players[0].stamina >= 50 - CLASSES[0].attackCost + 6 - 0.01, `stamina ${s.players[0].stamina}`);
 });
 
 test('Chain Spark: a hit can arc to a mob beside the target', () => {
@@ -213,13 +212,14 @@ test('Vigil: a fallen hero rises sooner with a cleric close by', () => {
 import { activatePlayer } from './state';
 function activate(s: GameState) { activatePlayer(s, 1, 120, 100); }
 
-test('Death Dance frees the dodge after a vanish kill; Keen Edge and Pickpocket sharpen a flank', () => {
+test('Death Dance refunds the dodge after a vanish kill; Keen Edge and Pickpocket sharpen a flank', () => {
   const d = arena(); asClass(d, 3); give(d, 'dance', 1);
   goblin(d, 120, 100, 1);
-  d.players[0].vanishT = 50; d.players[0].cdDash = 99;
+  d.players[0].vanishT = 50; d.players[0].cdDash = 99; d.players[0].stamina = 50; d.players[0].staminaDelay = 999;
   d.players[0].faceX = 1; d.players[0].faceY = 0;
   step(d, hold(Btn.Attack));
   assert.equal(d.players[0].cdDash, 0);
+  assert.ok(d.players[0].stamina >= 50 - CLASSES[3].attackCost + CLASSES[3].dashCost - 0.01, `stamina ${d.players[0].stamina}`);
 
   const hit = (keen: number, pick: number) => {
     const s = arena(); asClass(s, 3); give(s, 'keen', keen); give(s, 'pick', pick);

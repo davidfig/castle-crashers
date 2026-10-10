@@ -39,6 +39,10 @@ export interface ArrowDef {
   /** Fraction of `damage` the blast deals to things it did not hit directly (default 0.55). */
   splashDamage?: number;
   pierce?: boolean;
+  /** Lobbed: it arcs over everything in its way (no direct hit) and bursts at the end of its range with the full blast. */
+  lob?: boolean;
+  /** The most mobs a piercing shot can hit before it is spent (the first one counts); unset = no limit. */
+  maxHits?: number;
   /** A piercing shot that also ignores shields; without it, a shield still blocks it (and the shot stops there). */
   shieldPierce?: boolean;
 }
@@ -64,7 +68,7 @@ export interface ClassDef {
   speed: number;
   /** The basic attack: a short combo of quick sweeps. */
   combo: Swing[];
-  /** Ability 2: the big sweep (with its wave down the field). Costs stamina and has its own cooldown. */
+  /** Ability 2: the big sweep (with its wave down the field). Stamina is its only cooldown: `specialCooldown` is just how long the cast itself lasts (the swing or shot time). */
   special: Swing;
   specialCost: number;
   specialCooldown: number;
@@ -110,6 +114,7 @@ export interface ClassDef {
   // dodge
   dashSpeed: number;
   dashTicks: number;
+  /** Ticks before another dodge may start: only a gap against spamming, stamina is the real limit. */
   dashCooldown: number;
   dashDamage: number;
   dashKnock: number;
@@ -149,13 +154,14 @@ export const CLASSES: ClassDef[] = [
     ],
     special: { range: 50, dot: -0.5, damage: 12, knock: 6.5, cooldown: 24, hitStop: 3, pierce: true, lunge: 5, wave: 120, waveWidth: 26 },
     specialCost: 35,
-    specialCooldown: 150,
+    specialCooldown: 24,
     staminaMax: 100,
     staminaRegen: 0.75,
     staminaRegenDelay: 12,
     windedRecover: 25,
     windedSpeed: 0.7,
-    attackCost: 4,
+    // 9 a swing against ~6.75 regenerated in the 21-tick gap: holding attack drains about 2 a swing, so ~45 swings empty the pool
+    attackCost: 9,
     dashCost: 22,
     comboWindow: 28,
     furyMax: 100,
@@ -172,7 +178,7 @@ export const CLASSES: ClassDef[] = [
     // Warrior: a shoulder-down charge that bowls through everything in its path.
     dashSpeed: 4.6,
     dashTicks: 16,
-    dashCooldown: 60,
+    dashCooldown: 30,
     dashDamage: 7,
     dashKind: 'charge',
     // Held charge: after the 22 start cost the rest of the 100 stamina lasts ~104 ticks at 4.6/tick, i.e. ~480px (3/4 of the 640 view).
@@ -191,16 +197,16 @@ const swing = (s: Partial<Swing> & Pick<Swing, 'range' | 'dot' | 'damage' | 'kno
 CLASSES.push(
   {
     ...WARRIOR, name: 'mage', hp: 70, speed: 1.4, attackMove: 0.4,
-    dashKind: 'teleport', dashPower: 85, dashCost: 20, dashCooldown: 50, dashDamage: 0, dashTicks: 0,
+    dashKind: 'teleport', dashPower: 85, dashCost: 20, dashCooldown: 30, dashDamage: 0, dashTicks: 0,
     // No swing: the basic attack is a fireball that explodes on impact. (`combo` and `special` are required by the type but unused.)
     combo: [swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 24 })],
     special: swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 24 }),
-    shot: { damage: 6, knock: 3, speed: 2.8, ttl: 60, cooldown: 22, splash: 22 },
-    // ability 2: one huge, slow fireball that bursts on the first enemy it meets or at the end of its range
-    specialShot: { count: 1, spread: 0, damage: 14, knock: 6, speed: 2.2, ttl: 80, cooldown: 30, splash: 52, splashDamage: 0.7, radius: 10 },
-    // 12 a shot: at a 22-tick cooldown the regen between shots is ~7.5, so sustained fire drains about 4.5 a shot and runs dry in ~8 s
-    attackCost: 12,
-    specialCost: 40, specialCooldown: 170,
+    shot: { damage: 12, knock: 4, speed: 2.6, ttl: 60, cooldown: 26, splash: 40, radius: 8 },
+    // ability 2: a fireball lobbed in a high arc over the front line; it bursts where it lands, everything in the blast takes the full damage
+    specialShot: { count: 1, spread: 0, damage: 14, knock: 6, speed: 2.4, ttl: 50, cooldown: 30, splash: 52, splashDamage: 1, lob: true },
+    // The primary is a slightly larger fireball that costs as much as the big one (40): only two or three shots from a full bar, each hitting twice as hard
+    attackCost: 40,
+    specialCost: 40, specialCooldown: 30,
     novaCost: 40, novaRadius: 85, novaDamage: 11, novaBigRadius: 125, novaBigDamage: 16,
   },
   {
@@ -211,20 +217,20 @@ CLASSES.push(
     combo: [swing({ range: 40, dot: -1, damage: 1, knock: 0.3, cooldown: 8, hitStop: 0, aoe: true, inner: 0.5, innerMul: 2, touchMul: 4 })],
     furyPerHit: 0.5,
     special: swing({ range: 62, dot: -1, damage: 7, knock: 9, cooldown: 28, hitStop: 2, pierce: true, aoe: true }),
-    specialCost: 30, specialCooldown: 140,
+    specialCost: 30, specialCooldown: 28,
     novaCost: 45, novaRadius: 58, novaDamage: 6, novaBigRadius: 85, novaBigDamage: 10, novaHeal: 25, novaBigHeal: 45,
-    dashKind: 'heal', dashPower: 14, dashRadius: 70, dashSpeed: 3, dashTicks: 8, dashCost: 24, dashCooldown: 70, dashDamage: 0,
+    dashKind: 'heal', dashPower: 14, dashRadius: 70, dashSpeed: 3, dashTicks: 8, dashCost: 24, dashCooldown: 30, dashDamage: 0,
   },
   {
     ...WARRIOR, name: 'rogue', hp: 75, speed: 1.9, attackMove: 1,
     // Unseen until he strikes or a mob bumps into him. Front-on he is no better than anyone (4 dmg a quick jab); from behind he hits 2.5x,
     // and the strike out of hiding is a huge sweep across everything in front of him (then he is seen, and must wait to hide again).
-    backstab: 2.5, ambush: 6, ambushReach: 1.8, hideCooldown: 240,
+    backstab: 2.5, ambush: 6, ambushReach: 1.8, hideCooldown: 240, attackCost: 4, // a 14-tick jab leaves ~1.5 ticks of regen: about 2.5 drained a jab
     combo: [swing({ range: 30, dot: 0.1, damage: 4, knock: 2, cooldown: 14, lunge: 4 }), swing({ range: 32, dot: 0.1, damage: 4, knock: 2.2, cooldown: 14, lunge: 4 })],
     special: swing({ range: 38, dot: -0.2, damage: 8, knock: 4, cooldown: 18, hitStop: 2, pierce: true, lunge: 8, wave: 80, waveWidth: 14 }),
-    specialCost: 30, specialCooldown: 120,
+    specialCost: 30, specialCooldown: 18,
     novaRadius: 55, novaDamage: 8, novaBigRadius: 85, novaBigDamage: 12,
-    dashSpeed: 4.2, dashTicks: 7, dashCost: 14, dashCooldown: 30, dashDamage: 0,
+    dashSpeed: 4.2, dashTicks: 7, dashCost: 14, dashCooldown: 24, dashDamage: 0,
   },
   {
     ...WARRIOR, name: 'archer', hp: 70, speed: 1.6, attackMove: 0.2,
@@ -233,10 +239,10 @@ CLASSES.push(
     special: swing({ range: 1, dot: 1, damage: 1, knock: 0, cooldown: 8 }),
     // Sniper: an arrow hits up to 2.2x harder at the far end of its flight, so he wants distance (and the mage's fireball does not scale).
     longShot: 1.2,
-    shot: { damage: 3, knock: 1.2, speed: 4.2, ttl: 50, cooldown: 8, pierce: true },
-    specialShot: { count: 5, spread: 0.09, damage: 5, knock: 2.5, speed: 4.6, ttl: 80, cooldown: 14, pierce: true, shieldPierce: true },
+    shot: { damage: 3, knock: 1.2, speed: 4.2, ttl: 50, cooldown: 8, pierce: true, maxHits: 3 },
+    specialShot: { count: 5, spread: 0.09, damage: 5, knock: 2.5, speed: 4.6, ttl: 80, cooldown: 14, pierce: true, maxHits: 5, shieldPierce: true },
     attackCost: 1,
-    specialCost: 35, specialCooldown: 150,
+    specialCost: 35, specialCooldown: 14,
     novaRadius: 60, novaDamage: 7, novaBigRadius: 95, novaBigDamage: 12,
     // Ability 1: a rain of arrows that lands about halfway out along his arrows' range (4.2 px/tick x 50 ticks / 2).
     rain: { arrows: 24, bigArrows: 38, radius: 36, bigRadius: 50, damage: 4, knock: 1.5, hitRadius: 9, reach: 105 },

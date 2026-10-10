@@ -22,6 +22,7 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 | [11 Backgrounds](11-backgrounds.md) | Sky, parallax, ground, biomes, time of day |
 | [12 Story](12-story.md) | Premise, chapters, the Ledger, how procgen carries the story |
 | [13 UI & Screen Art](13-ui-art.md) | The illuminated-ledger look, what every screen needs, the kit and its status |
+| [14 Simulated Players](14-ai-playtesting.md) | Skill-graded AI players for every class, and headless full-route balance runs (`npm run sim`) |
 | [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster) |
 | [Open Questions](open-questions.md) | Things we haven't decided |
 | [Decisions (ADRs)](decisions/README.md) | Log of decisions and why |

@@ -124,7 +124,7 @@ frames.deadf = [["legGround", CX, 28], ["cinder", CX - 4, 25]];
 
 export default {
   name: 'wisp', title: 'Wisp', notes: 'Flies; hovers above the ground line. A caster: windup = the orb swells and flares (the false-light lure). The one glowing enemy.',
-  cell: [24, 32], shadow: [6, 2], pivot: [CX, 28], palette, post,
+  cell: [24, 32], hover: true, shadow: [6, 2], pivot: [CX, 28], palette, post,
   parts, frames,
   anims: {
     walk: { fps: 8, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },

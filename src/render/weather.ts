@@ -35,6 +35,26 @@ export function setWeatherRoute(current: WeatherSpan | null, next: WeatherSpan |
 }
 
 /**
+ * How overcast the sky is (0..1) for the level at `progress`: the rain's strength, but felt a little ahead of it and
+ * kept a little behind it, so the cloud banks roll in before the first drops and linger as the rain lets up.
+ */
+export function stormCover(biome: BiomeDef, progress: number, levelSeed: number, which = 0): number {
+  const list = weatherFor(biome);
+  const sp = spans[which];
+  const seed = sp ? sp.seed : levelSeed, span = sp ? sp.levels : 1;
+  const at = (p: number): number => (sp ? sp.from + (sp.to - sp.from) * p : p);
+  let m = 0;
+  for (const w of list) {
+    if (w.kind !== 'rain') continue;
+    for (const d of [-0.07, -0.035, 0, 0.035, 0.07]) {
+      const p = Math.min(1, Math.max(0, at(progress) + d / span));
+      m = Math.max(m, weatherLevel(w, p, seed, span) * (1 - Math.abs(d) * 2.5));
+    }
+  }
+  return Math.min(1, m * 1.7);
+}
+
+/**
  * Draw the weather for the level at `progress` (0..1 through it). `which` picks the level: 0 the current one, 1 the next
  * (the store shows the end of one level and the start of the next). The weather runs across the whole biome, so a level's
  * progress is mapped onto its slice of the biome's.
@@ -100,7 +120,7 @@ function drawRainfall(b: Batcher, S: Sprites, mood: BlendedMood, w: WeatherDef, 
   const n = Math.round(RAIN_DROPS * level), lean = (w.wind ?? 0) * 2, t = Math.floor(tick);
   for (let i = 0; i < n; i++) {
     const h = hash(i, 9001), d = (h & 255) / 255;
-    const v = 5 + d * 4, landY = 125 + d * 190 + ((h >>> 20) & 15);
+    const v = 5 + d * 4, landY = 125 + d * 215 + ((h >>> 20) & 15);
     const fall = Math.ceil((landY + 8) / v), cycle = fall + RAIN_SPLASH + ((h >>> 4) & 15);
     const phase = (t + ((h >>> 8) % cycle)) % cycle;
     const span = VIEW_W + 200;

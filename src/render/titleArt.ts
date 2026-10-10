@@ -43,18 +43,18 @@ function keep(b: Batcher, S: Sprites, tick: number): void {
   for (const tx of [196, 418]) {
     r(tx, 150, 26, 62, wall); r(tx, 150, 2, 62, edge);
     for (let x = tx - 2; x < tx + 26; x += 10) r(x, 144, 6, 8, wall);
-    r(tx + 11, 168, 4, 10, 0xefbd44);
   }
   r(296, 150, 48, 62, wall); r(296, 150, 2, 62, edge);
   for (let x = 294; x < 346; x += 12) r(x, 142, 7, 9, wall);
-  const wave = Math.round(Math.sin(tick * 0.12) * 2);
-  for (const tx of [196, 418]) { // a banner on each tower
+  // a banner on each tower; each catches the wind on its own rate and phase, so they never wave in step
+  [196, 418].forEach((tx, i) => {
+    const wave = Math.round(Math.sin(tick * (0.12 + i * 0.037) + i * 2.4) * 1.5 + Math.sin(tick * (0.29 - i * 0.06) + i * 4.1) * 0.8);
     r(tx + 12, 122, 2, 26, wall);
     r(tx + 14, 123, 16 + wave, 7, GLASS.R); r(tx + 14, 130, 12 + wave, 3, GLASS.R); r(tx + 14, 123, 16 + wave, 1, GLASS.q);
-  }
+  });
   // the gate and the lit windows (they flicker)
   r(308, 186, 24, 26, 0x080414); r(310, 182, 20, 6, 0x080414); r(313, 190, 14, 22, 0xd8803a, 0.55);
-  const lit = [[308, 158], [326, 158], [317, 174], [304, 190], [334, 190], [206, 164], [428, 164], [250, 188], [376, 188]];
+  const lit = [[308, 158], [326, 158], [317, 174], [304, 190], [334, 190], [207, 168], [429, 168], [250, 188], [376, 188]];
   // each window stays lit; a torch inside makes its glow breathe at its own rate
   lit.forEach(([x, y], i) => {
     const fl = 0.5 + 0.28 * Math.sin(tick * (0.11 + (i % 4) * 0.025) + i * 2.1) + 0.22 * Math.sin(tick * 0.37 + i * 5.3);
@@ -105,7 +105,7 @@ function horde(b: Batcher, S: Sprites, tick: number): void {
       const span = VIEW_W + 80;
       const x = ((h01(row * 99 + i) * span + tick * v) % span) - 40;
       const bob = Math.round(Math.abs(Math.sin(tick * 0.15 + i * 1.7)));
-      const top = rk.y - f.h - bob;
+      const top = rk.y - f.h - bob + (f.drop ?? 0);
       b.drawScaled(f, Math.round(x - f.w / 2), top, f.w, f.h, hex(rk.col), false, -1);
       if (h01(row * 17 + i * 5) < 0.05) { // a few carry a banner: a pole at the front hand and a cloth streaming back, both in the rank's silhouette shade
         const poleX = Math.round(x + f.w * 0.25), poleTop = top - 11, cw = 9, ch = 5;

@@ -38,7 +38,7 @@ const GREED_COST = 0.45;
 const MERCY_REACH = 120;
 
 /** What the next chest costs. Every chest opened makes the next dearer; heat makes them all dearer. */
-export function chestCost(s: GameState): number { // (a kill is worth about a gold piece, so the first chest is some fifty kills of the road)
+export function chestCost(s: GameState): number { // (a kill is worth about a third of a gold piece, so the first chest is a good stretch of the road)
   return Math.round(Math.min(400, 50 + 30 * s.chestsOpened) * (1 + 0.1 * s.heat));
 }
 
@@ -84,7 +84,7 @@ export function onEliteDown(s: GameState, m: number): void {
 }
 
 /** A free level: the hero levels up with no experience paid, and gets the pick. */
-function freeLevel(s: GameState, slot: number): void {
+export function freeLevel(s: GameState, slot: number): void {
   const p = s.players[slot];
   if (!p.active || p.level >= MAX_LEVEL) return;
   p.level++;
@@ -93,7 +93,7 @@ function freeLevel(s: GameState, slot: number): void {
 }
 
 /** The standing hero closest to (x, y) within the given reach, or -1. */
-function heroAt(s: GameState, x: number, y: number, rx: number, ry: number): number {
+export function heroAt(s: GameState, x: number, y: number, rx: number, ry: number): number {
   const e = s.ents;
   let best = -1, bestD = Infinity;
   for (let k = 0; k < s.players.length; k++) {
@@ -107,7 +107,7 @@ function heroAt(s: GameState, x: number, y: number, rx: number, ry: number): num
   return best;
 }
 
-function healParty(s: GameState, frac: number): void {
+export function healParty(s: GameState, frac: number): void {
   for (const p of s.players) {
     if (!p.active || p.downed) continue;
     const hp = CLASSES[p.classId].hp;

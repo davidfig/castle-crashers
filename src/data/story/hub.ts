@@ -54,6 +54,7 @@ export const INTRO: readonly Scene[] = [
       P({ warrior: 'Understood. Hold the line and clear the field.', cleric: 'And anyone who is not fighting?', rogue: 'And the pay?', mage: 'And who audits the count?', archer: 'How far does the field run?' }),
       R('Vermin is a broad category. The Writ will tell you what applies. And the pay is per head: every one goes in the book, and the book is settled on delivery.'),
       R('Between battles you will rest at a camp. Spend your pay on gear, and on whatever the peddler is selling, and grow stronger for the next. Up to four of you may ride together.'),
+      R('Should you fall out there do not fret. The wagon brings you home and the Order raises you in the chapel. Every time. The vermin have no such priests: what falls out there stays down.'),
       R('When the book is full the Crown will give thanks. Until then: per head.'),
       N('He turns the board toward you. Three notices, freshly inked. Choose one.'),
     ],
@@ -174,8 +175,8 @@ const REMARK_WON: readonly (readonly string[])[] = [
   ['Almost there.', 'One more and it is done.', 'The work is nearly complete.', 'History will thank you.'],
 ];
 const REMARK_FAILED: readonly (readonly string[])[] = [
-  ['A setback. The city will wait.', 'Rest. The vermin are not going anywhere.', 'Not every hunt ends well. Try again.', 'The Crown is patient.'],
-  ['Come back stronger.', 'You were fortunate to return.', 'The Crown is patient.', 'The recovery wagon was prompt.'],
+  ['A setback. The city will wait.', 'Rest. The vermin are not going anywhere.', 'The Order has you on your feet again. Try once more.', 'The Crown is patient.'],
+  ['Come back stronger.', 'You were fortunate to return.', 'The Crown is patient.', 'The wagon was prompt and the clerics were quick.'],
   ['Your wagon was prompt. We need you alive.', 'Rest. We will need you.', 'Remember who needs you alive.', 'A pity. Try again.'],
   ['Do not tire. The quota stands.', 'We need you in the field.', 'Take a day. Then back to it.', 'The wagon will always come for you.'],
   ['The last Writ will wait for you.', 'Rest. It is nearly done.', 'There is no hurry now.', 'We can wait.'],

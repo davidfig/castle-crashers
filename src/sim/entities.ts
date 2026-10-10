@@ -3,7 +3,7 @@ import { MOBS } from '../data/mobs';
 import { MAX_ENTS } from './constants';
 
 /** A Zone is a patch of ground that something is about to happen to (a lobbed rock) or that stays dangerous (a poison pool). */
-export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5, Potion: 6, Shrine: 7, Chest: 8 } as const;
+export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5, Potion: 6, Shrine: 7, Chest: 8, Npc: 9 } as const;
 
 /** Zone looks (the `sub` of a Kind.Zone entity). */
 export const ZoneKind = { Rock: 0, Poison: 1, Frost: 2, Trap: 3, Storm: 4, Rain: 5, Pit: 6, Mud: 7, Spore: 8 } as const;
@@ -14,6 +14,10 @@ export const BYSTANDER = 16;
 export const SURRENDERED = 64;
 /** Mob flag: it has gone berserk (below its `berserk` health): frenzied, harder-hitting, never staggered. */
 export const BERSERK = 128;
+
+/** What a Kind.Npc does (its `mode`): a ward walks with the party and has to be kept alive, a captive waits bound to be cut free, a loose one
+ *  (cut free with its guards still about) cowers until they are dead, a freed one runs off. */
+export const NpcMode = { Ward: 0, Captive: 1, Freed: 2, Loose: 3 } as const;
 
 /** Shrine looks (the `sub` of a Kind.Shrine entity). */
 export const ShrineKind = { Curse: 0, Charge: 1, Greed: 2, Mercy: 3 } as const;

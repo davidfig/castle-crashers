@@ -101,7 +101,7 @@ for (const k of ['walk0', 'walk1', 'walk2', 'walk3', 'idle0', 'idle1']) frames[k
 
 export default {
   name: 'skull', title: 'Flaming Skull', notes: 'Flies. Hovers above the ground line; ghost-fire tail; jaws open on windup, snap on strike.',
-  cell: [22, 15], shadow: [6, 2], pivot: [11, 13], palette, post,
+  cell: [22, 15], hover: true, shadow: [6, 2], pivot: [11, 13], palette, post,
   parts, frames,
   anims: {
     walk: { fps: 8, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },

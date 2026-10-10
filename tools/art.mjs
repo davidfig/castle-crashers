@@ -214,7 +214,17 @@ export async function build() {
         }
         if (minY < 1e9) top = def.pivot[1] - minY + 1;
       }
-      if (i === 0) meta = { name: def.name, title: def.title ?? def.name, notes: def.notes ?? '', cell: def.cell, pivot: def.pivot, top, shadow: def.shadow ?? [9, 5], size: [sheet.W, sheet.H], frames: sheet.frames, anims: sheet.anims, palette: pal, variants: variants.map((x, j) => ({ id: x.id, label: x.label ?? x.id, file: j === 0 ? `${def.name}.png` : `${def.name}.${x.id}.png` })) };
+      let ground = 0;                       // empty rows under the feet of a grounded body (idle/walk): the game sinks the sprite by this much so it stands on its ground line (hoverers keep their gap)
+      if (i === 0 && !def.hover) {
+        ground = 1e9;
+        for (const an of ['idle', 'walk']) for (const fname of sheet.anims[an]?.frames ?? []) {
+          const fr = sheet.frames[fname]; let low = -1;
+          for (let y = fr.h - 1; y >= 0 && low < 0; y--) for (let x = 0; x < fr.w; x++) if (sheet.rgba[((fr.y + y) * sheet.W + fr.x + x) * 4 + 3] > 0) { low = y; break; }
+          if (low >= 0) ground = Math.min(ground, fr.h - 1 - low);
+        }
+        if (ground === 1e9) ground = 0;
+      }
+      if (i === 0) meta = { name: def.name, title: def.title ?? def.name, notes: def.notes ?? '', cell: def.cell, pivot: def.pivot, top, ground, shadow: def.shadow ?? [9, 5], size: [sheet.W, sheet.H], frames: sheet.frames, anims: sheet.anims, palette: pal, variants: variants.map((x, j) => ({ id: x.id, label: x.label ?? x.id, file: j === 0 ? `${def.name}.png` : `${def.name}.${x.id}.png` })) };
     });
     writeFileSync(join(OUT, `${def.name}.json`), JSON.stringify(meta, null, 1));
     index.push(def.name);

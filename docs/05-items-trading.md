@@ -55,7 +55,7 @@ Drop tables are data + modifiers (party Luck, depth, room theme). Pity timers pr
 - **Magnet:** once landed, coins within ~34 px are pulled toward the nearest standing hero, faster the closer they get, and collected on touch. You vacuum loot while fighting without stopping to walk over it.
 - **Shared gold.** One purse for the party (docs: gold is shared), with a per-hero total for stats. The HUD shows the gold count and pops on pickup.
 - **Bounded cost.** At most 500 coin entities on the field; past that, drops go straight into the purse. Coins **never expire** while on screen; they are only lost once they fall behind the left edge. Each coin **twinkles** on its own cycle (a bright four-point glint) so loot stands out from corpses. Cleared ground stays cleared.
-- **The merchant (v0, placeholder):** there are no items yet, so the camp's merchant sells what the game can already give a hero: upgrade scrolls and a level (`src/data/wares.ts`, `src/sim/shop.ts`). Shared gold, one of each good, everyone shopping at once. When items exist the wares become items.
+- **The merchant (v0, placeholder):** there are no items yet, so the camp's merchant sells what the game can already give a hero: upgrade scrolls and a level (`src/data/wares.ts`, `src/sim/shop.ts`). The goods lie on the ground in a row in front of the stall, each with its price beside it (red if the shared purse cannot cover it); walk up and a panel over the good says what it is and does and what it would do for each hero there (its blurb, `WareDef.blurb`); press the trade button to buy, with no menu. One of each good, so the first there gets it. When items exist the wares become items.
 - Everything else in this doc (equipment, trading, affixes) is still design only.
 
 ## Pickup & drop

@@ -4,6 +4,8 @@ import { createProgram } from './gl';
 export interface Frame {
   u0: number; v0: number; u1: number; v1: number;
   w: number; h: number;
+  /** Rows to sink it below the ground line it is anchored to: its feet stand above the cell's bottom edge (grounded enemies). */
+  drop?: number;
 }
 
 const VS = `#version 300 es

@@ -162,7 +162,7 @@ const frames = {
 
 export default {
   name: 'blizzardwitch', title: 'Blizzard Witch', notes: 'Screaming storm-hag, hovers (ground line = trailing floor wisps). windup = the scream. No strike.',
-  cell: [24, 20], shadow: [11, 3], pivot: [12, 18], palette, post,
+  cell: [24, 20], hover: true, shadow: [11, 3], pivot: [12, 18], palette, post,
   parts, frames,
   anims: {
     walk: { fps: 6, frames: ['walk0', 'walk1', 'walk2', 'walk3'] },
