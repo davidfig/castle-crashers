@@ -88,8 +88,12 @@ const audio = new Audio();
 let lastPhase: number = Phase.Playing;
 // Browsers start audio only from a user gesture; the first key or click anywhere unlocks it (N toggles sound, M music).
 for (const type of ['keydown', 'pointerdown'] as const) window.addEventListener(type, (e) => {
+  // On the title the first key or click only wakes the audio (browsers play nothing before a gesture), so the title theme starts
+  // under the title instead of the same press carrying the party straight on to the select screen.
+  const waking = mode === 'title' && !audio.muted && !audio.music;
   audio.unlock();
   const k = e as KeyboardEvent;
+  if (waking && type === 'keydown' && !k.repeat) titleKeyHandled = true;
   if (type !== 'keydown' || k.repeat) return;
   if (k.code === 'KeyM') { audio.setMusic(!audio.musicOn); titleKeyHandled = true; } // N / M work anywhere; on the title they must not also start the game
   else if (k.code === 'KeyN') { audio.setSound(!audio.soundOn); titleKeyHandled = true; }
