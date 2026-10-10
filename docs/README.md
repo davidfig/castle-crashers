@@ -26,6 +26,7 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 | [15 The Random Bestiary](15-random-bestiary.md) | Per-run generated monsters and bosses: slots, powers, looks, determinism, tools |
 | [16 Skills and Elements](16-skills-and-elements.md) | Skills = delivery x element x modifiers: the ten elements and what they do, deliveries, patterns, how monsters and (later) heroes use them |
 | [17 Generated Scenery](17-generated-scenery.md) | Per-run generated biomes, the road that turns one into the next over a long stretch, the painter and the atlas band |
+| [18 Generated Humans](18-generated-humans.md) | Per-run people for the story figures: offices, wardrobes, the court's livery, the sprite composer |
 | [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster) |
 | [Open Questions](open-questions.md) | Things we haven't decided |
 | [Decisions (ADRs)](decisions/README.md) | Log of decisions and why |
