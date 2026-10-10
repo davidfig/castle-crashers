@@ -19,6 +19,7 @@ export const SURRENDER_FLEE = 2.4;
 /** A hero who is standing down walks at this fraction of their speed. */
 export const STAND_SLOW = 0.6;
 
-export function surrenderChance(name: string): number {
-  return SURRENDER_CHANCE[name] ?? 0;
+export function surrenderChance(def: string | { name: string; surrender?: number }): number {
+  if (typeof def === 'string') return SURRENDER_CHANCE[def] ?? 0;
+  return def.surrender ?? SURRENDER_CHANCE[def.name] ?? 0;
 }

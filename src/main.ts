@@ -3,6 +3,8 @@ import { startLoop } from './platform/loop';
 import { UPGRADES, UPGRADE_INDEX } from './data/upgrades';
 import { Renderer } from './platform/gl/renderer';
 import { buildSprites } from './render/art';
+import { activeBestiary, bestiaryEpoch, ensureBestiary, installBestiary } from './data/bestiary';
+import { installMonsterArt } from './render/monsterSprites';
 import { loadHeroImages } from './render/heroSheets';
 import { loadMobImages } from './render/mobSheets';
 import { loadNpcImages } from './render/npcSheets';
@@ -94,6 +96,18 @@ if (__DEV__ && params.has('scenery')) (globalThis as { __scenery?: string }).__s
 // ?weather=rain,lightning:0.5 forces weather on any level (see weatherFor); ?weather=none turns it off.
 if (__DEV__ && params.has('weather')) (globalThis as { __weather?: string }).__weather = params.get('weather') === 'none' ? '' : params.get('weather') ?? undefined;
 let seed = params.has('seed') ? Number(params.get('seed')) >>> 0 : (Date.now() & 0xffffffff) >>> 0;
+
+// Every run fights its own randomly built monsters (data/bestiary): the same ones for the whole run, different next run. ?mobs=classic
+// brings back the hand-made roster. The cast is installed before any sim of the run is created, and its pictures drawn into the atlas.
+const classicMobs = __DEV__ && params.get('mobs') === 'classic';
+let castEpoch = -1;
+function applyCast(runSeed: number): void {
+  if (classicMobs) { if (activeBestiary() !== null) installBestiary(null); } else ensureBestiary(runSeed);
+  if (castEpoch === bestiaryEpoch()) return;
+  castEpoch = bestiaryEpoch();
+  installMonsterArt(sprites, renderer, activeBestiary());
+}
+applyCast(seed);
 // Dev aid: let the bot drive extra player slots so multiplayer can be watched without controllers.
 //   ?bots=3  slots 2-4 are bot-controlled     ?auto=1  slot 1 is bot-controlled too
 const botSlots: number[] = [];
@@ -283,6 +297,7 @@ const WIND_DOWN_MIN = 24;
 const WIND_DOWN_MAX = 180;
 
 function startRun(c: RunConfig, keepSlots = false): void {
+  applyCast(c.seed);
   cfg = c;
   if (!keepSlots) picks = [];
   seed = c.seed;

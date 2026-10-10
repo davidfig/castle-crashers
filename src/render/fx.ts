@@ -3,25 +3,9 @@
 import { EV_STRIDE, Ev, type EventBuf } from '../sim/events';
 import { hex } from '../platform/gl/batcher';
 import { isBossType } from '../data/mobs';
+import { bloodColor } from './mobStyle';
 import { VIEW_W, WORLD_H } from '../sim/constants';
 
-/** Blood/gib colors per MobType. */
-const KILL_COLORS = [
-  0x6fbf3f, 0xb04a30, 0x8a5fb0, 0x9aa5b1, 0xd8402e, 0xb04a30, // goblin, orc, archer, shield, bomber, boss
-  0x8a7a68, 0x6fbf3f, 0x5a9a50, 0x6fbf3f, 0x6a8a58, // wolf, slinger, shaman, drummer, troll
-  0xd6cfc2, 0xd6cfc2, 0x6a8a68, 0x9ab0e0, 0xd6cfc2, 0xd6cfc2, // skeleton, bone archer, ghoul, wraith, skull, bone brute
-  0x9a5ac0, 0xb8c8f0, 0x9ab040, 0xc0a0ff, 0x6a6080, // necromancer, banshee, plague zombie, lich, dread knight
-  0xb04a30, 0x7fc4f4, 0xb04a30, 0x7494b4, 0xb04a30, 0xb4e8ff, // trapper, snow sprite, harpooner, frost wolf, ram, ice husk
-  0x7684b0, 0x5ac8f4, 0x6aaee4, 0x86bce0, 0x587090, // yeti, frost shaman, blizzard witch, whiteout spirit, tundra guard
-  0x5a78b8, // rime king
-  0x7a4cc0, // dread regent
-  0x7ab030, 0x4a6a3a, 0x8cc83a, 0x6aa04a, 0xb8c860, 0xa0b078, // bog frog, mud leech, toad spitter, bullfrog, sporebloat, reed stalker
-  0x40e0c0, 0x6a5a3a, 0x7a9a3a, 0x5a8a4a, 0x4a7a6a, // wisp, peat brute, mire hag, toad matron, drowned warden
-  0x6a9a2a, // fenlord
-  0xc08040, 0x3a5a4a, 0xd8742a, 0xc8a850, 0x8a3a2a, 0xb08850, // dune raider, scarab, flame archer, sidewinder, scorpion, falconer
-  0xe0c070, 0x9a6a30, 0xc8b48a, 0xe0a030, 0xc08a30, // dust devil, antlion, mummy, sun priest, sun guard
-  0xe8b030, // sun tyrant
-];
 const MAX_P = 4000;
 const MAX_SPENT = 4000; // spent arrows lie where they fell, like corpses
 const MAX_CORPSES = 20000; // corpses stay on the field for the whole run
@@ -182,7 +166,7 @@ export class Fx {
           } else {
             this.addCorpse(x, y, a);
           }
-          const blood = KILL_COLORS[a] ?? 0x6fbf3f;
+          const blood = bloodColor(a);
           for (let j = 0; j < 3; j++) this.spawn(x, y, 3, (this.rand() - 0.5) * 3, (this.rand() - 0.5) * 1.5, 1 + this.rand() * 1.5, 18, hex(blood), 1);
           break;
         }

@@ -25,11 +25,12 @@ export class Renderer {
   private fboTex: WebGLTexture;
   private blitProg: WebGLProgram;
   private blitVao: WebGLVertexArrayObject;
+  private atlasTex: WebGLTexture;
 
   constructor(private canvas: HTMLCanvasElement, atlas: HTMLCanvasElement, readonly viewW: number, readonly viewH: number) {
     const gl = (this.gl = createContext(canvas));
 
-    const atlasTex = createNearestTexture(gl);
+    const atlasTex = (this.atlasTex = createNearestTexture(gl));
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
 
@@ -47,6 +48,16 @@ export class Renderer {
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  }
+
+  /** Re-uploads a horizontal strip of the atlas canvas after something was drawn into it (the generated monsters of a new run). */
+  updateAtlasRows(atlas: HTMLCanvasElement, y: number, h: number): void {
+    const gl = this.gl;
+    const rows = atlas.getContext('2d')!.getImageData(0, y, atlas.width, h);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.atlasTex);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y, gl.RGBA, gl.UNSIGNED_BYTE, rows);
   }
 
   /** Exact on-screen size in device pixels, reported by the browser (avoids rounding drift at fractional dpr/zoom). */

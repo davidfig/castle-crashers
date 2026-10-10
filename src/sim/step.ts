@@ -1428,7 +1428,7 @@ const TOP_EXIT_DEPTH = 64;
 
 /** A mob in reach of a standing hero may lay down its arms; the odds depend on what it is. Returns whether it did. */
 function trySurrender(s: GameState, i: number, def: MobDef): boolean {
-  const chance = surrenderChance(def.name);
+  const chance = surrenderChance(def);
   if (chance === 0) return false;
   const e = s.ents;
   for (let k = 0; k < standN; k++) {

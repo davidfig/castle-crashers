@@ -2,6 +2,7 @@
 // hero's health it cost and how long the fight took. Compare enemies of the same tier by "hp lost per 100 enemy hp".
 //   node tools/balance.mjs            every enemy, warrior + mage + archer, 4 seeds
 //   node tools/balance.mjs yeti ram   only those enemies
+//   BESTIARY=42 node tools/balance.mjs   the generated monsters of run seed 42 instead of the hand-made roster
 import * as esbuild from 'esbuild';
 import { mkdirSync } from 'node:fs';
 
@@ -13,7 +14,8 @@ await esbuild.build({
       export { createSim } from '../src/sim/state';
       export { step } from '../src/sim/step';
       export { allocEntity, freeEntity, Kind } from '../src/sim/entities';
-      export { MOBS, MobType } from '../src/data/mobs';
+      export { MOBS, MobType, isBossType } from '../src/data/mobs';
+      export { generateBestiary, installBestiary } from '../src/data/bestiary';
       export { CLASSES } from '../src/data/classes';
       export { createInputFrame } from '../src/sim/input';
       export { ROSTERS } from '../src/data/roster';
@@ -24,6 +26,7 @@ await esbuild.build({
 });
 const m = await import('../.tmp/balance.mjs?' + Date.now());
 const only = process.argv.slice(2);
+if (process.env.BESTIARY) m.installBestiary(m.generateBestiary(Number(process.env.BESTIARY) >>> 0));
 // BAL='frostwolf.damage=3,frostwolf.retreat=30' tries stat changes without editing mobs.ts (special.* reaches into the special).
 for (const kv of (process.env.BAL ?? '').split(',').filter(Boolean)) {
   const [path, val] = kv.split('=');
@@ -36,7 +39,7 @@ const CLASSES = [0, 1, 4];
 const SEEDS = process.env.SEEDS ? process.env.SEEDS.split(',').map(Number) : [1, 2, 3, 4];
 const BIOME_OF = new Map();
 m.ROSTERS.forEach((r, b) => r.entries.forEach((en) => BIOME_OF.set(en.type, b)));
-const BIOME_NAMES = ['Meadow', 'Keep', 'Pass'];
+const BIOME_NAMES = ['Meadow', 'Keep', 'Pass', 'Marsh', 'Dunes'];
 
 function duel(type, n, classId, seed) {
   const s = m.createSim(seed);
@@ -72,7 +75,7 @@ function duel(type, n, classId, seed) {
 const rows = [];
 for (let type = 0; type < m.MOBS.length; type++) {
   const d = m.MOBS[type];
-  if (d.name === 'warlord' || d.name === 'rimeking' || type === m.MobType.Boss) continue;
+  if (m.isBossType(type)) continue;
   if (only.length && !only.includes(d.name)) continue;
   const n = Math.max(1, Math.min(10, Math.round(60 / d.hp)));
   let lost = 0, ticks = 0, wins = 0, runs = 0, frac = 0;

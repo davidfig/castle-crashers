@@ -2,6 +2,7 @@
 //   npm run playtest                       the baseline warrior on seeds 1-6
 //   npm run playtest -- 3 4 5              given seeds
 //   npm run playtest -- --class=1 --boons=spark:2,lust:1     a build (class index, boon id:rank)
+//   npm run playtest -- --bestiary        fight each seed's randomly generated monsters (a bestiary built from the seed) instead of the hand-made ones
 //   npm run playtest -- --sweep [--seeds=8]   every boon at its top rank against its class's bare run: does it fire, does it help, is it slow
 import * as esbuild from 'esbuild';
 import { mkdirSync } from 'node:fs';
@@ -9,19 +10,24 @@ import { mkdirSync } from 'node:fs';
 mkdirSync('.tmp', { recursive: true });
 await esbuild.build({
   entryPoints: { bot: 'src/sim/bot.ts', meta: 'tools/playtest-meta.ts' }, bundle: true, outdir: '.tmp',
-  platform: 'node', format: 'esm', target: 'node20', outExtension: { '.js': '.mjs' }, define: { __DEV__: 'true' }, logLevel: 'warning',
+  platform: 'node', format: 'esm', splitting: true, target: 'node20', outExtension: { '.js': '.mjs' }, define: { __DEV__: 'true' }, logLevel: 'warning',
 });
 const stamp = '?' + Date.now();
 const { runBot } = await import('../.tmp/bot.mjs' + stamp);
-const { UPGRADES, CLASSES } = await import('../.tmp/meta.mjs' + stamp);
+const { UPGRADES, CLASSES, generateBestiary, installBestiary } = await import('../.tmp/meta.mjs' + stamp);
 
 const flags = Object.fromEntries(process.argv.slice(2).filter((a) => a.startsWith('--')).map((a) => { const [k, v] = a.slice(2).split('='); return [k, v ?? '1']; }));
 const seeds = process.argv.slice(2).filter((a) => !a.startsWith('--')).map(Number);
 const maxTicks = 60 * 60 * 6;
+/** A bot run, against the seed's generated monsters when --bestiary is given (the cast is a function of the seed, as in the game). */
+function play(seed, ticks, build) {
+  if (flags.bestiary) installBestiary(generateBestiary(seed));
+  return runBot(seed, ticks, build);
+}
 
 function run(seeds, build, ticksCap = maxTicks) {
   const t0 = process.hrtime.bigint();
-  const rs = seeds.map((seed) => runBot(seed, ticksCap, build));
+  const rs = seeds.map((seed) => play(seed, ticksCap, build));
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   const ticks = rs.reduce((a, r) => a + r.ticks, 0);
   const mean = (f) => rs.reduce((a, r) => a + f(r), 0) / rs.length;
@@ -68,7 +74,7 @@ if (flags.sweep) {
   console.log('seed outcome  time   kills  progress  novas  minHp  procs');
   for (const seed of seeds) {
     const t0 = process.hrtime.bigint();
-    const r = runBot(seed, maxTicks, build);
+    const r = play(seed, maxTicks, build);
     const ms = Number(process.hrtime.bigint() - t0) / 1e6;
     console.log(
       `${String(r.seed).padEnd(4)} ${r.outcome.padEnd(8)} ${(r.ticks / 60).toFixed(0).padStart(4)}s ${String(r.kills).padStart(6)} ${String(r.progress + '%').padStart(8)} ${String(r.novas).padStart(6)} ${String(r.minHp).padStart(6)} ${String(r.procs).padStart(6)}   (${ms.toFixed(0)}ms sim)`,

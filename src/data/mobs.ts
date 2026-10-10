@@ -242,6 +242,8 @@ export interface MobDef {
   thorns?: number;
   /** Chance (0..1) that a blow glances off without touching it. */
   evade?: number;
+  /** Per-tick chance that it lays down its arms when a standing hero is in reach (see data/surrender.ts). Absent = never. */
+  surrender?: number;
   /** Travels hidden under the ground (and cannot be hurt) until a hero is within this many px, then surfaces. */
   burrow?: number;
   /** A melee hit heals it by this much. */
@@ -484,6 +486,13 @@ export const MOBS: MobDef[] = [
     },
   },
 ];
+
+/**
+ * The hand-authored enemies, kept as they were written: the sim's tests run against them, and the generated bestiary
+ * (data/bestiary) takes each slot's numbers as its budget. `MOBS` itself is what the game reads, and `installBestiary` swaps its
+ * entries for a run's generated monsters (the same slots, the same indices).
+ */
+export const CLASSIC_MOBS: readonly MobDef[] = MOBS.slice();
 
 /** True for the boss types (the Orc Warlord, the Rime King): they have a `boss` def and their own move set. */
 export function isBossType(type: number): boolean {

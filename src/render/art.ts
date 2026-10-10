@@ -91,6 +91,8 @@ const GLYPHS: Record<string, string> = {
 
 /** Atlas texture width. Wide enough for the player sheets to pack four or five across. */
 const ATLAS_W = 2048;
+/** Height of the strip reserved for the generated monsters of the current run (a cast is ~1-1.3M px; see monsterArt.test.ts). */
+const MONSTER_BAND_H = 1024;
 
 export interface Sprites {
   atlas: HTMLCanvasElement;
@@ -110,8 +112,12 @@ export interface Sprites {
   shrine: Frame[];
   /** Player sprites from the art workbench: one set per class (CLASSES order), each with a sheet per player slot (see hero.ts). */
   heroes: HeroSet[];
-  /** Enemy art from the art workbench: walk cycles, the raised-bow archer, rotated weapons (see mobArt.ts). */
+  /** Enemy art in play: the hand-made sheets, or a run's generated monsters once `installMonsterArt` has drawn them (see monsterSprites.ts). */
   mobArt: MobArt;
+  /** The hand-made enemy art, kept so the classic roster can be put back. */
+  classicMobArt: MobArt;
+  /** The strip of the atlas generated monsters are drawn into: a run's cast is repainted here, over the last run's. */
+  monsterBand: { x: number; y: number; w: number; h: number };
   /** Ground tile sets (16 px tiles, several variants each), by the key a biome's ground names. */
   groundSets: Record<string, Frame[]>;
   /** Parallax strips (256 wide) by the key a biome layer names, several variants each. Objects stay clear of the edges, so the renderer can chain any variants in any order. */
@@ -422,6 +428,8 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
     }
     usedH = bottom;
   }
+  const monsterBand = { x: 0, y: usedH, w: ATLAS_W, h: MONSTER_BAND_H };
+  usedH += MONSTER_BAND_H;
   let H = 1;
   while (H < usedH) H <<= 1;
 
@@ -446,5 +454,5 @@ export function buildSprites(heroImages: HTMLImageElement[], mobImages: HTMLImag
   // Corpses (the boss's too) are the authored `dead` frame of each enemy sheet (the first walk frame laid on its side, built by tools/art.mjs).
   const corpse = mobArt.anims.map((a) => a.dead[0]);
 
-  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, chest, shrine, heroes, mobArt, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, chest, shrine, heroes, mobArt, classicMobArt: mobArt, monsterBand, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
 }

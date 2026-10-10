@@ -10,7 +10,7 @@ import { CHANNEL, chargeFrac, chestCost, SiteState } from '../sim/sites';
 import { HEAT_NAMES } from '../data/heat';
 import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abilities';
 import { Phase, type GameState } from '../sim/state';
-import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, MobType, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
+import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { drawWeather } from './weather';
 import { drawAmbient, drawCrest, drawFog, drawGround, drawHaze, drawParallax, drawRidge, drawSky, FIELD_Y0, GROUND_TOP } from './background';
@@ -22,6 +22,8 @@ import { drawBoonPops, drawBoonStrip } from './boonHud';
 import { drawMercy } from './mercy';
 import { heroFrame } from './hero';
 import { mobPose } from './mobArt';
+import { heldOf, shadowSize } from './mobStyle';
+import { activeBestiary } from '../data/bestiary';
 import type { FrameStats } from '../platform/perf';
 import type { RoadCast } from './roadCast';
 
@@ -62,8 +64,6 @@ function drawStoreScenery(b: Batcher, S: Sprites, s: GameState, layer: number, c
   }
 }
 
-/** Shadow size (0 small, 1 medium, 2 large) by MobType. */
-const SHADOW_FOR = [0, 2, 0, 1, 0, 2, 1, 0, 0, 1, 2, 0, 0, 0, 0, 0, 2, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1, 2, 0, 0, 0, 1, 2, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 1, 1, 2, 0, 0, 0, 0, 1, 2, 0, 1, 1, 0, 1, 2];
 const order = new Int32Array(4096);
 const sortedBuf = new Int32Array(4096);
 /** Enemies still climbing up from behind the hill at the top edge (drawn before the ground, so the hill covers them). */
@@ -386,7 +386,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     }
     let sh = S.shadow[1];
     let tint = shadowTint;
-    if (e.kind[i] === Kind.Mob) sh = S.shadow[SHADOW_FOR[e.sub[i]]];
+    if (e.kind[i] === Kind.Mob) sh = S.shadow[shadowSize(e.sub[i])];
     else tint = hex(PLAYER_COLORS[e.sub[i]], 0.55);
     b.draw(sh, sx - sh.w / 2, sy - sh.h / 2 - 1, false, tint);
   }
@@ -1244,11 +1244,11 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
     oy = -(((tick >> 1) & 1) ? 1 : 0) * (1 + p);
     if (flash === 0) flash = ((tick >> 2) & 1) ? 0.6 * p : 0.1;
   } else if (winding) {
-    ox = -face * p * (type === MobType.Orc ? 3 : 2);
+    ox = -face * p * (def.radius >= 5 ? 3 : 2);
     oy = -p * 1.5;
     if (flash === 0) flash = def.behavior === Behavior.Bomber ? ((tick >> 1) & 1 ? 0.8 : 0.1) : ((tick >> 2) & 1 ? 0.45 : 0.1) * p;
   } else if (striking) {
-    const lunge = type === MobType.Shield ? 5 : type === MobType.Archer ? -2 : 3;
+    const lunge = def.shield ? 5 : def.behavior === Behavior.Ranged ? -2 : 3;
     ox = face * lunge * (1 - q);
   } else if (e.atk[i] > 0 && !moving && def.behavior !== Behavior.Bomber) {
     oy = -(((tick >> 2) + i) & 1); // restless hop while waiting out the cooldown beside the target
@@ -1308,12 +1308,13 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
 
   // Animated weapons.
   const pivotX = sx + face * (f.w / 2 - 2) + ox, pivotY = sy - f.h * 0.5 + oy;
-  if (type === MobType.Goblin || type === MobType.Orc) {
-    const orc = type === MobType.Orc;
+  const held = heldOf(type);
+  if (held === 'sword' || held === 'club' || held === 'axe' || held === 'spear') {
     // The weapon is baked into the body frames (mobPose picks the windup/strike pose); only the swing trail is drawn here,
     // fanned out from the hand.
-    const len = orc ? 9 : 5;
-    const hx = sx + face * 3 + ox, hy = sy - (orc ? 7 : 3) + oy;
+    const big = def.radius >= 5;
+    const len = Math.round(def.radius * 1.6);
+    const hx = sx + face * 3 + ox, hy = sy - (big ? 7 : 3) + oy;
     if (striking && q < 0.75) {
       // swing trail
       const a = hex(0xffffff, 0.8 * (1 - q));
@@ -1322,14 +1323,14 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
         b.drawScaled(S.px, hx + Math.cos(th * DEG) * face * (len + 2), hy + Math.sin(th * DEG) * (len + 2), 1, 1, a);
       }
     }
-  } else if (type === MobType.Archer) {
+  } else if (held === 'bow' || held === 'sling') {
     if (winding) {
       // nocked arrow, drawn back toward the aim line
       const ax = e.ax[i], ay = e.ay[i];
       const tail = 1 + p * 3;
       for (let k = -tail; k <= 5; k++) b.drawScaled(S.px, pivotX + 2 + ax * k, pivotY + ay * k, 1, 1, k > 4 ? hex(0xffffff) : hex(0xd9c9a0));
     }
-  } else if (type === MobType.Shield && striking && q < 0.6) {
+  } else if (held === 'shield' && striking && q < 0.6) {
     const a = hex(0xffffff, 0.9 * (1 - q));
     for (let k = 0; k < 3; k++) b.drawScaled(S.px, sx + face * (9 + k * 2), sy - f.h * 0.6 + (k - 1) * 3, 2, 1, a);
   }
@@ -1388,7 +1389,10 @@ function drawBoss(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick:
   b.drawScaled(f, x0, y0, w, h, tint, flip, flash);
 
   // Enraged: glowing red eyes (the eye sits ~17px in front of the cell centre, 36 rows down).
-  if (enraged) b.drawScaled(S.px, Math.round(sx + ox + face * 17 - 2), y0 + 36, 4, 2, hex(0xff3020, 0.9));
+  if (enraged) {
+    if (activeBestiary()) b.drawScaled(S.px, Math.round(sx + ox + face * w * 0.18 - 2), y0 + Math.round(h * 0.26), 4, 2, hex(0xff3020, 0.9));
+    else b.drawScaled(S.px, Math.round(sx + ox + face * 17 - 2), y0 + 36, 4, 2, hex(0xff3020, 0.9));
+  }
 
   // Tells.
   if (cast) {
