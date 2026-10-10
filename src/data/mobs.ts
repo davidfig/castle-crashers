@@ -41,17 +41,51 @@ export interface ShotDef {
   poison?: number;
   /** The projectile steers toward the nearest hero as it flies (a falcon); a dodge-roll shakes it. */
   homing?: boolean;
+  /** What the shot is made of: a hit applies that element's effect (data/elements.ts). Its colour and shape (`style` Orb/Spike/Comet/Mote) follow. */
+  element?: number;
+  /** Potency of the element's effect (1 = as written in sim/elements.ts). */
+  power?: number;
+  /** The shot passes through heroes instead of stopping at the first (each hero is hit once). */
+  pierce?: boolean;
+  /** The shot bursts where it lands: every hero within this many px of the impact is hit too. */
+  splash?: number;
 }
 
 /** What a mob projectile looks like. Render-only; the sim just carries the number. */
-export const ProjStyle = { Arrow: 0, Bone: 1, Harpoon: 2, Shard: 3, Glob: 4, Fire: 5, Falcon: 6 } as const;
+export const ProjStyle = {
+  Arrow: 0, Bone: 1, Harpoon: 2, Shard: 3, Glob: 4, Fire: 5, Falcon: 6,
+  /** The element-made shapes (the colour comes from the element, see data/elements.ts): a ball, a needle, a comet with a long tail, a flickering mote. */
+  Orb: 7, Spike: 8, Comet: 9, Mote: 10,
+} as const;
 
 /** A move with a telegraph: the mob stops, winds up (`windup` ticks, interruptible by a hit), then it happens. */
 interface SpecialBase {
   windup: number;
   /** Ticks before it can be used again. */
   cooldown: number;
+  /** What it is made of (data/elements.ts): fire burns, ice chills, lightning jumps... Absent = as the hand-made enemies had it (physical, or the kind's own look). */
+  element?: number;
+  /** Potency of the element's effect (1 = as written in sim/elements.ts). */
+  power?: number;
 }
+
+/** How a multi-strike skill lays out its strikes around the aim point (`count` strikes within `spread` px). The first strike is always the aim point, except Ring. */
+export const Pattern = {
+  /** Random spots within `spread` of the aim point (the original). */
+  Scatter: 0,
+  /** A row laid along the line from the caster to the hero, through the hero: run sideways. */
+  Line: 1,
+  /** A row across the hero's path, perpendicular to it: run along it, or through a gap. */
+  Wall: 2,
+  /** A circle of strikes of radius `spread` round the hero, none on them: stand still, or run out. */
+  Ring: 3,
+  /** The hero's spot and four arms of strikes out from it. */
+  Cross: 4,
+  /** A spiral winding out from the hero's spot, each strike a little later than the last. */
+  Spiral: 5,
+  /** A line of strikes marching from the caster toward the hero, one after another. */
+  March: 6,
+} as const;
 
 /** Lob a rock: a red circle appears on the ground where the target stands, and `delay` ticks later the rock lands. */
 export interface LobSpecial extends SpecialBase {
@@ -65,6 +99,10 @@ export interface LobSpecial extends SpecialBase {
   /** A volley: `count` rocks in all, the first on the target and the rest scattered within `spread` px of it (default one). */
   count?: number;
   spread?: number;
+  /** How the volley is laid out (see `Pattern`; default scatter). */
+  pattern?: number;
+  /** Every strike leaves a pool of its element where it lands, for `linger` ticks: it bites `damage` every so often and its element's slow/burn/etc. while you stand in it. */
+  residue?: { radius: number; linger: number; damage: number };
 }
 /** Raise `count` of mob type `type` around the caster, as long as fewer than `cap` of them are alive. */
 export interface SummonSpecial extends SpecialBase { kind: 'summon'; type: number; count: number; cap: number }
@@ -85,6 +123,8 @@ export interface TrapSpecial extends SpecialBase {
   arm: number; root: number; linger: number; cap: number;
   /** `spread`: px a snare may land from the aim point, at random (none = dead on it). A field of snares (`count` > 1) keeps its first at the aim point and scatters the rest. */
   count?: number; spread?: number;
+  /** How the field is laid out (see `Pattern`; default scatter). */
+  pattern?: number;
 }
 /** Leap onto a hero and cling: it chews at them (`damage` every `pulse` ticks, slowing) until it is killed or they dodge-roll it off. */
 export interface ClingSpecial extends SpecialBase { kind: 'cling'; range: number; damage: number; pulse: number; slow: number; cap: number }
@@ -95,6 +135,8 @@ export interface StormSpecial extends SpecialBase {
   kind: 'storm'; minRange: number; maxRange: number; radius: number; delay: number; linger: number; damage: number; slow: number;
   /** A barrage: `count` storms in all, the first on the hero and the rest scattered within `spread` px of it (default one). */
   count?: number; spread?: number;
+  /** How the field is laid out (see `Pattern`; default scatter). */
+  pattern?: number;
   /** The storm is a stinking bog, not blizzard: it settles into a poison pool instead of black ice. */
   bog?: boolean;
   /** Most storm zones (gathering or settled) alive at once, for a party of one (scaled by party size): pools from several witches would stack. */
@@ -117,12 +159,39 @@ export interface PitSpecial extends SpecialBase {
   kind: 'pit'; minRange: number; maxRange: number; radius: number; delay: number; linger: number; pull: number; damage: number;
   /** A field of pits: `count` in all, the first under the hero and the rest scattered within `spread` px of it (default one). */
   count?: number; spread?: number;
+  /** How the field is laid out (see `Pattern`; default scatter). */
+  pattern?: number;
 }
 /** Mark the hero's spot: when the windup ends, every hero within `radius` of it is hexed for `duration` ticks (takes half again as much damage). Moving away dodges it. */
 export interface HexSpecial extends SpecialBase { kind: 'hex'; minRange: number; maxRange: number; radius: number; duration: number }
 /** A blinding flash on the hero's spot: heroes within `radius` of it are stunned (cannot move or use abilities) for `duration` ticks and take `damage`. */
 export interface DazzleSpecial extends SpecialBase { kind: 'dazzle'; minRange: number; maxRange: number; radius: number; duration: number; damage: number }
+/**
+ * An aimed projectile (a bolt of the skill's element): `count` of them fanned `spread` turns apart around the aim line (locked when the telegraph begins,
+ * so a sidestep dodges it), flying `speed` px/tick for `damage` each. `shape` is a `ProjStyle` (Orb, Spike, Comet, Mote...).
+ */
+export interface BoltSpecial extends SpecialBase {
+  kind: 'bolt'; minRange: number; maxRange: number; count: number; spread: number; speed: number; damage: number; shape: number;
+  /** Passes through heroes (each is hit once). */
+  pierce?: boolean;
+  /** Steers toward the nearest hero as it flies. */
+  homing?: boolean;
+  /** Bursts where it lands, hitting every hero within this many px of the impact. */
+  splash?: number;
+}
+/** A ring of `count` projectiles thrown out all round the caster, evenly spaced (turned by a random angle each time), for `damage` each. Cast when a hero is within `maxRange`. */
+export interface RingSpecial extends SpecialBase { kind: 'ring'; maxRange: number; count: number; speed: number; damage: number; shape: number; pierce?: boolean }
+/** A breath: after the telegraph a cone `range` px long and `arc` turns to either side of the locked aim line hits every hero in it, instantly. */
+export interface ConeSpecial extends SpecialBase { kind: 'cone'; minRange: number; maxRange: number; range: number; arc: number; damage: number }
+/**
+ * A totem planted near the caster: for `lifetime` ticks it fires a bolt (`speed` px/tick, `damage`) at the nearest hero within `range` every `interval` ticks, then crumbles.
+ * A caster keeps at most `cap` of them out (scaled by party size).
+ */
+export interface TotemSpecial extends SpecialBase {
+  kind: 'totem'; minRange: number; maxRange: number; range: number; lifetime: number; interval: number; damage: number; speed: number; shape: number; cap: number;
+}
 export type Special =
+  | BoltSpecial | RingSpecial | ConeSpecial | TotemSpecial
   | HexSpecial | DazzleSpecial | LobSpecial | SummonSpecial | HealSpecial | RallySpecial | BlinkSpecial | NovaSpecial | BeamSpecial
   | TrapSpecial | ClingSpecial | WardSpecial | StormSpecial | WhiteoutSpecial | WailSpecial
   | LureSpecial | LeapSpecial | PounceSpecial | GustSpecial | PitSpecial;
@@ -140,6 +209,10 @@ export interface DeathDef {
   shards?: { count: number; speed: number; damage: number };
   /** Leaves a cloud of spores that chokes whoever stands in it: `drain` stamina per tick, and a little slowing. */
   cloud?: { radius: number; linger: number; drain: number };
+  /** A burst of the element at the spot it died: every hero within `radius` takes `damage` and the element's effect. */
+  blast?: { radius: number; damage: number };
+  /** What its pool, shards and blast are made of (data/elements.ts); a pool of ice or poison looks and bites as it always did. */
+  element?: number;
 }
 
 /**
@@ -264,6 +337,10 @@ export interface MobDef {
   berserk?: number;
   /** A chill around it: a hero within `radius` is slowed (`slow` ticks) and frostbitten (`damage` every `pulse` ticks). */
   aura?: { radius: number; slow: number; damage: number; pulse: number };
+  /** Its melee hit is made of an element (data/elements.ts): besides the damage, the hit sets alight, chills, shocks, silences... (`power` scales how hard; default 1). */
+  onHit?: { element: number; power?: number };
+  /** A field of an element around it: every `pulse` ticks a hero within `radius` takes `damage` and the element's effect (milder than a hit: see `elementPulse`). */
+  elemAura?: { radius: number; element: number; damage: number; pulse: number; power?: number };
 }
 
 export const MobType = {

@@ -5,7 +5,8 @@ import { clamp, cosTurns, sinTurns } from '../engine/math';
 import { rngFloat, rngInt, rngRange } from '../engine/rng';
 import { Btn, type InputFrame } from './input';
 import { TOP_ENTRY_DEPTH, VIEW_W, WORLD_H, WORLD_W } from './constants';
-import { allocEntity, BERSERK, BYSTANDER, freeEntity, Kind, SURRENDERED, ZoneKind } from './entities';
+import { allocEntity, BERSERK, BYSTANDER, ELEM_MASK, freeEntity, Kind, PROJ_HOMING, PROJ_PIERCE, SURRENDERED, ZoneKind } from './entities';
+import { elementHit, powerOf, pulseHero, storePower, strikeHero } from './elements';
 import { rainLandTick, rainOffset } from './rain';
 import { ARC_PER_RANK, costMul, DODGE_CHAIN_COOLDOWN, DODGE_CHAIN_WINDOW, DODGE_POWER, DODGE_QUICK, DODGE_REACH, LANE_TURN, NOVA_ECHO_POWER, NOVA_ECHO_TICKS, NOVA_QUICK, NOVA_SIZE, novaCost, POWER_PER_RANK, RAIN_PER_COUNT, QUICK_MELEE, QUICK_RANGED, rankOf, SIZE_MELEE, SIZE_RANGED, type AbilityKind } from './abilityMods';
 import { damageMul, goldMul, MAX_LEVEL, OFFER_SIZE, speedMul, takenMul, UPGRADE_INDEX, UPGRADES, xpToNext } from '../data/upgrades';
@@ -1046,11 +1047,24 @@ function steerFalcon(s: GameState, i: number): void {
 }
 const FALCON_TURN = 0.07;
 
+/** A splash shot bursts at (x, y): every hero within `radius` of it, but the one already struck (`skip`), is hit and takes the element's effect. */
+function burstShot(s: GameState, i: number, radius: number, skip: number): void {
+  const e = s.ents;
+  const el = e.flags[i] & ELEM_MASK;
+  emit(s.events, Ev.Burst, e.x[i], e.y[i], radius, el ? BurstStyle.Element + el : BurstStyle.Rock);
+  for (let slot = 0; slot < s.players.length; slot++) {
+    const p = s.players[slot];
+    if (slot === skip || !p.active || p.downed) continue;
+    const dx = e.x[p.ent] - e.x[i], dy = e.y[p.ent] - e.y[i];
+    if (dx * dx + dy * dy <= radius * radius) strikeHero(s, slot, e.rem[i] > 0 ? e.rem[i] : ARROW_DAMAGE, el, powerOf(e.elite[i]), e.x[i], e.y[i]);
+  }
+}
+
 function updateProjectiles(s: GameState): void {
   const e = s.ents;
   for (let i = 0; i < e.highWater; i++) {
     if (e.kind[i] !== Kind.Proj) continue;
-    if (e.sub[i] === 0 && e.mode[i] === ProjStyle.Falcon) steerFalcon(s, i);
+    if (e.sub[i] === 0 && (e.mode[i] === ProjStyle.Falcon || (e.flags[i] & PROJ_HOMING))) steerFalcon(s, i);
     e.x[i] += e.vx[i];
     e.y[i] += e.vy[i];
     e.hp[i] -= 1;
@@ -1069,6 +1083,7 @@ function updateProjectiles(s: GameState): void {
       continue;
     }
     if (e.hp[i] <= 0 || e.x[i] < 0 || e.x[i] > WORLD_W || e.y[i] < -4 || e.y[i] > WORLD_H + 4) {
+      if (e.sub[i] === 0 && e.wind[i] > 0 && e.x[i] >= 0 && e.x[i] <= WORLD_W) burstShot(s, i, e.wind[i], -1); // a splash shot that runs out of range still bursts
       freeEntity(e, i);
       continue;
     }
@@ -1104,14 +1119,21 @@ function updateProjectiles(s: GameState): void {
       if (!p.active || p.downed) continue;
       const dx = e.x[p.ent] - e.x[i], dy = e.y[p.ent] - e.y[i];
       if (dx * dx + dy * dy < 36) {
+        const pierce = (e.flags[i] & PROJ_PIERCE) !== 0;
+        if (pierce && (e.cool[i] & (1 << slot))) continue; // already pierced this hero
         if (p.invuln === 0) {
-          hurtPlayer(s, slot, e.rem[i] > 0 ? e.rem[i] : ARROW_DAMAGE);
+          const hitDmg = e.rem[i] > 0 ? e.rem[i] : ARROW_DAMAGE;
+          hurtPlayer(s, slot, hitDmg);
+          const hel = e.flags[i] & ELEM_MASK;
+          if (hel) elementHit(s, slot, hel, powerOf(e.elite[i]), hitDmg, e.x[i], e.y[i]);
+          if (e.wind[i] > 0) burstShot(s, i, e.wind[i], slot);
           if (e.cool2[i] > 0) poisonPlayer(s, slot, e.cool2[i], e.mode[i] === ProjStyle.Fire); // a glob of venom, or a burning arrow
           if (e.buff[i] > 0 && !p.downed) {
             // a harpoon: the line goes taut and hauls the hero back along its flight
             const vl = Math.sqrt(e.vx[i] * e.vx[i] + e.vy[i] * e.vy[i]) || 1;
             shovePlayer(s, slot, -e.vx[i] / vl, -e.vy[i] / vl, e.buff[i]);
           }
+          if (pierce) { e.cool[i] |= 1 << slot; continue; }
           freeEntity(e, i);
         }
         break;
@@ -1139,6 +1161,11 @@ function fireArrow(s: GameState, i: number): void {
     e.cool2[a] = shot?.poison ?? 0;
     e.ax[a] = e.x[i]; // where it was thrown from (a harpoon draws its line back to here)
     e.ay[a] = e.y[i];
+    if (shot) {
+      e.flags[a] = ((shot.element ?? 0) & ELEM_MASK) | (shot.pierce ? PROJ_PIERCE : 0) | (shot.homing ? PROJ_HOMING : 0);
+      e.elite[a] = storePower(shot.power);
+      e.wind[a] = Math.min(255, shot.splash ?? 0);
+    }
   }
   emit(s.events, Ev.Fire, e.x[i], e.y[i], e.ax[i], e.ay[i]);
 }
@@ -1673,6 +1700,18 @@ function updateMobs(s: GameState): void {
         if ((s.tick + i) % au.pulse === 0) hurtPlayer(s, k, au.damage, 0, HURT_DOT);
       }
     }
+    if (def.elemAura) {
+      // a field of an element around it: every pulse, a hero inside takes a little damage and the element's effect
+      const ea = def.elemAura;
+      if ((s.tick + i) % ea.pulse === 0) {
+        for (let k = 0; k < players.length; k++) {
+          const pk = players[k];
+          if (!pk.active || pk.downed) continue;
+          const ax = e.x[pk.ent] - x, ay = (e.y[pk.ent] - y) * 1.3;
+          if (ax * ax + ay * ay <= ea.radius * ea.radius) pulseHero(s, k, ea.damage, ea.element, ea.power ?? 1, x, y);
+        }
+      }
+    }
     if (def.flame) {
       // a fire around it: a hero close by is set alight
       const fr = def.flame.radius;
@@ -1812,7 +1851,9 @@ function updateMobs(s: GameState): void {
           } else if (dist <= def.reach + 4 && Math.hypot(e.x[hpe] - e.x[i], e.y[hpe] - e.y[i]) <= def.reach + 4) { // (a swing at a decoy spot hits nothing)
             const hp = players[target];
             const open = hp.invuln === 0 && !hp.downed;
-            hurtPlayer(s, target, def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1) * (e.elite[i] ? ELITE_BITE : 1), def.slowOnHit ?? 0);
+            const hitDmg = def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1) * (e.elite[i] ? ELITE_BITE : 1);
+            hurtPlayer(s, target, hitDmg, def.slowOnHit ?? 0);
+            if (open && def.onHit) elementHit(s, target, def.onHit.element, def.onHit.power ?? 1, hitDmg, x, y, i);
             if (def.launch && open) shovePlayer(s, target, dirX, dirY, def.launch);
             if (open && def.poisonOnHit) poisonPlayer(s, target, def.poisonOnHit);
             if (open && def.witherOnHit) hp.witherT = Math.max(hp.witherT, def.witherOnHit);

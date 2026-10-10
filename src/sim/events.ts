@@ -28,12 +28,12 @@ export const Ev = {
   Dust: 17,       // a kicked-up dust puff while charging; a,b = direction
   Coin: 15,       // a = value collected
   Wave: 14,       // finisher wave; a,b = direction * length
-  Burst: 25,      // a = radius, b = style (0 rock, 1 stomp, 2 scream, 3 bone burst, 4 poison)
+  Burst: 25,      // a = radius, b = style (0 rock, 1 stomp, 2 scream, 3 bone burst, 4 poison... see BurstStyle; 32 + an element id = a burst of that element)
   Summon: 26,     // something is raised here
   HealMob: 27,    // an enemy healer's pulse; a = radius
   Rally: 28,      // a drummer's beat; a = radius
   Blink: 29,      // a = destination x, b = destination y
-  Beam: 30,       // a,b = direction * length, c = width
+  Beam: 30,       // a,b = direction * length, c = width, d = element
   Beat: 35,       // the party reached a staged story beat
   Surrender: 36,  // a mob lays down its arms; a = mob type
   LevelUp: 37,    // a hero gained a level; a = slot
@@ -43,6 +43,8 @@ export const Ev = {
   Pick: 38,       // a hero chose an upgrade; a = slot, b = upgrade index
   Reroll: 40,     // a hero dealt a fresh level-up hand (a = slot, b = 0) or banished a boon (b = 1, c = upgrade index)
   Quest: 42,      // a quest did something: a = what (QuestEv), b = detail (see sim/quests.ts)
+  Arc: 43,        // a lightning arc: x,y = from, a,b = to, c = element
+  Cone: 44,       // a breath: a,b = direction * length, c = half-arc in turns, d = element
   Site: 41,       // a shrine or chest did something: a = what (SiteEv), b = site sub-kind or value
 } as const;
 

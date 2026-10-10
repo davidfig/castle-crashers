@@ -6,7 +6,23 @@ import { MAX_ENTS } from './constants';
 export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5, Potion: 6, Shrine: 7, Chest: 8, Npc: 9 } as const;
 
 /** Zone looks (the `sub` of a Kind.Zone entity). */
-export const ZoneKind = { Rock: 0, Poison: 1, Frost: 2, Trap: 3, Storm: 4, Rain: 5, Pit: 6, Mud: 7, Spore: 8 } as const;
+export const ZoneKind = {
+  Rock: 0, Poison: 1, Frost: 2, Trap: 3, Storm: 4, Rain: 5, Pit: 6, Mud: 7, Spore: 8,
+  /** A lingering pool of an element (a skill's residue, a settled storm, a death pool): bites and applies the element's pulse effect. */
+  Pool: 9,
+  /** A planted totem that fires bolts of its element at the nearest hero until it crumbles. */
+  Totem: 10,
+} as const;
+
+/**
+ * Elemental skills ride on zones and mob projectiles in the otherwise unused fields:
+ *  - `flags` low 5 bits: the element id (data/elements.ts). For a projectile also bit 32 = pierces, bit 128 = homing.
+ *  - `elite` = potency x 10 (so 10 = 1.0); 0 means 1.0.
+ *  - projectile: `wind` = splash radius (0 none), `cool` = bitmask of the heroes a piercing shot has already hit.
+ */
+export const ELEM_MASK = 31;
+export const PROJ_PIERCE = 32;
+export const PROJ_HOMING = 128;
 
 /** Mob flag: a bystander stands by its fire and never attacks or chases (docs/12-story.md, R1). Other bits: 1 aggro, 2 entering, 4 enraged, 8 retreating, 32 specials initialised (abilities.ts), 128 berserk. */
 export const BYSTANDER = 16;
