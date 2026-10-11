@@ -203,7 +203,7 @@ export const goldMul = (ranks: ArrayLike<number>): number => 1 + UPGRADES[UPGRAD
 // Ability cards: the same boon reads differently for each class (a fireball grows, a sword reaches).
 
 /** What each class calls its basic attack, its special, its nova (ability 1) and its dodge. */
-const NOUNS: readonly (readonly [string, string, string, string])[] = [
+export const NOUNS: readonly (readonly [string, string, string, string])[] = [
   ['SWORD', 'BIG SWING', 'QUAKE', 'CHARGE'],
   ['FIREBALL', 'MEGABALL', 'FIRE NOVA', 'BLINK'],
   ['AURA', 'HOLY BURST', 'HOLY NOVA', 'HEAL ROLL'],

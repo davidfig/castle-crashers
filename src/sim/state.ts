@@ -147,6 +147,8 @@ export interface GameState {
   beatIndex: number;
   /** Index in the plan of the road scene's marker, or -1 (see `sceneHold`). */
   sceneIndex: number;
+  /** The controls tutorial is running: the planned encounters wait (it brings its own small waves, see `spawnTutorialWave`). */
+  tutorialHold: boolean;
   /** Tick the party reached the staged beat (-1 = not yet). */
   beatPlayedTick: number;
   /** Stand Down / surrender is available (from chapter II of the campaign). */
@@ -252,12 +254,14 @@ export interface SimOptions {
   quest?: QuestDef;
   /** The slice (of 0..1) of the biome's cast this level draws its enemies from: later levels of a biome open where the last one ended. */
   mix?: readonly [number, number];
+  /** The first field of a run: it opens with small encounters (see `PlanOptions.opener`). */
+  opener?: boolean;
 }
 
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
   const store = opts.store === true;
   const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
-  const plan = store ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat });
+  const plan = store ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener });
   const s: GameState = {
     seed,
     biome: biomeIndex(seed),
@@ -278,6 +282,7 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     gateOpenTick: -1,
     beatIndex: plan.findIndex((c) => c.beat !== undefined),
     sceneIndex: plan.findIndex((c) => c.scene !== undefined),
+    tutorialHold: false,
     beatPlayedTick: -1,
     surrender: opts.surrender === true && !store,
     store,

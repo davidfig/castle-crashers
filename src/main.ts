@@ -34,6 +34,8 @@ import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
 import { spawnClump } from './sim/gen/level';
 import { summarizeEnd } from './campaign/run';
+import { createTutorial, markTutorialSeen, tutorialSeen, tutorialView, updateTutorial, type Tutorial } from './campaign/tutorial';
+import { drawTutorial } from './render/tutorialHud';
 import { levelPlan, LEVELS_PER_BIOME, ROUTE_LEVELS, type LevelPlan } from './campaign/route';
 import { stockFor, WARES, wareSpot, wareStanding, type StockItem } from './data/wares';
 import type { StoreView } from './render/camp';
@@ -306,6 +308,7 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
     nextBiome,
     onward: store || route.index + 1 < route.total,
     scene: store ? undefined : roadSceneOf(plan),
+    opener: route.index === 0 && !store,
   });
   s.camX = s.prevCamX = s.trigCamX = cam0;
   if (route.carry) { applyCarry(s, route.carry); arriveAt(s, route.carry); }
@@ -392,6 +395,15 @@ const stats = new FrameStats();
 const WIND_DOWN_MIN = 12;
 const WIND_DOWN_MAX = 180;
 
+/** The first-time controls tutorial, while it is playing (campaign/tutorial.ts). */
+let tutorial: Tutorial | null = null;
+function browserStore(): Storage | undefined { try { return localStorage; } catch { return undefined; } }
+function endTutorial(): void {
+  sim.tutorialHold = false;
+  markTutorialSeen(browserStore());
+  tutorial = null;
+}
+
 function startRun(c: RunConfig, keepSlots = false): void {
   applyCast(c.seed);
   cfg = c;
@@ -406,11 +418,15 @@ function startRun(c: RunConfig, keepSlots = false): void {
   route = { index: at, total, plan, store: false, carry: undefined, };
   sim = newSim(plan);
   beginSim(keepSlots ? picks.map((p) => p.joined) : undefined);
+  // A new player's first field opens with the controls tutorial. Dev: ?tutorial=1 plays it on any run, ?tutorial=0 never.
+  const wantTutorial = __DEV__ && params.has('tutorial') ? params.get('tutorial') !== '0' : !devRun && !tutorialSeen(browserStore());
+  if (wantTutorial && at === 0) { tutorial = createTutorial(); sim.tutorialHold = true; }
   mode = 'run';
 }
 
 /** Common to every new sim of a run: fresh effects, barks and end state; the lobby's devices (if any) stay on their heroes. */
 function beginSim(keep?: boolean[], shiftX?: number): void {
+  tutorial = null;
   if (shiftX !== undefined) fx.shift(shiftX); else fx = new Fx(); // crossing from one field to the next keeps what lies on the ground
   if (keep) input.reset(keep); else input.restartRequested = false; // slots stay claimed: the same devices keep the same heroes
   retreated = false;
@@ -586,6 +602,7 @@ startLoop({
     sim.players.forEach((p, k) => { panelBefore[k] = p.panel; });
     if (demo) refillDemoHero();
     step(sim, frames);
+    if (tutorial) { updateTutorial(tutorial, sim, frames); if (tutorial.over) endTutorial(); }
     // The goods on the ground: the trade button, pressed beside one, buys it.
     if (route.store && sim.phase === Phase.Playing) {
       for (let k = 0; k < MAX_PLAYERS; k++) {
@@ -665,6 +682,7 @@ startLoop({
     });
     cast.drawBubbles(renderer.batcher, sprites, sim, cam, alpha);
     if (!cast.hearing()) barks.draw(renderer.batcher, sprites, sim, cam, alpha);
+    if (tutorial) drawTutorial(renderer.batcher, sprites, tutorialView(tutorial, sim, (k, a) => input.actionHint(k, a)));
     renderer.end();
   },
 });
@@ -674,6 +692,7 @@ if (__DEV__) {
   const w = window as unknown as { sim: () => typeof sim; cast: () => typeof cast; sprites: typeof sprites; fx: typeof fx };
   w.sim = () => sim;
   w.cast = () => cast;
+  (w as unknown as { tutorial: () => Tutorial | null }).tutorial = () => tutorial;
   w.sprites = sprites;
   Object.defineProperty(w, 'fx', { get: () => fx }); // (the run replaces it, so hand out the live one)
   (w as unknown as { stats: typeof stats }).stats = stats;
