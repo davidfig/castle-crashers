@@ -236,7 +236,7 @@ test('Eagle Eye hits far shots harder; Downpour rains more arrows', () => {
   const dmg = (rank: number) => { const s = arena(); asClass(s, 4); give(s, 'eagle', rank); const g = goblin(s, 200, 100, 1000); s.ents.maxhp[g] = 1000; s.ents.stun[g] = 200; s.players[0].faceX = 1; s.players[0].faceY = 0; for (let t = 0; t < 60; t++) step(s, t === 0 ? hold(Btn.Attack) : idle()); return 1000 - s.ents.hp[g]; };
   assert.ok(dmg(3) > dmg(0));
 
-  const rain = (rank: number) => { const s = arena(); asClass(s, 4); give(s, 'downpour', rank); s.players[0].fury = 100; step(s, hold(Btn.Ability1)); for (let i = 0; i < s.ents.highWater; i++) if (s.ents.alive[i] && s.ents.kind[i] === Kind.Zone) return s.ents.mode[i]; return 0; };
+  const rain = (rank: number) => { const s = arena(); asClass(s, 4); give(s, 'downpour', rank); s.players[0].fury = 100; step(s, hold(Btn.Ability1)); step(s, idle()); for (let i = 0; i < s.ents.highWater; i++) if (s.ents.alive[i] && s.ents.kind[i] === Kind.Zone) return s.ents.mode[i]; return 0; };
   assert.equal(rain(2) - rain(0), 16);
 });
 

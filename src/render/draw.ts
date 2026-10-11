@@ -1,5 +1,6 @@
 // Draws a GameState into the low-res framebuffer. Reads state only; never mutates the sim.
 import { CLASSES } from '../data/classes';
+import { NOVA_SIZE, rankOf } from '../sim/abilityMods';
 import { lerp } from '../engine/math';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
@@ -556,6 +557,14 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         for (const [dx, dy] of [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]]) b.drawScaled(S.px, cx + dx, cy + dy, 1, 1, hex(0xb890ff));
       }
       if (p.rootT > 0) groundRing(b, S, sx, sy, 7, 10, hex(ICE.steel, 0.95)); // held fast in a snare
+      if (p.rainOn) {
+        // the archer aiming his rain: a ring the size of the downpour where it will fall, and a cross at its centre
+        const r = CLASSES[p.classId].rain!;
+        const rx = Math.round(sx + p.rainX - e.x[i]), ry = Math.round(sy + p.rainY - e.y[i]);
+        const big = p.fury >= CLASSES[p.classId].furyMax;
+        groundRing(b, S, rx, ry, (big ? r.bigRadius : r.radius) * (1 + NOVA_SIZE * rankOf(p.ranks, 2, 0)), 32, hex(0xffd35a, 0.45 + 0.25 * ((s.tick >> 2) & 1)));
+        for (const [dx, dy] of [[0, 0], [-2, 0], [2, 0], [0, -2], [0, 2]]) b.drawScaled(S.px, rx + dx - 0.5, ry + dy - 0.5, 1, 1, hex(0xffffff, 0.95));
+      }
       if (p.rootT > 0 && p.slowT > 0 && p.silenceT === 0) b.draw(f, place(f), sy - H.pivotY, flip, hex(0x6ad0ff, 0.6), 0.25); // frozen solid: the hero turns ice-blue
       drawHeroElemCues(b, S, p, sx, sy - H.top, s.tick, i);
       if (p.hexT > 0) {

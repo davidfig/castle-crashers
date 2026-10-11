@@ -267,6 +267,9 @@ export function grantXp(s: GameState, amount: number, x: number, y: number): voi
   }
 }
 
+/** How fast (px/tick) the held-down rain reticle slides at full stick. */
+const RAIN_AIM_SPEED = 3.2;
+
 function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   const p = s.players[slot];
   const e = s.ents;
@@ -354,6 +357,29 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   } else if (len2 > 0) {
     len = Math.sqrt(len2);
   }
+  if (cls.rain) {
+    // The archer's rain is aimed: holding Ability 1 steers a reticle anywhere on screen with the stick (or movement keys), and letting go looses it there.
+    const held = (inp.buttons & Btn.Ability1) !== 0;
+    const ready = p.silenceT === 0 && p.cdAbility1 === 0 && p.dashT === 0 && p.fury >= novaCost(p.ranks, cls.novaCost, cls.furyMax);
+    if (!p.rainOn && ready && held && p.bufAbility1 > 0) {
+      p.rainOn = true;
+      p.bufAbility1 = 0;
+      p.rainX = e.x[i] + p.faceX * cls.rain.reach;
+      p.rainY = e.y[i] + p.faceY * cls.rain.reach;
+    }
+    if (p.rainOn) {
+      if (!ready) p.rainOn = false;
+      else {
+        p.rainX = clamp(p.rainX + mx * RAIN_AIM_SPEED, s.camX + 6, s.camX + VIEW_W - 6);
+        p.rainY = clamp(p.rainY + my * RAIN_AIM_SPEED, 6, WORLD_H - 6);
+        mx = 0; my = 0; len = 0; // he stands and draws while the reticle moves
+        const dx = p.rainX - e.x[i], dy = p.rainY - e.y[i], d = Math.sqrt(dx * dx + dy * dy);
+        if (d > 1) { p.faceX = dx / d; p.faceY = dy / d; }
+        if (dx > 1) e.face[i] = 1; else if (dx < -1) e.face[i] = -1;
+        if (!held) { p.rainOn = false; castRain(s, slot, cls, cls.rain, p.rainX, p.rainY); }
+      }
+    }
+  }
   // The aim stick, when engaged, overrides movement for facing (and so for attack direction).
   const ax = inp.aimX / 127, ay = inp.aimY / 127;
   const aimLen = Math.sqrt(ax * ax + ay * ay);
@@ -436,7 +462,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
       }
     }
     const acted = p.cdAttack + p.cdSpecial + p.cdAbility1;
-    if (p.silenceT === 0 && p.bufAbility1 > 0 && p.cdAbility1 === 0 && p.fury >= novaCost(p.ranks, cls.novaCost, cls.furyMax)) {
+    if (!cls.rain && p.silenceT === 0 && p.bufAbility1 > 0 && p.cdAbility1 === 0 && p.fury >= novaCost(p.ranks, cls.novaCost, cls.furyMax)) {
       nova(s, slot, cls);
       p.bufAbility1 = 0;
     } else if (p.silenceT === 0 && p.bufAbility2 > 0 && p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost * costMul(p.ranks, 1) && (p.cdAttack === 0 || p.auraOn)) {
@@ -756,15 +782,15 @@ function castQuake(s: GameState, slot: number, cls: ClassDef, q: NonNullable<Cla
  * there), `rem` is the radius, `mode` the arrow count, `vx` the landing seed, `hp` the damage, `buff` 1 + the owner's slot and
  * `atk` the ticks since the cast.
  */
-function castRain(s: GameState, slot: number, cls: ClassDef, r: RainDef): void {
+function castRain(s: GameState, slot: number, cls: ClassDef, r: RainDef, aimX?: number, aimY?: number): void {
   const p = s.players[slot];
   const e = s.ents;
   const big = p.fury >= cls.furyMax;
   p.fury = big ? 0 : p.fury - novaCost(p.ranks, cls.novaCost, cls.furyMax);
   p.cdAbility1 = novaRecovery(p, cls);
   const x = e.x[p.ent], y = e.y[p.ent];
-  const tx = clamp(x + p.faceX * r.reach, s.camX + 10, heroMaxX(s));
-  const ty = clamp(y + p.faceY * r.reach, 6, WORLD_H - 6);
+  const tx = aimX ?? clamp(x + p.faceX * r.reach, s.camX + 10, heroMaxX(s));
+  const ty = aimY ?? clamp(y + p.faceY * r.reach, 6, WORLD_H - 6);
   const z = allocEntity(e, Kind.Zone, ZoneKind.Rain, tx, ty, 1);
   if (z < 0) return;
   e.ax[z] = x; e.ay[z] = y;

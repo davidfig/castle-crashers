@@ -48,6 +48,10 @@ export interface PlayerState {
   cdAbility1: number;
   cdDash: number;
   bufAbility1: number;
+  /** The archer is holding Ability 1 to aim his rain: the stick (or movement keys) steers a reticle at (rainX, rainY) instead of walking him. */
+  rainOn: boolean;
+  rainX: number;
+  rainY: number;
   bufDodge: number;
   prevButtons: number;
   faceX: number;
@@ -211,7 +215,7 @@ function createPlayer(): PlayerState {
   return {
     active: false, ent: -1, classId: 0, downed: false, downTimer: 0, invuln: 0,
     dashT: 0, vanishT: 0, vanishX: 0, vanishY: 0, revealT: 0, auraOn: false, dashX: 0, dashY: 0, cdAttack: 0, cdAbility1: 0, cdDash: 0,
-    bufAbility1: 0, bufDodge: 0, prevButtons: 0, faceX: 1, faceY: 0, kills: 0, coins: 0,
+    bufAbility1: 0, rainOn: false, rainX: 0, rainY: 0, bufDodge: 0, prevButtons: 0, faceX: 1, faceY: 0, kills: 0, coins: 0,
     fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, cursor: 0, stickPrev: 0, ranks: new Uint8Array(UPGRADES.length), boonCd: new Uint16Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
     rootT: 0, dashChain: 0, chainT: 0, echoLeft: 0, echoT: 0, echoBig: false, silenceT: 0, confuseT: 0, poisonT: 0, burning: false, hexT: 0, witherT: 0, pullT: 0, pullX: 0, pullY: 0,
     rerolls: START_REROLLS, banishes: START_BANISHES, salt: 0, banned: new Uint8Array(UPGRADES.length), stickPrevY: 0,

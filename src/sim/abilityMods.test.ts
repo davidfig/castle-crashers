@@ -112,7 +112,7 @@ test('the nova and the dodge scale too: fury and stamina cost more, and the effe
 
   // the fury a cast takes
   for (const cls of [0, 1, 4]) {
-    const spent = (rank: number) => { const s = arena(cls); give(s, 'npower', rank); s.players[0].fury = 90; step(s, hold(Btn.Ability1)); return 90 - s.players[0].fury; };
+    const spent = (rank: number) => { const s = arena(cls); give(s, 'npower', rank); s.players[0].fury = 90; step(s, hold(Btn.Ability1)); step(s, idle()); return 90 - s.players[0].fury; };
     assert.ok(spent(3) > spent(0) * 1.1, `class ${cls}: a stronger nova takes more fury`);
   }
   // a bar that cannot pay the dearer price does not cast
@@ -132,7 +132,7 @@ test('the nova and the dodge scale too: fury and stamina cost more, and the effe
   assert.equal(lane(0), 0); assert.ok(lane(2) > 0);
 
   // the archer's rain gets more arrows
-  const arrows = (rank: number) => { const t = arena(4); give(t, 'ncount', rank); t.players[0].fury = 90; step(t, hold(Btn.Ability1)); for (let i = 0; i < t.ents.highWater; i++) if (t.ents.alive[i] && t.ents.kind[i] === Kind.Zone) return t.ents.mode[i]; return 0; };
+  const arrows = (rank: number) => { const t = arena(4); give(t, 'ncount', rank); t.players[0].fury = 90; step(t, hold(Btn.Ability1)); step(t, idle()); for (let i = 0; i < t.ents.highWater; i++) if (t.ents.alive[i] && t.ents.kind[i] === Kind.Zone) return t.ents.mode[i]; return 0; };
   assert.equal(arrows(2) - arrows(0), 16);
 });
 

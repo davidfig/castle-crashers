@@ -344,10 +344,34 @@ test("the archer's first ability rains arrows once his fury is full", () => {
   const { s, e } = dashSetup(CLASSES.findIndex((c) => c.name === 'archer'));
   s.players[0].fury = CLASSES[s.players[0].classId].furyMax;
   const press = idle(); press[0].buttons = Btn.Ability1;
-  step(s, press);
+  step(s, press); step(s, idle()); // the rain is aimed while the button is held and loosed on release
   let zones = 0;
   for (let i = 0; i < e.highWater; i++) if (e.alive[i] === 1 && e.kind[i] === Kind.Zone) zones++;
   assert.ok(zones > 0, 'a rain zone appears');
+});
+
+test("holding the archer's ability steers a reticle with the move input and loosing it lands the rain there", () => {
+  const { s, e, me } = dashSetup(CLASSES.findIndex((c) => c.name === 'archer'));
+  const p = s.players[0];
+  p.fury = CLASSES[p.classId].furyMax;
+  const x0 = e.x[me], y0 = e.y[me];
+  const hold = idle(); hold[0].buttons = Btn.Ability1;
+  step(s, hold);
+  assert.ok(p.rainOn, 'aiming begins on the press');
+  const steer = idle(); steer[0].buttons = Btn.Ability1; steer[0].moveX = 127; steer[0].moveY = -127;
+  const rx = p.rainX;
+  for (let k = 0; k < 20; k++) step(s, steer);
+  assert.ok(p.rainX > rx + 40 && p.rainY < y0, 'the reticle follows the stick');
+  assert.equal(e.x[me], x0, 'he stands still while aiming');
+  assert.equal(e.y[me], y0);
+  const tx = p.rainX, ty = p.rainY;
+  step(s, idle());
+  assert.ok(!p.rainOn);
+  let zone = -1;
+  for (let i = 0; i < e.highWater; i++) if (e.alive[i] === 1 && e.kind[i] === Kind.Zone) zone = i;
+  assert.ok(zone >= 0, 'released: the rain falls');
+  assert.equal(e.x[zone], tx);
+  assert.equal(e.y[zone], ty);
 });
 
 test('a hidden rogue is passed by until a mob runs into him, which reveals him', () => {
