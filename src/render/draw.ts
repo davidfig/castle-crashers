@@ -15,6 +15,7 @@ import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abili
 import { Phase, type GameState } from '../sim/state';
 import { campShown, roadProgress } from '../sim/gen/road';
 import { drawForkGround, drawForkLabels } from './fork';
+import { drawTownGround, drawTownLabels } from './town';
 import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { drawWeather, stormCover } from './weather';
@@ -228,7 +229,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawFog(b, S, scenery, camX + road, oy, ft);
   drawCamps(b, S, s, camX, oy);
   if (campShown(s)) { drawStore(b, S, s, camX, oy); drawQuestGivers(b, S, s, camX, oy, dbg.questView); }
-  if (s.road) drawForkGround(b, S, s, camX, oy);
+  if (s.road) { drawForkGround(b, S, s, camX, oy); drawTownGround(b, S, s, camX, oy); }
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);
@@ -809,7 +810,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawLevelUp(b, S, s, dbg.levelKeys);
   drawQuestMarks(b, S, s, camX, oy, alpha);
   drawQuestHud(b, S, s);
-  if (s.road) drawForkLabels(b, S, s, camX, oy);
+  if (s.road) { drawForkLabels(b, S, s, camX, oy); drawTownLabels(b, S, s, camX, oy, dbg.storeHints); }
   if (campShown(s)) { drawStoreWares(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawGifts(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawQuestBoard(b, S, s, camX, oy, dbg.questView, dbg.storeHints); drawStoreHints(b, S, s, camX, oy); }
 }
 

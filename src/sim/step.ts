@@ -17,10 +17,12 @@ import { Ev, emit } from './events';
 import { pickMobType, pickSupport } from './gen/mix';
 import { BOSS_SPECIAL, BurstStyle, clingStep, dropMud, leapStep, SP_LEAP, fireSpecial, fireSpecialOf, hasSpecial, isWarded, onMobDeath, RALLY_SPEED, shovePlayer, SP_CLING, SP_INIT, SP_WIND, onScreen, startSpecial, startSpecialOf, updateZones } from './abilities';
 import { cellX, cellY, gatherCircle, rebuildGrid } from './grid';
-import { activatePlayer, backLine, BLAST_CAP, Phase, type GameState, type PlayerState } from './state';
+import { activatePlayer, backLine, BLAST_CAP, joinParty, Phase, type GameState, type PlayerState } from './state';
 import { bannerMul, burstAt, executeMul, flushProcs, frenzyTick, onAura, onDodge, onDown, onExplode, onHit, onHurt, onKill, onSpecial, pop, rebirth, tickBoons, vigilBonus, wardMul } from './boons';
 import { activePlayers, hasBoss, partyScale, sceneHold, streamLevel } from './gen/level';
-import { inCamp, roadDirectorOff, roadLevel, roadProgress, roadUpkeep } from './gen/road';
+import { inCamp, inTown, roadDirectorOff, roadLevel, roadProgress, roadUpkeep } from './gen/road';
+import { townTrade } from './town';
+import { TOWN_W } from '../data/town';
 import { heatDamage, heatReward, heatSpeed } from '../data/heat';
 import { heroOffer } from './offers';
 import { onEliteDown, updateSites } from './sites';
@@ -105,6 +107,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   }
 
   if (s.store || inCamp(s)) updateTrade(s, inputs);
+  else if (inTown(s)) townTrade(s, inputs);
   if (s.hitStop > 0) {
     s.hitStop--;
     bufferInputs(s, inputs);
@@ -310,7 +313,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   if (!p.active) {
     if (inp.buttons & Btn.Join) {
       const lead = leadX(s);
-      activatePlayer(s, slot, lead - 40, 40 + slot * 40);
+      joinParty(s, slot, lead - 40, 40 + slot * 40); // brought up to the party's level (docs/21: joining a run under way)
     }
     return;
   }
@@ -1249,6 +1252,7 @@ function bossDeath(s: GameState, m: number): void {
   const x = e.x[m], y = e.y[m];
   e.boss = -1;
   s.bossDeadTick = s.tick;
+  if (s.road) s.road.bosses++;
   emit(s.events, Ev.BossDown, x, y);
   stop(s, 12);
   // Two potions, flung out with the coins: the boss fight is where you earn the way into the next stretch.
@@ -2307,7 +2311,8 @@ function updateCamera(s: GameState): void {
   // The camera goes forward, and back only by CAM_SLACK behind the furthest it has been, so cleared ground stays behind you.
   // (a field carried on from the one before can start its camera a little short of 0, see newSim in main.ts: it is not pulled up to 0)
   const want = sum / n - VIEW_W / 2 + 24;
-  const target = Math.min(want, gate ? gate.x - VIEW_W + GATE_INSET : s.worldW - VIEW_W);
+  // the starting town is one screen: the camera holds on it until the party has gone out through its gate
+  const target = Math.min(want, gate ? gate.x - VIEW_W + GATE_INSET : s.worldW - VIEW_W, s.road?.town ? TOWN_W - VIEW_W : Infinity);
   // ...and never faster than CAM_MAX_SPEED, so a hero who starts well off centre (walking in from the last level or the store) walks
   // across the screen on their own feet while the world scrolls gently, instead of being dragged across it by a camera catching up.
   // Backing up is slower still, and only while a hero is pressed against the left edge and the party is well behind centre: it has

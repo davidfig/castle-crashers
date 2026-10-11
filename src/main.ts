@@ -30,13 +30,15 @@ import { botInput } from './sim/bot';
 import { Pilot } from './ai/pilot';
 import { resolveSkill } from './ai/skill';
 import { Btn } from './sim/input';
-import { Phase, activatePlayer, leaveParty } from './sim/state';
+import { Phase, activatePlayer, joinParty, leaveParty } from './sim/state';
 import { Kind, allocEntity } from './sim/entities';
 import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
 import { spawnClump } from './sim/gen/level';
 import { layoutRoad, roadBiomes, roadJump, roadMusicBiome, stageBounds, type RoadLayout } from './sim/gen/road';
 import { clearRunSave, describeRunSave, loadRunSave, makeRunSave, writeRunSave, type RunSave } from './campaign/runSave';
+import { loadProfile, metaRanks, saveProfile, withRun, type Profile } from './campaign/profile';
+import { renownFor } from './data/meta';
 import { restore } from './sim/snapshot';
 import { drawResumeHold, type ResumeView } from './render/resumeHud';
 import { summarizeEnd } from './campaign/run';
@@ -205,6 +207,11 @@ const devRun = params.has('seed') || (__DEV__ && (params.has('store') || demo !=
 /** `?road=1`: the run as one road, a single sim from start to finish, saved as it goes (docs/21-the-road.md, being built: no quests or staged beats on it yet). */
 const roadMode = params.get('road') === '1';
 
+const runStore = browserStore();
+// What carries over between runs: renown and the town's lasting upgrades (campaign/profile.ts). Written whenever the town spends renown, and at the end of a run.
+const profileLoad = loadProfile(runStore);
+let profile: Profile = profileLoad.profile;
+function keepProfile(next: Profile): void { profile = next; if (profileLoad.writable) saveProfile(runStore, profile); }
 type Mode = 'title' | 'run' | 'summary' | 'select';
 let mode: Mode = 'title';
 let cfg: RunConfig = devConfig(seed);
@@ -324,7 +331,7 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
   const nextBiome = store ? levelPlan(cfg.seed, Math.min(route.index + 1, route.total - 1), route.total).biome : undefined;
   const sd = plan.seed;
   setLevelsPlayed(route.index);
-  const s = roadMode && !store ? createSim(cfg.seed, undefined, { road: { total: route.total }, heat: runHeat, offerSeed: cfg.seed }) : createSim(sd, route.index === 0 && !store ? cfg.reservedBeat : undefined, {
+  const s = roadMode && !store ? createSim(cfg.seed, undefined, { road: { total: route.total, renown: profile.renown, meta: metaRanks(profile) }, heat: runHeat, offerSeed: cfg.seed }) : createSim(sd, route.index === 0 && !store ? cfg.reservedBeat : undefined, {
     surrender: plan.chapter >= 2 || (__DEV__ && params.get('surrender') === '1'),
     offerSeed: cfg.seed,
     boss: plan.boss,
@@ -441,7 +448,6 @@ function browserStore(): Storage | undefined { try { return localStorage; } catc
 // ---- The run in progress is saved as it goes (docs/21-the-road.md, step 4): on the one road only, every few seconds, on reaching a calm
 // place, when the page closes and on Save and quit (Escape, or a pad's Back). Continue (C / Y on the title) rebuilds everything from the seed,
 // restores the sim and holds the field frozen until the players have taken up their heroes.
-const runStore = browserStore();
 let savedRun: RunSave | undefined = (() => { const r = loadRunSave(runStore); return r.status === 'ok' ? r.save : undefined; })();
 /** Ticks between autosaves (10 s of play). */
 const AUTOSAVE_TICKS = 600;
@@ -511,7 +517,7 @@ function resumeUpdate(): void {
   if (!start) return;
   for (let k = 0; k < MAX_PLAYERS; k++) {
     if (!r.taken[k]) { if (sim.players[k].active) leaveParty(sim, k); continue; }
-    if (!sim.players[k].active) { sim.players[k].classId = k % CLASSES.length; activatePlayer(sim, k, sim.camX + 120, 40 + k * 40); }
+    if (!sim.players[k].active) { sim.players[k].classId = k % CLASSES.length; joinParty(sim, k, sim.camX + 120, 40 + k * 40); }
   }
   sim.players.forEach((p, k) => { p.rawPrev = frames[k].buttons; p.prevButtons = frames[k].buttons; }); // the press that started is not a swing or a trade
   resume = null;
@@ -556,6 +562,7 @@ function startRun(c: RunConfig, keepSlots = false): void {
   // the first level of a real run stages the cookfire camp (docs/12, R1): the story told in the field
   cfg = { ...c, chapter: plan.chapter, reservedBeat: at === 0 && !devRun ? { id: 'R1' } : c.reservedBeat };
   route = { index: at, total, plan, store: false, carry: undefined, };
+  tutorialAfterTown = false;
   sim = newSim(roadMode ? levelPlan(c.seed, 0, total) : plan);
   paintedChoices = 0;
   if (sim.road && at > 0) roadJump(sim, at);
@@ -566,7 +573,10 @@ function startRun(c: RunConfig, keepSlots = false): void {
   beginSim(keepSlots ? picks.map((p) => p.joined) : undefined);
   // A new player's first field opens with the controls tutorial. Dev: ?tutorial=1 plays it on any run, ?tutorial=0 never.
   const wantTutorial = __DEV__ && params.has('tutorial') ? params.get('tutorial') !== '0' : !devRun && !tutorialSeen(browserStore());
-  if (wantTutorial && at === 0) { tutorial = createTutorial(); sim.tutorialHold = true; }
+  if (wantTutorial && at === 0) {
+    if (sim.road?.town) tutorialAfterTown = true; // on the road it waits until the party has left the town
+    else { tutorial = createTutorial(); sim.tutorialHold = true; }
+  }
   mode = 'run';
 }
 
@@ -582,6 +592,12 @@ function beginSim(keep?: boolean[], shiftX?: number): void {
   input.sample().forEach((f, k) => { sim.players[k].rawPrev = f.buttons; }); // a button still held from the crossing is not a trade
 }
 
+/** A new run on the road: it opens in the starting town, where the party is chosen by walking in (data/town.ts), not in the lobby. */
+function startRoadRun(): void {
+  input.reset();
+  startRun(devConfig((Date.now() & 0xffffffff) >>> 0));
+}
+
 /** Off-ledger dev restart (R): the next seed, as before the campaign existed. */
 function restart(): void {
   startRun(devConfig((seed + 1) >>> 0));
@@ -591,6 +607,12 @@ function finishRun(): void {
   if (sim.road) { clearRunSave(runStore); savedRun = undefined; } // the run is over: nothing to continue
   const sum = summarizeEnd(sim, retreated, route.index, route.total);
   screen = runEndScreen(sum, cfg.chapter);
+  if (sim.road && screen.kind === 'text') {
+    // renown for the run, kept in the profile for the town to spend
+    const earned = renownFor({ cleared: sum.cleared, bosses: sim.road.bosses, kills: sum.kills, won: sum.outcome === 'won' });
+    keepProfile(withRun(profile, sim.road.renown + earned, sim.road.meta));
+    screen.body.push({ text: `Renown earned: ${earned}  (${profile.renown} to spend in the town)`, tone: 'gold' });
+  }
   mode = 'summary';
   input.consumeMenu();
 }
@@ -621,10 +643,15 @@ function enterNextLevel(): void {
 
 /** On the one road (`?road=1`) there is no cut between levels: the route just follows where the party is, for the HUD, the music and the summary. */
 let roadScene = -1;
+/** The controls tutorial opens once the party has walked out of the town. */
+let tutorialAfterTown = false;
 /** How many crossroads the scenery has been painted for: a choice repaints the road ahead in the chosen biome (well before any of it is in view). */
 let paintedChoices = 0;
 function followRoad(): void {
   const r = sim.road!;
+  if (tutorialAfterTown && !r.town) { tutorialAfterTown = false; tutorial = createTutorial(); sim.tutorialHold = true; }
+  // the town spent renown (or built a place): keep it, whatever becomes of the run
+  if (r.renown !== profile.renown || metaRanks(profile).some((v, i) => v !== r.meta[i])) keepProfile(withRun(profile, r.renown, r.meta));
   if (r.choices.length !== paintedChoices) { paintedChoices = r.choices.length; applyScenery(cfg.seed, route.total, r); }
   if (sim.sceneIndex !== roadScene) { roadScene = sim.sceneIndex; cast.reset(sim); } // the next road scene along the way
   if (r.level !== route.index) { route.index = r.level; route.plan = levelPlan(cfg.seed, r.level, route.total); cfg = { ...cfg, chapter: route.plan.chapter }; }
@@ -695,9 +722,9 @@ function menuUpdate(): void {
   if (sound) audio.setSound(!audio.soundOn);
   if (music) audio.setMusic(!audio.musicOn);
   if (any) audio.unlock(); // a pad press is not a user gesture to the browser, but costs nothing to try
-  if (mode === 'summary' && ok) enterSelect();
+  if (mode === 'summary' && ok) { if (roadMode) { mode = 'title'; screen = titleScreen(); } else enterSelect(); }
   else if (mode === 'title' && cont && savedRun) continueRun();
-  else if (mode === 'title' && any && !titleKeyHandled) enterSelect();
+  else if (mode === 'title' && any && !titleKeyHandled) { if (roadMode) startRoadRun(); else enterSelect(); }
   titleKeyHandled = false;
 }
 
@@ -819,10 +846,10 @@ startLoop({
       // a level won on the road is not a stopping point: the banner is only for the end of the road and for a party that is down
       hideEndBanner: routed && sim.phase === Phase.Won && !lastLevel,
       levelKeys: sim.players.map((_, k) => input.levelHint(k)),
-      storeHints: route.store ? sim.players.map((_, k) => (nearWare(sim, k) >= 0 || nearOffer(sim, k) >= 0 || nearGift(sim, k) >= 0 ? input.interactHint(k) : '')) : undefined,
+      storeHints: sim.road?.town ? sim.players.map((_, k) => input.interactHint(k)) : route.store ? sim.players.map((_, k) => (nearWare(sim, k) >= 0 || nearOffer(sim, k) >= 0 || nearGift(sim, k) >= 0 ? input.interactHint(k) : '')) : undefined,
       questView: route.store ? questView() : undefined,
       storeView: route.store ? storeView() : undefined,
-      routeLabel: route.total > 1 ? (route.store ? `STORE  LEVEL ${route.index + 1} OF ${route.total}` : `LEVEL ${route.index + 1} OF ${route.total}`) : undefined,
+      routeLabel: sim.road?.town ? `THE TOWN  ${route.total} LEVELS AHEAD` : route.total > 1 ? (route.store ? `STORE  LEVEL ${route.index + 1} OF ${route.total}` : `LEVEL ${route.index + 1} OF ${route.total}`) : undefined,
     });
     cast.drawBubbles(renderer.batcher, sprites, sim, cam, alpha);
     if (!cast.hearing()) barks.draw(renderer.batcher, sprites, sim, cam, alpha);

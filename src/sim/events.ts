@@ -48,6 +48,7 @@ export const Ev = {
   TotemPulse: 45, // a totem's beat; a = radius, b = totem kind, c = owner slot
   TotemPlant: 46, // a totem is set down; a = radius, b = totem kind, c = owner slot
   Fork: 48,       // the party chose its road at a crossroads: a = the side (0 upper, 1 lower), b = the biome it leads to, c = the region (stage)
+  Town: 49,       // the starting town: a = what (TownEv, sim/gen/road.ts), b = class, place or heat, c = slot
   Trade: 47,      // the trade button in a store: a = what (TradeEv, sim/shop.ts), b = ware or offer index, c = slot
   Site: 41,       // a shrine or chest did something: a = what (SiteEv), b = site sub-kind or value
 } as const;

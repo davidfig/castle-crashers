@@ -6,6 +6,7 @@ import { createGrid, type Grid } from './grid';
 import { CLASSES } from '../data/classes';
 import { MOBS } from '../data/mobs';
 import { UPGRADES } from '../data/upgrades';
+import { ARMOURY_UPGRADE, META_INDEX, TREASURY_GOLD } from '../data/meta';
 import { biomeIndex } from '../data/roster';
 import { HEAT_MAX, heatHorde } from '../data/heat';
 import { placeSites } from './sites';
@@ -258,6 +259,42 @@ export function activatePlayer(s: GameState, slot: number, x: number, y: number)
   p.ent = allocEntity(s.ents, Kind.Player, slot, x, y, cls.hp);
 }
 
+/** Lasting upgrades from the town (data/meta.ts) a hero sets out with: the Armoury's ranks of Thick Skin. */
+export function applyMeta(s: GameState, slot: number): void {
+  const r = s.road;
+  if (!r) return;
+  const p = s.players[slot], up = ARMOURY_UPGRADE, have = r.meta[META_INDEX.armoury] ?? 0;
+  p.ranks[up] = Math.min(UPGRADES[up].maxRank, Math.max(p.ranks[up], have));
+}
+
+/**
+ * A hero joins a run under way (docs/21-the-road.md, "Joining a run under way"): brought up to strength, at the party's average level
+ * (rounded down) with that many level-ups to choose in the field, so they are useful at once without outshining those who earned it; and
+ * with the town's lasting upgrades, like everyone else. Alone (or with a party still at level 1), simply a fresh hero.
+ */
+export function joinParty(s: GameState, slot: number, x: number, y: number): void {
+  let sum = 0, n = 0;
+  for (let k = 0; k < s.players.length; k++) if (k !== slot && s.players[k].active) { sum += s.players[k].level; n++; }
+  activatePlayer(s, slot, x, y);
+  const p = s.players[slot];
+  const level = n > 0 ? Math.max(1, Math.floor(sum / n)) : 1;
+  p.level = level;
+  p.pending = level - 1;
+  p.xp = 0;
+  applyMeta(s, slot);
+}
+
+/** A hero takes up another class (the town's stands): a fresh hero of that class where they stand, with the town's upgrades. */
+export function resetHero(s: GameState, slot: number, classId: number): void {
+  const old = s.players[slot];
+  if (!old.active) return;
+  const p = createPlayer();
+  p.active = true; p.ent = old.ent; p.classId = classId; p.prevButtons = old.prevButtons; p.rawPrev = old.rawPrev;
+  s.players[slot] = p;
+  s.ents.hp[p.ent] = s.ents.maxhp[p.ent] = CLASSES[classId].hp;
+  applyMeta(s, slot);
+}
+
 /**
  * A hero leaves the run (a continued run whose saved hero nobody took up, docs/21-the-road.md): their body goes and the slot is empty,
  * so a newcomer who takes it starts afresh. What they bought is gone with them; the shared purse stays.
@@ -299,8 +336,9 @@ export interface SimOptions {
   /** How long the field is (default `WORLD_W`, a store `STORE_W`): its encounters, sites and quest are laid out along it. */
   length?: number;
   /** The whole run as one road (docs/21-the-road.md): `total` levels with a camp after each but the last, planned from the run's seed
-   *  (the sim's `seed`) as the party nears them. The per-level options (boss, scale, mix, damage, opener) then come from the road. */
-  road?: { total: number };
+   *  (the sim's `seed`) as the party nears them. The per-level options (boss, scale, mix, damage, opener) then come from the road. It
+   *  starts in the town, with the profile's renown to spend and the lasting upgrades bought so far (data/meta.ts, by index). */
+  road?: { total: number; renown?: number; meta?: readonly number[] };
   /** A store's goods (data/wares.ts `stockFor`) and the quests its givers offer (data/quests.ts `questOffers`). */
   stock?: readonly StockItem[];
   offers?: readonly QuestDef[];
@@ -309,7 +347,7 @@ export interface SimOptions {
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
   const store = opts.store === true;
   const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
-  const road = opts.road ? createRoad(seed, opts.road.total, heat) : null;
+  const road = opts.road ? createRoad(seed, opts.road.total, heat, opts.road.renown ?? 0, opts.road.meta ?? []) : null;
   const length = store ? STORE_W : road ? road.layout.length : (opts.length ?? WORLD_W);
   const plan = store || road ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
   const s: GameState = {
@@ -353,7 +391,7 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     road,
     offers: store ? (opts.offers ?? []).map((q) => ({ ...q })) : [],
     questTaken: -1,
-    gold: 0,
+    gold: road ? TREASURY_GOLD * (road.meta[META_INDEX.treasury] ?? 0) : 0,
     heat,
     damageMul: opts.damage ?? 1,
     mix: opts.mix ?? [0, 1],
@@ -379,6 +417,7 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     procScratch: new Int32Array(MAX_ENTS),
   };
   activatePlayer(s, 0, 80, 100);
+  applyMeta(s, 0);
   if (road) roadUpkeep(s, () => {});
   else if (!store) placeSites(s, opts.boss !== false);
   if (s.quest) placeQuest(s);

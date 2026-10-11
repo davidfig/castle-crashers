@@ -24,6 +24,8 @@ import { emit, Ev } from '../events';
 import { heatHorde } from '../../data/heat';
 import { roadSceneFor, roadSceneT } from '../../data/story/road';
 import { giftsFor } from '../../data/gifts';
+import { META } from '../../data/meta';
+import { TOWN_GATE_X, TOWN_W } from '../../data/town';
 import { stockFor } from '../../data/wares';
 import { STORE_X, VIEW_W, WORLD_H, WORLD_W } from '../constants';
 import { placeSites } from '../sites';
@@ -55,7 +57,7 @@ const FORK_TURN = 400;
 
 /** A calm place on the road: its ground (which the camera's centre is in while the party is there) and what it is. */
 export interface Calm {
-  kind: 'camp' | 'scene' | 'fork';
+  kind: 'town' | 'camp' | 'scene' | 'fork';
   /** The level it belongs to (a camp: the one before it). */
   level: number;
   from: number;
@@ -108,6 +110,13 @@ export interface RoadState {
    *  (a region not yet chosen has the upper road's, for the layout of the road ahead until then). */
   choices: number[];
   biomes: number[];
+  /** The party is still in the starting town (the camera holds on it; nothing of the road is planned yet). */
+  town: boolean;
+  /** Renown left to spend in the town, and the lasting upgrades' ranks (data/meta.ts, by index): from the profile, and what the town bought. */
+  renown: number;
+  meta: number[];
+  /** Bosses slain on this road (for the renown it earns). */
+  bosses: number;
 }
 
 /** The region (biome stage) level `k` belongs to. */
@@ -160,7 +169,9 @@ function reach(c: ClumpPlan): [number, number] {
  */
 export function layoutRoad(runSeed: number, total: number, biomes: readonly number[] = roadBiomes(runSeed, total, [])): RoadLayout {
   const levels: LevelLay[] = [], calm: Calm[] = [];
-  let calmEnd = -Infinity, length = WORLD_W;
+  // the road begins in the town: a calm place a screen wide, and the first level keeps clear of it like any other
+  calm.push({ kind: 'town', level: 0, from: 0, to: TOWN_W });
+  let calmEnd = TOWN_W, length = WORLD_W;
   for (let k = 0; k < total; k++) {
     const lp = levelPlan(runSeed, k, total, biomes[stageOf(k)]);
     const shape = levelShape(lp, k);
@@ -226,6 +237,12 @@ export function levelToRoad(lay: LevelLay, x: number): number {
   for (const sl of lay.slices) if (x < sl.to) return x + sl.dx;
   return x + lay.slices[lay.slices.length - 1].dx;
 }
+
+/** The party is still in the starting town. */
+export function inTown(s: GameState): boolean { return s.road !== null && s.road.town; }
+
+/** What happened in the town (the `a` of an `Ev.Town`): a hero took up a class, a place was built up (or was too dear, or is at its height), the heat was set, the party left. */
+export const TownEv = { Class: 0, Built: 1, Dear: 2, Maxed: 3, Heat: 4, Left: 5 } as const;
 
 /** The camera is in a camp: no horde, no director; the peddler trades. */
 export function inCamp(s: GameState): boolean { return s.road !== null && s.road.camp; }
@@ -302,8 +319,13 @@ function openCamp(s: GameState, c: Calm): void {
  */
 export function roadUpkeep(s: GameState, leave: (s: GameState) => void): void {
   const r = s.road!, L = r.layout;
-  // nothing past a crossroads is planned until the party has chosen its road
-  while (r.planned < r.total && stageOf(r.planned) <= r.choices.length && s.camX + VIEW_W + PLAN_AHEAD >= L.levels[r.planned].slices[0].dx + 700) planRoadLevel(s, r.planned);
+  // the party walks out of the town through its gate: the road begins
+  if (r.town && s.players.some((p) => p.active && !p.downed && s.ents.x[p.ent] >= TOWN_GATE_X)) {
+    r.town = false;
+    emit(s.events, Ev.Town, TOWN_GATE_X, WORLD_H / 2, TownEv.Left, 0, 0);
+  }
+  // nothing is planned while the party is in the town (the heat may still change), nor past a crossroads until the party has chosen its road
+  while (!r.town && r.planned < r.total && stageOf(r.planned) <= r.choices.length && s.camX + VIEW_W + PLAN_AHEAD >= L.levels[r.planned].slices[0].dx + 700) planRoadLevel(s, r.planned);
   const fork = L.calm.find((c) => c.kind === 'fork' && c.stage === r.choices.length + 1);
   if (fork) { const side = forkChoice(s, fork); if (side >= 0) { commitFork(s, fork, side); return; } }
   // a camp's goods are set out as it nears (the last camp's are long behind by then)
@@ -366,10 +388,13 @@ export function commitFork(s: GameState, fork: Calm, side: number): void {
 }
 
 /** A fresh road's state (level 0, nothing planned yet: the first upkeep plans it). */
-export function createRoad(runSeed: number, total: number, heat: number): RoadState {
+export function createRoad(runSeed: number, total: number, heat: number, renown = 0, meta: readonly number[] = []): RoadState {
   const n = Math.max(1, total);
   const biomes = roadBiomes(runSeed, n, []);
-  return { runSeed, total: n, heat, layout: layoutRoad(runSeed, n, biomes), planned: 0, level: 0, calm: -1, camp: false, since: -1, choices: [], biomes };
+  return {
+    runSeed, total: n, heat, layout: layoutRoad(runSeed, n, biomes), planned: 0, level: 0, calm: -1, camp: false, since: -1, choices: [], biomes,
+    town: true, renown, meta: META.map((_, i) => meta[i] ?? 0), bosses: 0,
+  };
 }
 
 /** Where level `k`'s field begins on the road (its first stretch's local 0). */
@@ -390,6 +415,7 @@ export function roadJump(s: GameState, level: number): void {
     s.ents.x[p.ent] = s.ents.px[p.ent] = x + 80 - i * 12;
   });
   r.since = -1;
+  r.town = false; // (a jump leaves the town behind)
   roadUpkeep(s, () => {});
   while (s.nextClump < s.plan.length && s.plan[s.nextClump].x < x) s.nextClump++;
   while (s.gateIdx < s.gates.length && s.gates[s.gateIdx].x < x) s.gateIdx++;
