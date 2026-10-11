@@ -50,6 +50,8 @@ export class InputManager {
   private gamepadIds = new Set<number>();
   /** Set when "restart" is requested (R key or Start on a pad). */
   restartRequested = false;
+  /** Save and quit (docs/21-the-road.md): Escape, or a pad's Back / View button, during a run. Cleared by whoever acts on it. */
+  quitRequested = false;
   /** Controller rumble setting (V toggles). Off by default; persisted so it survives reloads. */
   rumbleEnabled = false;
   /** Menu presses since the last consumeMenu(): the menus read devices directly, so nobody has to claim a player slot to navigate. */
@@ -60,6 +62,7 @@ export class InputManager {
   private menuBack = false;
   private menuSound = false;
   private menuMusic = false;
+  private menuCont = false;
   private padMenuPrev = new Map<number, number>();
   /** Keys / pad buttons held when the slots were reset (the press that confirmed a menu): they do nothing until released, so they are not the player's first action. */
   private heldKeys = new Set<string>();
@@ -90,7 +93,8 @@ export class InputManager {
   }
 
   private noteMenuKey(code: string): void {
-    if (code === 'Escape') { this.menuBack = true; return; }
+    if (code === 'Escape') { this.menuBack = true; this.quitRequested = true; return; }
+    if (code === 'KeyC') this.menuCont = true; // the title's "continue the saved run" (it is also any key)
     if (!/^(Shift|Control|Alt|Meta|Caps)/.test(code)) this.menuAny = true;
     if (code === 'KeyA' || code === 'ArrowLeft') this.menuLeft = true;
     else if (code === 'KeyD' || code === 'ArrowRight') this.menuRight = true;
@@ -98,12 +102,12 @@ export class InputManager {
   }
 
   /** Left/right (-1, 0, 1) and confirm pressed since the last call, from any keyboard or pad. Clears them. */
-  consumeMenu(): { dx: number; ok: boolean; any: boolean; back: boolean; sound: boolean; music: boolean } {
+  consumeMenu(): { dx: number; ok: boolean; any: boolean; back: boolean; sound: boolean; music: boolean; cont: boolean } {
     for (const p of navigator.getGamepads()) {
       if (!p) continue;
       const down = (i: number) => !!p.buttons[i]?.pressed;
       const x = p.axes[0] ?? 0;
-      const mask = (down(14) || x < -0.6 ? 1 : 0) | (down(15) || x > 0.6 ? 2 : 0) | (p.buttons.some((bt, i) => i < 12 && i !== 9 && i !== 4 && i !== 5 && bt.pressed) ? 4 : 0) | (p.buttons.some((bt, i) => i !== 1 && i !== 4 && i !== 5 && bt.pressed) ? 8 : 0) | (down(1) ? 16 : 0) | (down(4) ? 32 : 0) | (down(5) ? 64 : 0); // the bumpers are the sound / music switches, not 'any button'
+      const mask = (down(14) || x < -0.6 ? 1 : 0) | (down(15) || x > 0.6 ? 2 : 0) | (p.buttons.some((bt, i) => i < 12 && i !== 9 && i !== 4 && i !== 5 && bt.pressed) ? 4 : 0) | (p.buttons.some((bt, i) => i !== 1 && i !== 4 && i !== 5 && bt.pressed) ? 8 : 0) | (down(1) ? 16 : 0) | (down(4) ? 32 : 0) | (down(5) ? 64 : 0) | (down(3) ? 128 : 0); // the bumpers are the sound / music switches, not 'any button'
       const fresh = mask & ~(this.padMenuPrev.get(p.index) ?? 0);
       this.padMenuPrev.set(p.index, mask);
       if (fresh & 1) this.menuLeft = true;
@@ -113,9 +117,10 @@ export class InputManager {
       if (fresh & 16) this.menuBack = true;
       if (fresh & 32) this.menuSound = true;
       if (fresh & 64) this.menuMusic = true;
+      if (fresh & 128) this.menuCont = true; // Y
     }
-    const out = { dx: (this.menuRight ? 1 : 0) - (this.menuLeft ? 1 : 0), ok: this.menuOk, any: this.menuAny, back: this.menuBack, sound: this.menuSound, music: this.menuMusic };
-    this.menuLeft = this.menuRight = this.menuOk = this.menuAny = this.menuBack = this.menuSound = this.menuMusic = false;
+    const out = { dx: (this.menuRight ? 1 : 0) - (this.menuLeft ? 1 : 0), ok: this.menuOk, any: this.menuAny, back: this.menuBack, sound: this.menuSound, music: this.menuMusic, cont: this.menuCont };
+    this.menuLeft = this.menuRight = this.menuOk = this.menuAny = this.menuBack = this.menuSound = this.menuMusic = this.menuCont = false;
     return out;
   }
 
@@ -199,7 +204,8 @@ export class InputManager {
         if (PAD_CONFIRM.some(down)) b |= Btn.Confirm;
         const any = p.buttons.some((bt, i) => bt.pressed && !held?.has(i));
         if (down(9) && !(prev & 0x100)) this.restartRequested = true;
-        prev = down(9) ? 0x100 : 0;
+        if (down(8) && !(prev & 0x200)) this.quitRequested = true; // Back / View: save and quit
+        prev = (down(9) ? 0x100 : 0) | (down(8) ? 0x200 : 0);
         out.buttons = b;
         return any;
       },
@@ -297,6 +303,7 @@ export class InputManager {
   reset(keep?: boolean[]): void {
     this.slots = this.slots.map((id, k) => (keep?.[k] ? id : null));
     this.restartRequested = false;
+    this.quitRequested = false;
     this.edges.clear();
     this.heldKeys = new Set(this.keys);
     this.heldPad.clear();
@@ -307,6 +314,9 @@ export class InputManager {
       this.heldPad.set(p.index, s);
     }
   }
+
+  /** A device holds slot `k`. */
+  isClaimed(k: number): boolean { return this.slots[k] !== null && this.slots[k] !== undefined; }
 
   get claimedSlots(): number {
     return this.slots.filter((s) => s !== null).length;

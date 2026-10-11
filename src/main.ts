@@ -30,12 +30,15 @@ import { botInput } from './sim/bot';
 import { Pilot } from './ai/pilot';
 import { resolveSkill } from './ai/skill';
 import { Btn } from './sim/input';
-import { Phase, activatePlayer } from './sim/state';
+import { Phase, activatePlayer, leaveParty } from './sim/state';
 import { Kind, allocEntity } from './sim/entities';
 import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
 import { spawnClump } from './sim/gen/level';
 import { layoutRoad, roadJump, roadMusicBiome, stageBounds } from './sim/gen/road';
+import { clearRunSave, describeRunSave, loadRunSave, makeRunSave, writeRunSave, type RunSave } from './campaign/runSave';
+import { restore } from './sim/snapshot';
+import { drawResumeHold, type ResumeView } from './render/resumeHud';
 import { summarizeEnd } from './campaign/run';
 import { createTutorial, markTutorialSeen, tutorialSeen, tutorialView, updateTutorial, type Tutorial } from './campaign/tutorial';
 import { drawTutorial } from './render/tutorialHud';
@@ -152,14 +155,14 @@ applyParty(seed);
 // archetype (the enemies stay those of the seed's biomes); ?biome=N already forces both; ?world=N changes the scenery's seed alone.
 if (__DEV__ && params.has('roadx')) setRoadShift(Number(params.get('roadx')) || 0); // ?roadx=N draws the scenery N px further along the road
 let sceneryKey = '';
-function applyScenery(runSeed: number, total: number): void {
+function applyScenery(runSeed: number, total: number, road = params.get('road') === '1'): void {
   const stages = Math.max(1, Math.ceil(total / LEVELS_PER_BIOME));
   const want = __DEV__ ? (params.get('scenery') ?? '').toLowerCase() : '';
   const forced = want ? BIOMES.findIndex((b) => b.name.toLowerCase().includes(want)) : -1;
   const worldSeed = __DEV__ && params.has('world') ? Number(params.get('world')) >>> 0 : runSeed;
   const archetypes = Array.from({ length: stages }, (_, k) => (forced >= 0 ? forced : levelPlan(runSeed, k * LEVELS_PER_BIOME, total).biome));
   // on the one road (?road=1) each biome's stretch is as long as its levels and the calm places between them grew it (sim/gen/road.ts)
-  const bounds = params.get('road') === '1' ? stageBounds(layoutRoad(runSeed, total)) : undefined;
+  const bounds = road ? stageBounds(layoutRoad(runSeed, total)) : undefined;
   const key = `${worldSeed}:${archetypes.join(',')}:${bounds?.join(',') ?? ''}`;
   if (key === sceneryKey) return;
   sceneryKey = key;
@@ -193,7 +196,7 @@ function pilotFor(k: number): Pilot {
 // level, with no menus between and no cut on screen: the scenery and the party carry across. The sim only ever sees one level (or one store) at a time.
 // ?seed=N is an entered seed: one level, no store, R restarts it.
 const devRun = params.has('seed') || (__DEV__ && (params.has('store') || demo !== null));
-/** `?road=1`: the run as one road, a single sim from start to finish (docs/21-the-road.md, being built: no quests, story scenes or saves on it yet). */
+/** `?road=1`: the run as one road, a single sim from start to finish, saved as it goes (docs/21-the-road.md, being built: no quests or staged beats on it yet). */
 const roadMode = params.get('road') === '1';
 
 type Mode = 'title' | 'run' | 'summary' | 'select';
@@ -265,7 +268,7 @@ function enterSelect(): void {
 }
 
 function selectUpdate(): void {
-  if (input.restartRequested) { input.reset(); mode = 'title'; screen = { kind: 'title' }; return; } // backing out: to the title
+  if (input.restartRequested) { input.reset(); mode = 'title'; screen = titleScreen(); return; } // backing out: to the title
   const frames = input.sample();
   for (let k = 0; k < MAX_PLAYERS; k++) {
     const f = frames[k], l = lobby[k];
@@ -280,7 +283,7 @@ function selectUpdate(): void {
     lobbyPrevY[k] = y;
     if (!l.joined) {
       if (f.buttons & Btn.Join || atk) l.joined = true;
-      else if (back && !lobby.some((o) => o.joined)) { input.reset(); mode = 'title'; screen = { kind: 'title' }; return; }
+      else if (back && !lobby.some((o) => o.joined)) { input.reset(); mode = 'title'; screen = titleScreen(); return; }
       continue;
     }
     if (back) { if (l.ready) l.ready = false; else l.joined = false; continue; }
@@ -427,6 +430,102 @@ const WIND_DOWN_MAX = 180;
 /** The first-time controls tutorial, while it is playing (campaign/tutorial.ts). */
 let tutorial: Tutorial | null = null;
 function browserStore(): Storage | undefined { try { return localStorage; } catch { return undefined; } }
+
+// ---- The run in progress is saved as it goes (docs/21-the-road.md, step 4): on the one road only, every few seconds, on reaching a calm
+// place, when the page closes and on Save and quit (Escape, or a pad's Back). Continue (C / Y on the title) rebuilds everything from the seed,
+// restores the sim and holds the field frozen until the players have taken up their heroes.
+const runStore = browserStore();
+let savedRun: RunSave | undefined = (() => { const r = loadRunSave(runStore); return r.status === 'ok' ? r.save : undefined; })();
+/** Ticks between autosaves (10 s of play). */
+const AUTOSAVE_TICKS = 600;
+let lastSaveTick = -Infinity;
+let lastCalm = -2;
+function titleScreen(): Screen { return { kind: 'title', cont: savedRun ? describeRunSave(savedRun) : undefined }; }
+/** Saves the run being played, if it can be continued later (a run on the one road, still going). */
+function saveRun(): void {
+  if (mode !== 'run' || !sim.road || sim.phase !== Phase.Playing || demo) return;
+  const save = makeRunSave(sim, { seed: cfg.seed, total: route.total, heat: runHeat }, Date.now());
+  if (writeRunSave(runStore, save)) savedRun = save;
+  lastSaveTick = sim.tick;
+}
+window.addEventListener('pagehide', saveRun);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveRun(); });
+
+/** The hold over a continued run: which slots a player has taken (their last buttons, so a press is an edge), until one presses attack. */
+let resume: { taken: boolean[]; prev: number[] } | null = null;
+
+/** Continue the saved run: everything generated is rebuilt from its seed, the sim is restored, and the field holds until the players are back. */
+function continueRun(): void {
+  const save = savedRun!;
+  let restored: ReturnType<typeof restore>;
+  try { restored = restore(save.sim); } catch (err) {
+    console.warn('The saved run could not be restored:', err);
+    savedRun = undefined;
+    screen = titleScreen();
+    return;
+  }
+  applyCast(save.config.seed);
+  applyFolk(save.config.seed);
+  applyParty(save.config.seed);
+  seed = save.config.seed;
+  runHeat = save.config.heat;
+  const total = save.config.total;
+  applyScenery(seed, total, true);
+  const plan = levelPlan(seed, save.level, total);
+  cfg = { seed, chapter: plan.chapter };
+  route = { index: save.level, total, plan, store: false, carry: undefined };
+  picks = [];
+  sim = restored;
+  roadScene = -1;
+  beginSim();
+  input.reset();
+  if (sim.road) followRoad();
+  lastSaveTick = sim.tick;
+  lastCalm = sim.road?.calm ?? -2;
+  resume = { taken: [false, false, false, false], prev: [0, 0, 0, 0] };
+  mode = 'run';
+}
+
+/** The hold: a press takes a slot; attack from someone who has one starts. Saved heroes nobody took leave; newcomers join beside the party. */
+function resumeUpdate(): void {
+  const r = resume!;
+  const frames = input.sample();
+  let start = false;
+  for (let k = 0; k < MAX_PLAYERS; k++) {
+    if (!input.isClaimed(k)) continue;
+    const b = frames[k].buttons;
+    if (!r.taken[k]) { r.taken[k] = true; r.prev[k] = b; continue; } // the press that took the slot does not also start
+    if (b & ~r.prev[k] & (Btn.Attack | Btn.Confirm)) start = true;
+    r.prev[k] = b;
+  }
+  if (!start) return;
+  for (let k = 0; k < MAX_PLAYERS; k++) {
+    if (!r.taken[k]) { if (sim.players[k].active) leaveParty(sim, k); continue; }
+    if (!sim.players[k].active) { sim.players[k].classId = k % CLASSES.length; activatePlayer(sim, k, sim.camX + 120, 40 + k * 40); }
+  }
+  sim.players.forEach((p, k) => { p.rawPrev = frames[k].buttons; p.prevButtons = frames[k].buttons; }); // the press that started is not a swing or a trade
+  resume = null;
+  saveRun(); // the party as it now is
+}
+
+function resumeView(): ResumeView {
+  const r = resume!;
+  return {
+    where: `LEVEL ${route.index + 1} OF ${route.total}`,
+    slots: sim.players.map((p, k) => ({ hero: p.active ? `${CLASSES[p.classId].name.toUpperCase()} ${p.level}` : '', taken: r.taken[k] })),
+    canStart: r.taken.some(Boolean),
+  };
+}
+
+/** Save and quit: back to the title, the run kept to continue. */
+function saveAndQuit(): void {
+  saveRun();
+  resume = null;
+  tutorial = null;
+  input.reset();
+  mode = 'title';
+  screen = titleScreen();
+}
 function endTutorial(): void {
   sim.tutorialHold = false;
   markTutorialSeen(browserStore());
@@ -449,6 +548,9 @@ function startRun(c: RunConfig, keepSlots = false): void {
   route = { index: at, total, plan, store: false, carry: undefined, };
   sim = newSim(roadMode ? levelPlan(c.seed, 0, total) : plan);
   if (sim.road && at > 0) roadJump(sim, at);
+  resume = null;
+  lastSaveTick = -Infinity;
+  lastCalm = -2;
   beginSim(keepSlots ? picks.map((p) => p.joined) : undefined);
   // A new player's first field opens with the controls tutorial. Dev: ?tutorial=1 plays it on any run, ?tutorial=0 never.
   const wantTutorial = __DEV__ && params.has('tutorial') ? params.get('tutorial') !== '0' : !devRun && !tutorialSeen(browserStore());
@@ -460,7 +562,7 @@ function startRun(c: RunConfig, keepSlots = false): void {
 function beginSim(keep?: boolean[], shiftX?: number): void {
   tutorial = null;
   if (shiftX !== undefined) fx.shift(shiftX); else fx = new Fx(); // crossing from one field to the next keeps what lies on the ground
-  if (keep) input.reset(keep); else input.restartRequested = false; // slots stay claimed: the same devices keep the same heroes
+  if (keep) input.reset(keep); else { input.restartRequested = false; input.quitRequested = false; } // slots stay claimed: the same devices keep the same heroes
   retreated = false;
   endTicks = 0;
   barks.reset();
@@ -474,6 +576,7 @@ function restart(): void {
 }
 
 function finishRun(): void {
+  if (sim.road) { clearRunSave(runStore); savedRun = undefined; } // the run is over: nothing to continue
   const sum = summarizeEnd(sim, retreated, route.index, route.total);
   screen = runEndScreen(sum, cfg.chapter);
   mode = 'summary';
@@ -563,11 +666,12 @@ function storeView(): StoreView {
 }
 
 function menuUpdate(): void {
-  const { ok, any, sound, music } = input.consumeMenu();
+  const { ok, any, sound, music, cont } = input.consumeMenu();
   if (sound) audio.setSound(!audio.soundOn);
   if (music) audio.setMusic(!audio.musicOn);
   if (any) audio.unlock(); // a pad press is not a user gesture to the browser, but costs nothing to try
   if (mode === 'summary' && ok) enterSelect();
+  else if (mode === 'title' && cont && savedRun) continueRun();
   else if (mode === 'title' && any && !titleKeyHandled) enterSelect();
   titleKeyHandled = false;
 }
@@ -592,7 +696,7 @@ if (devRun) {
     sim.kills = Math.max(0, Number(params.get('kills') ?? 320) || 0);
     enterStore();
   }
-} else { mode = 'title'; screen = { kind: 'title' }; }
+} else { mode = 'title'; screen = titleScreen(); }
 
 startLoop({
   tickRate: TICK_RATE,
@@ -601,6 +705,8 @@ startLoop({
     frameTick++;
     if (mode === 'select') { selectUpdate(); return; }
     if (mode !== 'run') { menuUpdate(); return; }
+    if (resume) { resumeUpdate(); return; } // a continued run holds until the players are back
+    if (input.quitRequested) { input.quitRequested = false; if (sim.road && sim.phase === Phase.Playing) { saveAndQuit(); return; } }
     if (input.restartRequested) {
       if (devRun) { restart(); return; }
       retreated = true; // abandoning the road is a retreat
@@ -617,6 +723,11 @@ startLoop({
     const evFrom = sim.events.n;
     step(sim, frames);
     if (sim.road) followRoad();
+    if (sim.road && sim.phase === Phase.Playing) {
+      const calm = sim.road.calm;
+      if (sim.tick - lastSaveTick >= AUTOSAVE_TICKS || (calm >= 0 && calm !== lastCalm)) saveRun();
+      lastCalm = calm;
+    }
     if (tutorial) { updateTutorial(tutorial, sim, frames); if (tutorial.over) endTutorial(); }
     // The goods on the ground and the quest-givers: the sim trades (sim/shop.ts); here only the words shown after a press.
     if (route.store) {
@@ -668,6 +779,7 @@ startLoop({
     fx.update(dt * 60);
     barks.update(sim, cfg.chapter);
     cast.update(sim);
+    if (resume) alpha = 1; // frozen: no stepping, so nothing to interpolate
     const cam = lerp(sim.prevCamX, sim.camX, alpha);
     const routed = !devRun || route.total > 1;
     const lastLevel = !route.store && route.index === route.total - 1;
@@ -690,6 +802,7 @@ startLoop({
     cast.drawBubbles(renderer.batcher, sprites, sim, cam, alpha);
     if (!cast.hearing()) barks.draw(renderer.batcher, sprites, sim, cam, alpha);
     if (tutorial) drawTutorial(renderer.batcher, sprites, tutorialView(tutorial, sim, (k, a) => input.actionHint(k, a)));
+    if (resume) drawResumeHold(renderer.batcher, sprites, resumeView());
     renderer.end();
   },
 });

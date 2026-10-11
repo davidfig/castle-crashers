@@ -137,7 +137,8 @@ export function titleToggleRects(): { sound: { x: number; y: number; w: number; 
   };
 }
 
-export function drawTitle(b: Batcher, S: Sprites, tick: number): void {
+/** The title. `cont`: a saved run can be continued (shown above the prompt, with where it was). */
+export function drawTitle(b: Batcher, S: Sprites, tick: number, cont?: string): void {
   if (!(tick > 0)) tick = 0; // a first frame can arrive with a NaN or negative tick; the animation indices below need a non-negative one
   sky(b, S, tick);
   guards(b, S, tick); // before the keep, so its wall and merlons are drawn over them
@@ -161,7 +162,13 @@ export function drawTitle(b: Batcher, S: Sprites, tick: number): void {
   b.drawScaled(S.px, rx + 1, py + ph + 4, ribbon - 2, 12, hex(GLASS.r));
   b.drawScaled(S.px, rx + 1, py + ph + 4, ribbon - 2, 1, hex(GLASS.R));
   drawStory(b, S, TITLE_TAG, Math.round((VIEW_W - storyWidth(TITLE_TAG)) / 2), py + ph + 7, GLASS.W);
-  const prompt = 'Press attack to begin';
+  const prompt = cont ? 'Press attack for a new run' : 'Press attack to begin';
+  if (cont) {
+    const line = `C / Y: continue  ${cont.toLowerCase()}`;
+    const w = storyWidth(line) + 24, x = Math.round((VIEW_W - w) / 2);
+    b.drawScaled(S.px, x, VIEW_H - 54, w, 18, hex(0x000000, 0.7));
+    drawStory(b, S, line, x + 12, VIEW_H - 50, GLASS.Y);
+  }
   if (promptOn(tick)) {
     const w = storyWidth(prompt) + 24, x = Math.round((VIEW_W - w) / 2);
     b.drawScaled(S.px, x, VIEW_H - 32, w, 18, hex(0x000000, 0.55));

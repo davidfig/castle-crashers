@@ -1,6 +1,6 @@
 import { createRng, Stream, type Rng } from '../engine/rng';
 import { CAM_SLACK, LEFT_BEHIND, MAX_ENTS, MAX_PLAYERS, STORE_EXIT_X, STORE_W, WORLD_W } from './constants';
-import { allocEntity, createEntities, Kind, type Entities } from './entities';
+import { allocEntity, createEntities, freeEntity, Kind, type Entities } from './entities';
 import { createEvents, type EventBuf } from './events';
 import { createGrid, type Grid } from './grid';
 import { CLASSES } from '../data/classes';
@@ -253,6 +253,16 @@ export function activatePlayer(s: GameState, slot: number, x: number, y: number)
   p.active = true;
   p.downed = false;
   p.ent = allocEntity(s.ents, Kind.Player, slot, x, y, cls.hp);
+}
+
+/**
+ * A hero leaves the run (a continued run whose saved hero nobody took up, docs/21-the-road.md): their body goes and the slot is empty,
+ * so a newcomer who takes it starts afresh. What they bought is gone with them; the shared purse stays.
+ */
+export function leaveParty(s: GameState, slot: number): void {
+  const p = s.players[slot];
+  if (p.active && p.ent >= 0) freeEntity(s.ents, p.ent);
+  s.players[slot] = createPlayer();
 }
 
 /** Run options the campaign layer decides; the sim knows nothing else about the campaign. */

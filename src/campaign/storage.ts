@@ -5,6 +5,7 @@ import { FINAL_CHAPTER } from '../data/story/chapters';
 export interface KeyValueStore {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem?(key: string): void;
 }
 
 export const LEDGER_KEY = 'game.ledger';
