@@ -35,7 +35,7 @@ import { Kind, allocEntity } from './sim/entities';
 import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
 import { spawnClump } from './sim/gen/level';
-import { roadJump, roadMusicBiome } from './sim/gen/road';
+import { layoutRoad, roadJump, roadMusicBiome, stageBounds } from './sim/gen/road';
 import { summarizeEnd } from './campaign/run';
 import { createTutorial, markTutorialSeen, tutorialSeen, tutorialView, updateTutorial, type Tutorial } from './campaign/tutorial';
 import { drawTutorial } from './render/tutorialHud';
@@ -158,10 +158,13 @@ function applyScenery(runSeed: number, total: number): void {
   const forced = want ? BIOMES.findIndex((b) => b.name.toLowerCase().includes(want)) : -1;
   const worldSeed = __DEV__ && params.has('world') ? Number(params.get('world')) >>> 0 : runSeed;
   const archetypes = Array.from({ length: stages }, (_, k) => (forced >= 0 ? forced : levelPlan(runSeed, k * LEVELS_PER_BIOME, total).biome));
-  const key = `${worldSeed}:${archetypes.join(',')}`;
+  // on the one road (?road=1) each biome's stretch is as long as its levels and the calm places between them grew it (sim/gen/road.ts)
+  const bounds = params.get('road') === '1' ? stageBounds(layoutRoad(runSeed, total)) : undefined;
+  const key = `${worldSeed}:${archetypes.join(',')}:${bounds?.join(',') ?? ''}`;
   if (key === sceneryKey) return;
   sceneryKey = key;
-  const world = generateWorld(worldSeed, archetypes, LEVELS_PER_BIOME * ROAD_STRIDE);
+  const stageLen = bounds ? Math.min(...bounds.slice(1).map((b, k) => b - bounds[k])) : LEVELS_PER_BIOME * ROAD_STRIDE;
+  const world = generateWorld(worldSeed, archetypes, stageLen, bounds);
   installSceneryArt(sprites, renderer, world);
   setWorld(world);
 }
@@ -502,8 +505,10 @@ function enterNextLevel(): void {
 }
 
 /** On the one road (`?road=1`) there is no cut between levels: the route just follows where the party is, for the HUD, the music and the summary. */
+let roadScene = -1;
 function followRoad(): void {
   const r = sim.road!;
+  if (sim.sceneIndex !== roadScene) { roadScene = sim.sceneIndex; cast.reset(sim); } // the next road scene along the way
   if (r.level !== route.index) { route.index = r.level; route.plan = levelPlan(cfg.seed, r.level, route.total); cfg = { ...cfg, chapter: route.plan.chapter }; }
   route.store = r.camp;
 }

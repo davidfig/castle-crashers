@@ -18,7 +18,7 @@ export interface Span {
 }
 
 export interface Road {
-  /** Road px of one biome's stretch (its levels). */
+  /** Road px of one biome's stretch (its levels): the shortest, when they differ. */
   stageLen: number;
   spans: Span[];
 }
@@ -68,16 +68,17 @@ function knots(sp: Span, seed: number, k: number): void {
 }
 
 /**
- * The road of a run with `stages` biomes, one per `stageLen` of road. Each boundary between two biomes gets a turn centred near it
+ * The road of a run with `stages` biomes, one per `stageLen` of road (or beginning at `bounds[k]` when the stretches differ, as on a run's
+ * one road, which grows around its calm places: sim/gen/road.ts). Each boundary between two biomes gets a turn centred near it
  * (up to 12% of a stage early or late), of random length. The longest turn is short enough that two neighbours, each as long and as far
  * off-centre as can be, still leave `MIN_PLATEAU` between them (`TURN_MAX`; checked in the tests).
  */
-export function planRoad(seed: number, stages: number, stageLen: number): Road {
+export function planRoad(seed: number, stages: number, stageLen: number, bounds?: readonly number[]): Road {
   const spans: Span[] = [];
   for (let k = 0; k + 1 < stages; k++) {
     const rng = createRng(seed, 30 + k);
     const len = rngRange(rng, TURN_MIN, TURN_MAX) * (stageLen / 3);
-    const centre = (k + 1) * stageLen + rngRange(rng, -OFF_CENTRE, OFF_CENTRE) * stageLen;
+    const centre = (bounds ? bounds[k + 1] : (k + 1) * stageLen) + rngRange(rng, -OFF_CENTRE, OFF_CENTRE) * stageLen;
     const sp: Span = { a: k, b: k + 1, from: centre - len / 2, to: centre + len / 2, us: [], ss: [], ts: [] };
     knots(sp, seed, k);
     spans.push(sp);

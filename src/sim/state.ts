@@ -13,7 +13,7 @@ import type { QuestDef } from '../data/quests';
 import type { StockItem } from '../data/wares';
 import { createQuestRun, placeQuest, type QuestRun } from './quests';
 import { planGates, planLevel, type ClumpPlan, type Gate, type SimBeat, type SimScene } from './gen/level';
-import { createRoad, roadLength, roadUpkeep, type RoadState } from './gen/road';
+import { createRoad, roadUpkeep, type RoadState } from './gen/road';
 
 export const BLAST_CAP = 64;
 /** Boon effects waiting to resolve this tick: [kind, x, y, owner slot, a, b] each. */
@@ -297,7 +297,7 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
   const store = opts.store === true;
   const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
   const road = opts.road ? createRoad(seed, opts.road.total, heat) : null;
-  const length = store ? STORE_W : road ? roadLength(road.total) : (opts.length ?? WORLD_W);
+  const length = store ? STORE_W : road ? road.layout.length : (opts.length ?? WORLD_W);
   const plan = store || road ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
   const s: GameState = {
     seed,

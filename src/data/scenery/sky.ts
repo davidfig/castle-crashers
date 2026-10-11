@@ -80,9 +80,16 @@ export function stormCoverAt(sky: Sky, x: number, scratch: Active[]): number {
 }
 
 /** Picks what a front at road `mid` is made of: the weather of the biome it lies in, or its neighbour's, or (rarely) anyone's. */
-function pickSource(rng: Rng, biomes: readonly BiomeDef[], stageLen: number, mid: number): { kind: WeatherKind; wind: number } {
-  const stage = Math.min(biomes.length - 1, Math.max(0, Math.floor(mid / stageLen)));
-  const frac = mid / stageLen - stage;
+function pickSource(rng: Rng, biomes: readonly BiomeDef[], stageLen: number, mid: number, bounds?: readonly number[]): { kind: WeatherKind; wind: number } {
+  let stage: number, frac: number;
+  if (bounds) {
+    stage = 0;
+    while (stage < biomes.length - 1 && mid >= bounds[stage + 1]) stage++;
+    frac = Math.max(0, Math.min(1, (mid - bounds[stage]) / Math.max(1, bounds[stage + 1] - bounds[stage])));
+  } else {
+    stage = Math.min(biomes.length - 1, Math.max(0, Math.floor(mid / stageLen)));
+    frac = mid / stageLen - stage;
+  }
   const r = rngFloat(rng);
   let from = stage;
   if (r > 0.72 && r <= 0.93) from = Math.min(biomes.length - 1, Math.max(0, frac > 0.5 ? stage + 1 : stage - 1)); // the next place's weather, drifting in (or lingering from the last)
@@ -97,18 +104,18 @@ function pickSource(rng: Rng, biomes: readonly BiomeDef[], stageLen: number, mid
  * The run's weather: clear stretches and fronts one after another along `length` px of road. About half the road is under some weather.
  * `stageLen` is the road px one biome lasts, `biomes` their definitions in order.
  */
-export function planSky(seed: number, biomes: readonly BiomeDef[], stageLen: number): Sky {
+export function planSky(seed: number, biomes: readonly BiomeDef[], stageLen: number, bounds?: readonly number[]): Sky {
   const rng = createRng(seed, 120);
-  const length = biomes.length * stageLen;
+  const length = bounds ? bounds[bounds.length - 1] : biomes.length * stageLen;
   const fronts: Front[] = [];
   let x = FIRST_CLEAR + rngRange(rng, 0, 1800);
   while (x < length) {
     // a system: one front, now and then with a second kind riding along (rain with lightning, snow with fog)
-    const probe = pickSource(rng, biomes, stageLen, x + 2500);
+    const probe = pickSource(rng, biomes, stageLen, x + 2500, bounds);
     const [lo, hi] = LEN[probe.kind];
     const len = rngRange(rng, lo, hi);
     const mid = x + len / 2;
-    const src = Math.abs(mid - (x + 2500)) < 2500 ? probe : pickSource(rng, biomes, stageLen, mid);
+    const src = Math.abs(mid - (x + 2500)) < 2500 ? probe : pickSource(rng, biomes, stageLen, mid, bounds);
     const sign = rngFloat(rng) < 0.3 ? -1 : 1;
     const f: Front = { kind: src.kind, from: x, to: x + len, peak: rngRange(rng, 0.45, 1), wind: src.wind * sign * rngRange(rng, 0.6, 1.3), swing: rngRange(rng, 0.35, 0.85), seed: Math.floor(rngFloat(rng) * 0x7fffffff) };
     fronts.push(f);

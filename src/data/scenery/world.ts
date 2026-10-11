@@ -141,12 +141,12 @@ export function varyBiome(a: number, slot: number, seed: number, tone: Tone): Bi
  * The world of a run: biome `k` is archetype `archetypes[k]`, varied from the run's seed, and the road turns each into the next.
  * `stageLen` is the road px one biome lasts.
  */
-export function generateWorld(seed: number, archetypes: readonly number[], stageLen: number): World {
+export function generateWorld(seed: number, archetypes: readonly number[], stageLen: number, bounds?: readonly number[]): World {
   const biomes = archetypes.map((a, slot): GenBiome => {
     const rng = createRng(seed, 70 + slot);
     const tone = rollTone(rng, a);
     const bseed = Math.floor(rngFloat(rng) * 0x7fffffff);
     return { def: varyBiome(a, slot, bseed, tone), recipe: { archetype: a, slot, seed: bseed, tone } };
   });
-  return { seed, biomes, road: planRoad(seed, archetypes.length, stageLen), sky: planSky(seed, biomes.map((g) => g.def), stageLen) };
+  return { seed, biomes, road: planRoad(seed, archetypes.length, stageLen, bounds), sky: planSky(seed, biomes.map((g) => g.def), stageLen, bounds) };
 }

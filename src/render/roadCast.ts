@@ -94,7 +94,7 @@ export class RoadCast {
   private lastHero = -1;
   private lastTick = 0;
 
-  /** Finds the scene the level's plan holds (if any). */
+  /** Finds the scene the party is coming to: the level's (if any), or on a run's one road the next not yet passed (`sceneIndex`). */
   reset(s: GameState): void {
     this.beat = this.age = this.lastTick = 0;
     this.listening = this.calm = this.done = false;
@@ -104,7 +104,7 @@ export class RoadCast {
     this.counted = false;
     this.figures = [];
     this.beats = [];
-    const c = s.plan.find((p) => p.scene !== undefined);
+    const c = s.sceneIndex >= 0 ? s.plan[s.sceneIndex] : s.road ? undefined : s.plan.find((p) => p.scene !== undefined);
     const scene = c && SCENE_BY_ID[c.scene!];
     if (!c || !scene) return;
     this.scene = scene;

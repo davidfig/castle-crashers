@@ -42,8 +42,12 @@ export function chestCost(s: GameState): number { // (a kill is worth about a th
   return Math.round(Math.min(400, 50 + 30 * s.chestsOpened) * (1 + 0.1 * s.heat));
 }
 
-/** Where a level's sites go: the stretch of road (`x0`, `length`), its seed, and whether the mercy shrine can be one (from chapter II). */
-export interface SiteSpan { x0: number; length: number; seed: number; surrender: boolean }
+/**
+ * Where a level's sites go: the stretch of road (`x0`, `length`), its seed, and whether the mercy shrine can be one (from chapter II). On a
+ * run's one road, `at` maps a point of the level's own field onto the road (it grows around calm places) and `clear` turns down a spot
+ * too near one.
+ */
+export interface SiteSpan { x0: number; length: number; seed: number; surrender: boolean; at?: (x: number) => number; clear?: (x: number) => boolean }
 
 /**
  * Lay out a level's chests and shrines: two of each, spread along it and never in the way of a staged scene or beat. A function of the
@@ -61,8 +65,10 @@ export function placeSites(s: GameState, boss: boolean, span: SiteSpan = { x0: 0
   const reach = boss ? 0.78 : 0.86;
   order.forEach((what, k) => {
     const t = 0.1 + reach * ((k + 0.25 + rngFloat(r) * 0.5) / order.length);
-    const x = span.x0 + 760 + t * (span.length - 1100);
+    const local = span.x0 + 760 + t * (span.length - 1100);
+    const x = span.at ? span.at(local) : local;
     const y = rngRange(r, 52, WORLD_H - 52);
+    if (span.clear && !span.clear(x)) return;
     if (s.plan.some((c) => (c.scene || c.beat) && Math.abs(c.x - x) < 330)) return;
     const i = allocEntity(s.ents, what === 'chest' ? Kind.Chest : Kind.Shrine, what === 'chest' ? 0 : what, x, y, 1);
     if (i >= 0) s.ents.face[i] = rngFloat(r) < 0.5 ? 1 : -1;

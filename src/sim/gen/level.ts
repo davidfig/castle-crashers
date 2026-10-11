@@ -324,7 +324,6 @@ export function sceneHold(s: GameState): boolean {
 /** Called every tick: spawn the encounters the camera is about to reach, sized for the current party. */
 export function streamLevel(s: GameState): void {
   if (s.tick < STREAM_DELAY_TICKS || s.tutorialHold) return;
-  if (s.road?.camp) return; // the next level's crowd waits until the party leaves the camp (it used to wait for the next level to begin)
   const scale = partyScale(activePlayers(s));
   const horizon = s.camX + VIEW_W + STREAM_AHEAD;
   while (s.nextClump < s.plan.length) {
@@ -332,7 +331,8 @@ export function streamLevel(s: GameState): void {
     // The boss does not stream in 500 px ahead: it would take a minute to walk to the party. It appears just offscreen.
     if (next.x >= (next.boss ? s.camX + VIEW_W + 90 : horizon)) break;
     // Whatever lies beyond a road scene waits until the party has gone past it.
-    if (s.sceneIndex >= 0 && s.nextClump > s.sceneIndex && s.camX + VIEW_W / 2 < sceneX(s) + SCENE_RELEASE) break;
+    // (on a run's one road the scene has ground of its own, far enough from the next encounter that nothing need wait: sim/gen/road.ts)
+    if (!s.road && s.sceneIndex >= 0 && s.nextClump > s.sceneIndex && s.camX + VIEW_W / 2 < sceneX(s) + SCENE_RELEASE) break;
     if (s.ents.capacity - s.ents.count < 400) return; // entity budget: try again once things have been cleared
     spawnClump(s, s.nextClump, scale);
     s.nextClump++;
