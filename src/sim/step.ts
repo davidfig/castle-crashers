@@ -20,6 +20,7 @@ import { cellX, cellY, gatherCircle, rebuildGrid } from './grid';
 import { activatePlayer, backLine, BLAST_CAP, Phase, type GameState, type PlayerState } from './state';
 import { bannerMul, burstAt, executeMul, flushProcs, frenzyTick, onAura, onDodge, onDown, onExplode, onHit, onHurt, onKill, onSpecial, pop, rebirth, tickBoons, vigilBonus, wardMul } from './boons';
 import { activePlayers, hasBoss, partyScale, sceneHold, streamLevel } from './gen/level';
+import { inCamp, roadDirectorOff, roadLevel, roadProgress, roadUpkeep } from './gen/road';
 import { heatDamage, heatReward, heatSpeed } from '../data/heat';
 import { heroOffer } from './offers';
 import { onEliteDown, updateSites } from './sites';
@@ -103,7 +104,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
     return;
   }
 
-  if (s.store) updateTrade(s, inputs);
+  if (s.store || inCamp(s)) updateTrade(s, inputs);
   if (s.hitStop > 0) {
     s.hitStop--;
     bufferInputs(s, inputs);
@@ -132,9 +133,10 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   }
   const advance = sceneHold(s) || s.tutorialHold ? 0 : Math.max(0, s.camX - s.trigCamX);
   s.trigCamX = Math.max(s.trigCamX, s.camX);
-  if (!s.store) { runDirector(s, advance); runFlanks(s, advance); }
+  if (!s.store && !(s.road && roadDirectorOff(s))) { runDirector(s, advance); runFlanks(s, advance); }
   updateCamera(s);
   cullBehind(s);
+  if (s.road) roadUpkeep(s, leaveField);
   streamLevel(s);
   checkGate(s);
   checkBeat(s);
@@ -1445,6 +1447,7 @@ function bossStep(s: GameState, i: number, def: MobDef, target: number, dist: nu
 
 /** How far along the level the camera is (0 at the start, 1 once the last screen before the boss is reached): drives the enemy mix. */
 export function levelProgress(s: GameState): number {
+  if (s.road) return roadProgress(s);
   return clamp(s.camX / (s.worldW - VIEW_W), 0, 1);
 }
 
@@ -1509,31 +1512,43 @@ const EXIT_MARGIN = 48;
  */
 function retreatMobs(s: GameState): void {
   const e = s.ents;
-  for (let i = 0; i < e.highWater; i++) {
-    if (e.kind[i] !== Kind.Mob) continue;
-    if ((e.flags[i] & 8) === 0) {
-      const turns = rngFloat(s.rngSpawn);
-      e.ax[i] = cosTurns(turns);
-      e.ay[i] = sinTurns(turns);
-      // Leaving over the top is the arrival played backwards: flag 2 makes the renderer draw the slope and the far side of the hill.
-      e.flags[i] = e.ay[i] < 0 ? e.flags[i] | 8 | 2 : (e.flags[i] | 8) & ~2;
-      e.mode[i] = 0;
-      e.stun[i] = 0;
-      e.wind[i] = 0;
-      if (e.ax[i] > 0.05) e.face[i] = 1;
-      else if (e.ax[i] < -0.05) e.face[i] = -1;
-    }
-    if (e.hurt[i] > 0) e.hurt[i]--;
-    if (e.atk[i] > 0) e.atk[i]--;
-    const speed = MOBS[e.sub[i]].speed;
-    e.x[i] += e.ax[i] * speed + e.vx[i];
-    e.y[i] += e.ay[i] * speed + e.vy[i];
-    e.vx[i] *= 0.8;
-    e.vy[i] *= 0.8;
-    if (e.x[i] < s.camX - EXIT_MARGIN || e.x[i] > s.camX + VIEW_W + EXIT_MARGIN || e.y[i] < -TOP_EXIT_DEPTH || e.y[i] > WORLD_H + EXIT_MARGIN) {
-      if (e.boss === i) e.boss = -1;
-      freeEntity(e, i);
-    }
+  for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Mob) retreatOne(s, i);
+}
+
+/**
+ * The party walked into a camp on the road: what is left of the horde walks off the way it came on (over the hill or behind the ridge,
+ * docs/03), as it did when a level was won. Those already kneeling or standing by keep to their own ways.
+ */
+export function leaveField(s: GameState): void {
+  const e = s.ents;
+  for (let i = 0; i < e.highWater; i++) if (e.alive[i] && e.kind[i] === Kind.Mob && !(e.flags[i] & (SURRENDERED | BYSTANDER))) retreatOne(s, i);
+}
+
+/** One step of a mob leaving the field (flag 8): it picks a way out once, walks it, and is gone when it is out of sight. */
+function retreatOne(s: GameState, i: number): void {
+  const e = s.ents;
+  if ((e.flags[i] & 8) === 0) {
+    const turns = rngFloat(s.rngSpawn);
+    e.ax[i] = cosTurns(turns);
+    e.ay[i] = sinTurns(turns);
+    // Leaving over the top is the arrival played backwards: flag 2 makes the renderer draw the slope and the far side of the hill.
+    e.flags[i] = e.ay[i] < 0 ? e.flags[i] | 8 | 2 : (e.flags[i] | 8) & ~2;
+    e.mode[i] = 0;
+    e.stun[i] = 0;
+    e.wind[i] = 0;
+    if (e.ax[i] > 0.05) e.face[i] = 1;
+    else if (e.ax[i] < -0.05) e.face[i] = -1;
+  }
+  if (e.hurt[i] > 0) e.hurt[i]--;
+  if (e.atk[i] > 0) e.atk[i]--;
+  const speed = MOBS[e.sub[i]].speed;
+  e.x[i] += e.ax[i] * speed + e.vx[i];
+  e.y[i] += e.ay[i] * speed + e.vy[i];
+  e.vx[i] *= 0.8;
+  e.vy[i] *= 0.8;
+  if (e.x[i] < s.camX - EXIT_MARGIN || e.x[i] > s.camX + VIEW_W + EXIT_MARGIN || e.y[i] < -TOP_EXIT_DEPTH || e.y[i] > WORLD_H + EXIT_MARGIN) {
+    if (e.boss === i) e.boss = -1;
+    freeEntity(e, i);
   }
 }
 
@@ -1654,6 +1669,7 @@ function updateMobs(s: GameState): void {
       freeEntity(e, i);
       continue;
     }
+    if (e.flags[i] & 8) { retreatOne(s, i); continue; } // leaving the field (the party walked into a camp)
     if (e.hurt[i] > 0) e.hurt[i]--;
     if (e.atk[i] > 0) e.atk[i]--;
 
@@ -2363,6 +2379,7 @@ function checkBeat(s: GameState): void {
 
 function checkEnd(s: GameState): void {
   const e = s.ents;
+  if (s.road) { checkRoadEnd(s); return; }
   const bossFight = hasBoss(s);
   let anyActive = false;
   let allDown = true;
@@ -2378,4 +2395,16 @@ function checkEnd(s: GameState): void {
   if (anyActive && allDown) { s.phase = Phase.Lost; return; }
   // The boss is down: give the party a few seconds to gather the loot, then the battle is won.
   if (bossFight && s.bossDeadTick >= 0 && s.tick - s.bossDeadTick >= 180) s.phase = Phase.Won;
+}
+
+/** On the road the run ends only at its end: the last level's boss slain (a few seconds to gather the loot), or the party all down. */
+function checkRoadEnd(s: GameState): void {
+  const r = s.road!;
+  let anyActive = false, allDown = true;
+  for (const p of s.players) if (p.active) { anyActive = true; if (!p.downed) allDown = false; }
+  if (anyActive && allDown) { s.phase = Phase.Lost; return; }
+  const last = r.level === r.total - 1;
+  if (last && s.bossDeadTick >= r.since && s.bossDeadTick >= 0 && s.tick - s.bossDeadTick >= 180) s.phase = Phase.Won;
+  // (a last level without a boss, as a dev route may have, is won at the far end of the road)
+  if (last && !roadLevel(r, r.level).boss) for (const p of s.players) if (p.active && !p.downed && s.ents.x[p.ent] >= s.exitX) s.phase = Phase.Won;
 }

@@ -35,6 +35,7 @@ import { Kind, allocEntity } from './sim/entities';
 import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
 import { spawnClump } from './sim/gen/level';
+import { roadJump, roadMusicBiome } from './sim/gen/road';
 import { summarizeEnd } from './campaign/run';
 import { createTutorial, markTutorialSeen, tutorialSeen, tutorialView, updateTutorial, type Tutorial } from './campaign/tutorial';
 import { drawTutorial } from './render/tutorialHud';
@@ -189,6 +190,8 @@ function pilotFor(k: number): Pilot {
 // level, with no menus between and no cut on screen: the scenery and the party carry across. The sim only ever sees one level (or one store) at a time.
 // ?seed=N is an entered seed: one level, no store, R restarts it.
 const devRun = params.has('seed') || (__DEV__ && (params.has('store') || demo !== null));
+/** `?road=1`: the run as one road, a single sim from start to finish (docs/21-the-road.md, being built: no quests, story scenes or saves on it yet). */
+const roadMode = params.get('road') === '1';
 
 type Mode = 'title' | 'run' | 'summary' | 'select';
 let mode: Mode = 'title';
@@ -308,7 +311,7 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
   const nextBiome = store ? levelPlan(cfg.seed, Math.min(route.index + 1, route.total - 1), route.total).biome : undefined;
   const sd = plan.seed;
   setLevelsPlayed(route.index);
-  const s = createSim(sd, route.index === 0 && !store ? cfg.reservedBeat : undefined, {
+  const s = roadMode && !store ? createSim(cfg.seed, undefined, { road: { total: route.total }, heat: runHeat, offerSeed: cfg.seed }) : createSim(sd, route.index === 0 && !store ? cfg.reservedBeat : undefined, {
     surrender: plan.chapter >= 2 || (__DEV__ && params.get('surrender') === '1'),
     offerSeed: cfg.seed,
     boss: plan.boss,
@@ -353,7 +356,7 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
     if (params.has('pending')) for (const p of s.players) { p.level = 1 + Number(params.get('pending')); p.pending = Number(params.get('pending')) || 0; }
   }
   // Dev aid: ?boss=1 starts at the boss arena so the boss can be tried without fighting the whole battlefield.
-  if (__DEV__ && params.get('boss') === '1' && plan.boss && !store) {
+  if (__DEV__ && params.get('boss') === '1' && plan.boss && !store && !s.road) {
     s.tick = 130;                            // past the opening delay, so encounters stream in
     s.nextClump = s.plan.length - 2;         // skip to the last wall and the boss
     s.camX = s.prevCamX = s.worldW - 900;       // (the last screens of the field, whatever its length)
@@ -362,13 +365,13 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
     s.ents.y[pe] = s.ents.py[pe] = 100;
   }
   // Dev aid: ?goto=scene walks the party up to the level's road scene.
-  if (__DEV__ && params.get('goto') === 'scene' && !store && s.sceneIndex >= 0) {
+  if (__DEV__ && params.get('goto') === 'scene' && !store && s.sceneIndex >= 0 && !s.road) {
     const pe = s.players[0].ent, sx = s.plan[s.sceneIndex].x;
     s.camX = s.prevCamX = Math.max(0, sx - 320 - 120);
     s.ents.x[pe] = s.ents.px[pe] = sx - 140; s.ents.y[pe] = s.ents.py[pe] = 110;
   }
   // Dev aid: ?goto=chest|curse|charge|greed|mercy|elite walks the party up to the first such thing on the field (?gold=N fills the purse).
-  if (__DEV__ && params.has('goto') && !store) {
+  if (__DEV__ && params.has('goto') && !store && !s.road) {
     const want = params.get('goto');
     const e = s.ents;
     let at = -1;
@@ -383,7 +386,7 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
     }
   }
   // Dev aid: ?goto=end walks the party to a screen and a half before the end of the field (with ?calm=1, nothing is in the way): the biome turn and the store.
-  if (__DEV__ && params.get('goto') === 'end' && !store) {
+  if (__DEV__ && params.get('goto') === 'end' && !store && !s.road) {
     const pe = s.players[0].ent;
     s.camX = s.prevCamX = s.worldW - VIEW_W - 700;
     s.ents.x[pe] = s.ents.px[pe] = s.camX + 300; s.ents.y[pe] = s.ents.py[pe] = 100;
@@ -441,7 +444,8 @@ function startRun(c: RunConfig, keepSlots = false): void {
   // the first level of a real run stages the cookfire camp (docs/12, R1): the story told in the field
   cfg = { ...c, chapter: plan.chapter, reservedBeat: at === 0 && !devRun ? { id: 'R1' } : c.reservedBeat };
   route = { index: at, total, plan, store: false, carry: undefined, };
-  sim = newSim(plan);
+  sim = newSim(roadMode ? levelPlan(c.seed, 0, total) : plan);
+  if (sim.road && at > 0) roadJump(sim, at);
   beginSim(keepSlots ? picks.map((p) => p.joined) : undefined);
   // A new player's first field opens with the controls tutorial. Dev: ?tutorial=1 plays it on any run, ?tutorial=0 never.
   const wantTutorial = __DEV__ && params.has('tutorial') ? params.get('tutorial') !== '0' : !devRun && !tutorialSeen(browserStore());
@@ -497,6 +501,13 @@ function enterNextLevel(): void {
   beginSim(undefined, sim.camX - storeCam);
 }
 
+/** On the one road (`?road=1`) there is no cut between levels: the route just follows where the party is, for the HUD, the music and the summary. */
+function followRoad(): void {
+  const r = sim.road!;
+  if (r.level !== route.index) { route.index = r.level; route.plan = levelPlan(cfg.seed, r.level, route.total); cfg = { ...cfg, chapter: route.plan.chapter }; }
+  route.store = r.camp;
+}
+
 /** Nothing of the horde is left on the field. */
 function fieldEmpty(): boolean {
   const e = sim.ents;
@@ -524,7 +535,7 @@ function noteTrades(from: number): void {
 /** The people with a favour to ask, as the renderer shows them. */
 function questView(): QuestView {
   return {
-    offers: sim.offers.map((def, i) => ({ ...questSpot(i), def })),
+    offers: sim.offers.map((def, i) => { const sp = questSpot(i); return { x: sp.x + sim.shopX, y: sp.y, def }; }),
     near: sim.players.map((_, k) => nearOffer(sim, k)),
     taken: sim.questTaken,
     note: questNote,
@@ -537,7 +548,7 @@ function storeView(): StoreView {
     wares: sim.wares.map((it, i) => {
       const def = WARES[it.ware];
       return {
-        ...wareSpot(i, sim.wares.length), icon: def.icon, name: def.name, blurb: def.blurb, price: it.price, sold: it.sold, afford: sim.gold >= it.price,
+        x: wareSpot(i, sim.wares.length).x + sim.shopX, y: wareSpot(i, sim.wares.length).y, icon: def.icon, name: def.name, blurb: def.blurb, price: it.price, sold: it.sold, afford: sim.gold >= it.price,
         standing: sim.players.map((p) => wareStanding(def, p)),
       };
     }),
@@ -600,6 +611,7 @@ startLoop({
     if (demo) refillDemoHero();
     const evFrom = sim.events.n;
     step(sim, frames);
+    if (sim.road) followRoad();
     if (tutorial) { updateTutorial(tutorial, sim, frames); if (tutorial.over) endTutorial(); }
     // The goods on the ground and the quest-givers: the sim trades (sim/shop.ts); here only the words shown after a press.
     if (route.store) {
@@ -635,7 +647,7 @@ startLoop({
     const danger = fighting ? dangerOf(sim, sim.camX) : { danger: 0, boss: false };
     // The music turns to the next biome's key at the peddler, halfway through the store's turn of the scenery, and not when the next level
     // begins, so nothing (seen or heard) changes at the cut between one field and the next.
-    const musicBiome = route.store && sim.nextBiome >= 0 && sim.camX + VIEW_W / 2 >= STORE_X ? sim.nextBiome : sim.biome;
+    const musicBiome = sim.road ? roadMusicBiome(sim) : route.store && sim.nextBiome >= 0 && sim.camX + VIEW_W / 2 >= STORE_X ? sim.nextBiome : sim.biome;
     audio.updateMusic(rawDt, { biome: mode === 'run' ? musicBiome : 0, ...danger });
     if (mode !== 'run') {
       renderer.begin();

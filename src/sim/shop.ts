@@ -37,7 +37,7 @@ export function nearWare(s: GameState, k: number): number {
   let best = -1, bestD = Infinity;
   for (let i = 0; i < s.wares.length; i++) {
     const sp = wareSpot(i, s.wares.length);
-    const dx = Math.abs(s.ents.x[p.ent] - sp.x), dy = Math.abs(s.ents.y[p.ent] - sp.y);
+    const dx = Math.abs(s.ents.x[p.ent] - s.shopX - sp.x), dy = Math.abs(s.ents.y[p.ent] - sp.y);
     if (dx < WARE_REACH_X && dy < WARE_REACH_Y && dx < bestD) { best = i; bestD = dx; }
   }
   return best;
@@ -47,7 +47,7 @@ export function nearWare(s: GameState, k: number): number {
 export function nearOffer(s: GameState, k: number): number {
   const p = s.players[k];
   if (!p.active || p.downed) return -1;
-  return offerNear(s.offers, s.ents.x[p.ent], s.ents.y[p.ent]);
+  return offerNear(s.offers, s.ents.x[p.ent] - s.shopX, s.ents.y[p.ent]);
 }
 
 /**

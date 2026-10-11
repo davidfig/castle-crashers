@@ -13,6 +13,7 @@ import { CHANNEL, chargeFrac, chestCost, SiteState } from '../sim/sites';
 import { HEAT_NAMES } from '../data/heat';
 import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abilities';
 import { Phase, type GameState } from '../sim/state';
+import { campShown, roadProgress } from '../sim/gen/road';
 import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { drawWeather, stormCover } from './weather';
@@ -50,14 +51,15 @@ let stageSlot = 0;
  * not tied to where a level ends). The time of day is the road's clock, so it runs on across levels and biomes.
  */
 function setUpScenery(s: GameState, progress: number, camXf: number): number {
-  const played = levelsPlayed();
-  const base = roadOffset(played);
+  // on a run's one road the sim's coordinates are the road's, and the level is wherever the camera is
+  const played = s.road ? s.road.level : levelsPlayed();
+  const base = s.road ? 0 : roadOffset(played);
   const road = base + (s.store ? LEVEL_CAM_END : 0) + roadShift();
   const world = getWorld();
   if (!world) throw new Error('drawFrame: no scenery installed (see installSceneryArt)');
   stageSlot = Math.min(world.biomes.length - 1, Math.floor(played / LEVELS_PER_BIOME));
   scenery.setRoad(world, road + camXf + VIEW_W / 2);
-  const here = s.store ? 1 : progress;
+  const here = s.store || s.road?.camp ? 1 : progress;
   for (let i = 0; i < scenery.n; i++) scenery.prog[i] = scenery.slot[i] === stageSlot ? here : -1;
   const phase = dayPhase(played + here);
   for (let i = 0; i < scenery.n; i++) moodAt(scenery.biome[i], phase, scenery.mood[i]);
@@ -197,7 +199,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   const ft = s.tick + alpha; // fractional tick: the drifting scenery moves every frame, not once per sim tick
 
   // --- sky + parallax layers (the light changes with how far the party has advanced)
-  const progress = s.store ? 1 : Math.min(1, Math.max(0, camXf / (s.worldW - VIEW_W)));
+  const progress = s.store ? 1 : s.road ? roadProgress(s) : Math.min(1, Math.max(0, camXf / (s.worldW - VIEW_W)));
   const road = setUpScenery(s, progress, camXf);
   const mood = scenery.mood[scenery.n === 2 && scenery.share(camXf + road + VIEW_W / 2) > 0.5 ? 1 : 0]; // the air takes the light of whichever biome has most of the view
   drawSky(b, S, scenery, camXf + road, ft, -shx, oy, stormCover(getWorld()!.sky, camXf + road + VIEW_W / 2));
@@ -224,7 +226,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawCrest(b, S, scenery, camX + road, oy);
   drawFog(b, S, scenery, camX + road, oy, ft);
   drawCamps(b, S, s, camX, oy);
-  if (s.store) { drawStore(b, S, s, camX, oy); drawQuestGivers(b, S, s, camX, oy, dbg.questView); }
+  if (campShown(s)) { drawStore(b, S, s, camX, oy); drawQuestGivers(b, S, s, camX, oy, dbg.questView); }
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);
@@ -805,7 +807,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawLevelUp(b, S, s, dbg.levelKeys);
   drawQuestMarks(b, S, s, camX, oy, alpha);
   drawQuestHud(b, S, s);
-  if (s.store) { drawStoreWares(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawQuestBoard(b, S, s, camX, oy, dbg.questView, dbg.storeHints); drawStoreHints(b, S, s, camX, oy); }
+  if (campShown(s)) { drawStoreWares(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawQuestBoard(b, S, s, camX, oy, dbg.questView, dbg.storeHints); drawStoreHints(b, S, s, camX, oy); }
 }
 
 function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): void {

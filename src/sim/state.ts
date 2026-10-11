@@ -13,6 +13,7 @@ import type { QuestDef } from '../data/quests';
 import type { StockItem } from '../data/wares';
 import { createQuestRun, placeQuest, type QuestRun } from './quests';
 import { planGates, planLevel, type ClumpPlan, type Gate, type SimBeat, type SimScene } from './gen/level';
+import { createRoad, roadLength, roadUpkeep, type RoadState } from './gen/road';
 
 export const BLAST_CAP = 64;
 /** Boon effects waiting to resolve this tick: [kind, x, y, owner slot, a, b] each. */
@@ -189,6 +190,10 @@ export interface GameState {
   quest: QuestRun | null;
   /** The store's goods on the ground (empty outside a store); bought with the trade button (sim/shop.ts). */
   wares: Ware[];
+  /** Where the store (or a camp on the road) begins: its goods and givers stand at their store spots plus this. */
+  shopX: number;
+  /** The run's one road (sim/gen/road.ts), or null for a field of its own (a level or a store). */
+  road: RoadState | null;
   /** The quests offered by the givers standing in the store, and the one the party has taken (-1 = none) for the level that follows. */
   offers: QuestDef[];
   questTaken: number;
@@ -280,6 +285,9 @@ export interface SimOptions {
   opener?: boolean;
   /** How long the field is (default `WORLD_W`, a store `STORE_W`): its encounters, sites and quest are laid out along it. */
   length?: number;
+  /** The whole run as one road (docs/21-the-road.md): `total` levels with a camp after each but the last, planned from the run's seed
+   *  (the sim's `seed`) as the party nears them. The per-level options (boss, scale, mix, damage, opener) then come from the road. */
+  road?: { total: number };
   /** A store's goods (data/wares.ts `stockFor`) and the quests its givers offer (data/quests.ts `questOffers`). */
   stock?: readonly StockItem[];
   offers?: readonly QuestDef[];
@@ -288,8 +296,9 @@ export interface SimOptions {
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
   const store = opts.store === true;
   const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
-  const length = store ? STORE_W : (opts.length ?? WORLD_W);
-  const plan = store ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
+  const road = opts.road ? createRoad(seed, opts.road.total, heat) : null;
+  const length = store ? STORE_W : road ? roadLength(road.total) : (opts.length ?? WORLD_W);
+  const plan = store || road ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
   const s: GameState = {
     seed,
     biome: biomeIndex(seed),
@@ -325,6 +334,8 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     spared: new Int32Array(MOBS.length),
     quest: opts.quest && !store ? createQuestRun(opts.quest) : null,
     wares: store ? (opts.stock ?? []).map((it) => ({ ware: it.ware, price: it.price, sold: false })) : [],
+    shopX: store ? 0 : -1e9,
+    road,
     offers: store ? (opts.offers ?? []).map((q) => ({ ...q })) : [],
     questTaken: -1,
     gold: 0,
@@ -353,7 +364,8 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     procScratch: new Int32Array(MAX_ENTS),
   };
   activatePlayer(s, 0, 80, 100);
-  if (!store) placeSites(s, opts.boss !== false);
+  if (road) roadUpkeep(s, () => {});
+  else if (!store) placeSites(s, opts.boss !== false);
   if (s.quest) placeQuest(s);
   return s;
 }

@@ -8,7 +8,8 @@ import { MAX_LEVEL, UPGRADES } from '../data/upgrades';
 import { WARES, wareSpot } from '../data/wares';
 import { cosTurns, sinTurns } from '../engine/math';
 import { createRng, rngFloat, rngInt, type Rng } from '../engine/rng';
-import { VIEW_W, WARE_REACH_X, WARE_REACH_Y, WORLD_H } from '../sim/constants';
+import { STORE_EXIT_X, VIEW_W, WARE_REACH_X, WARE_REACH_Y, WORLD_H } from '../sim/constants';
+import { inCamp } from '../sim/gen/road';
 import { costMul, rankOf } from '../sim/abilityMods';
 import { Kind, ShrineKind } from '../sim/entities';
 import { Btn, type InputFrame } from '../sim/input';
@@ -172,7 +173,10 @@ export class Pilot {
     plan.hasGoal = false; plan.hasAim = false; plan.attack = false; plan.special = false; plan.nova = false; plan.roll = false; plan.holdRoll = 0;
     this.clusterAt = -999;
 
-    if (s.store) this.storeBrain(s, p, store);
+    const shopping = s.store || inCamp(s);
+    // on the road, each camp is a fresh store: nothing bought there yet
+    if (s.road?.camp && this.campSince !== s.road.since) { this.campSince = s.road.since; this.resetForStore(); }
+    if (shopping) this.storeBrain(s, p, store);
     else {
       this.chooseTarget(s);
       if (this.te >= 0) TACTICS[v.cls.name]?.(this, s);
@@ -573,7 +577,7 @@ export class Pilot {
 
   private wantsPanel(s: GameState, p: GameState['players'][number]): boolean {
     const v = this.view;
-    if (s.store) return true;
+    if (s.store || inCamp(s)) return true;
     const care = this.skill.panelCare;
     if (rngFloat(this.rng) > care) return rngFloat(this.rng) < 0.04; // a careless player opens it whenever the thought strikes
     void p;
@@ -585,7 +589,7 @@ export class Pilot {
     const v = this.view;
     if (this.panelWait < 0) { this.panelWait = Math.round(this.skill.pickDelay * (0.7 + 0.6 * rngFloat(this.rng))); }
     // a careful player closes it when a fight finds them
-    if (this.skill.panelCare > 0.5 && !s.store && this.dangerNear()) {
+    if (this.skill.panelCare > 0.5 && !s.store && !inCamp(s) && this.dangerNear()) {
       if (this.tap(out, Btn.Level)) { this.stats.panelClosed++; this.panelWait = -1; this.panelCool = s.tick + 150; }
       return;
     }
@@ -638,7 +642,7 @@ export class Pilot {
     const v = this.view;
     const plan = this.plan;
     plan.hasGoal = true;
-    const exit = s.exitX;
+    const exit = s.store ? s.exitX : s.shopX + STORE_EXIT_X; // the far end of the store, or of the camp on the road
     // picks first
     if (p.pending > 0) { plan.gx = v.x; plan.gy = v.y; return; }
     if (!store) this.storeDone = true;
@@ -646,9 +650,9 @@ export class Pilot {
       if (this.shopWant < 0 || s.wares[this.shopWant]?.sold !== false || this.shopTries > 3) this.shopWant = this.pickWare(s, p);
       if (this.shopWant < 0) this.storeDone = true;
       else {
-        const sp = wareSpot(this.shopWant, s.wares.length);
-        plan.gx = sp.x; plan.gy = sp.y;
-        const nearX = Math.abs(v.x - sp.x) < WARE_REACH_X - 6, nearY = Math.abs(v.y - sp.y) < WARE_REACH_Y - 5;
+        const sp = wareSpot(this.shopWant, s.wares.length), wx = sp.x + s.shopX; // (a camp on the road stands further along)
+        plan.gx = wx; plan.gy = sp.y;
+        const nearX = Math.abs(v.x - wx) < WARE_REACH_X - 6, nearY = Math.abs(v.y - sp.y) < WARE_REACH_Y - 5;
         if (nearX && nearY && this.interactCool === 0) {
           this.shopTries++;
           this.pressInteract = true;
@@ -658,11 +662,13 @@ export class Pilot {
       }
     }
     // done: wait for the party, then walk out
-    if (store && !store.allDone) { plan.gx = Math.min(exit - 200, Math.max(v.x, 700)); plan.gy = v.y; return; }
+    if (store && !store.allDone) { plan.gx = Math.min(exit - 200, Math.max(v.x, s.shopX + 700)); plan.gy = v.y; return; }
     plan.gx = exit + 40; plan.gy = WORLD_H / 2;
   }
 
   /** A new store: nothing bought yet. */
+  /** The camp (on the road) the pilot last shopped in, by the tick the party walked into it. */
+  private campSince = -1;
   resetForStore(): void { this.storeDone = false; this.shopWant = -1; this.shopTries = 0; this.recovering = false; this.te = -1; }
 
   /** Press the trade button this tick (standing at a ware). */

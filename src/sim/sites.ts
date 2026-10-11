@@ -42,20 +42,26 @@ export function chestCost(s: GameState): number { // (a kill is worth about a th
   return Math.round(Math.min(400, 50 + 30 * s.chestsOpened) * (1 + 0.1 * s.heat));
 }
 
-/** Lay out the field's chests and shrines: two of each, spread along the road and never in the way of a staged scene or beat. A function of the seed alone. */
-export function placeSites(s: GameState, boss: boolean): void {
-  const r = createRng(s.seed, SITE_STREAM);
+/** Where a level's sites go: the stretch of road (`x0`, `length`), its seed, and whether the mercy shrine can be one (from chapter II). */
+export interface SiteSpan { x0: number; length: number; seed: number; surrender: boolean }
+
+/**
+ * Lay out a level's chests and shrines: two of each, spread along it and never in the way of a staged scene or beat. A function of the
+ * seed alone. A field of its own uses the whole field; on a run's one road each level is placed as it is planned (sim/gen/road.ts).
+ */
+export function placeSites(s: GameState, boss: boolean, span: SiteSpan = { x0: 0, length: s.worldW, seed: s.seed, surrender: s.surrender }): void {
+  const r = createRng(span.seed, SITE_STREAM);
   const shrines: number[] = [ShrineKind.Curse, ShrineKind.Charge, ShrineKind.Greed];
-  if (s.surrender) shrines.push(ShrineKind.Mercy);
+  if (span.surrender) shrines.push(ShrineKind.Mercy);
   const picked: number[] = [];
   while (picked.length < 2) picked.push(shrines.splice(rngInt(r, shrines.length), 1)[0]);
   // Chest, shrine, chest, shrine, in a shuffled order of two slots each.
   const order: ('chest' | number)[] = ['chest', 'chest', picked[0], picked[1]];
   for (let k = order.length - 1; k > 0; k--) { const j = rngInt(r, k + 1); [order[k], order[j]] = [order[j], order[k]]; }
-  const span = boss ? 0.78 : 0.86;
+  const reach = boss ? 0.78 : 0.86;
   order.forEach((what, k) => {
-    const t = 0.1 + span * ((k + 0.25 + rngFloat(r) * 0.5) / order.length);
-    const x = 760 + t * (s.worldW - 1100);
+    const t = 0.1 + reach * ((k + 0.25 + rngFloat(r) * 0.5) / order.length);
+    const x = span.x0 + 760 + t * (span.length - 1100);
     const y = rngRange(r, 52, WORLD_H - 52);
     if (s.plan.some((c) => (c.scene || c.beat) && Math.abs(c.x - x) < 330)) return;
     const i = allocEntity(s.ents, what === 'chest' ? Kind.Chest : Kind.Shrine, what === 'chest' ? 0 : what, x, y, 1);

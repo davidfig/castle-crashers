@@ -35,6 +35,12 @@ export const STORE_EXIT_SCREEN = 420;
 export const STORE_EXIT_X = STORE_CAM_END + STORE_EXIT_SCREEN;
 /** The camera at the far end of a level: the store's scenery for the old biome carries on from here, so the cut from level to store is invisible. */
 export const LEVEL_CAM_END = WORLD_W - VIEW_W;
+/**
+ * One level and the store after it, along the road: a level's camera runs to `LEVEL_CAM_END`, where the store's begins, and the store's
+ * runs to `STORE_CAM_END`, where the next level's begins. Level k starts at k * ROAD_STRIDE in road coordinates (the scenery's), and on
+ * the one road of a run (sim/gen/road.ts) sim coordinates are road coordinates.
+ */
+export const ROAD_STRIDE = LEVEL_CAM_END + STORE_CAM_END;
 /** The peddler's goods lie on the ground in a row in front of his stall: `WARE_GAP` apart, `WARE_DY` below him. */
 export const WARE_GAP = 52;
 export const WARE_DY = 34;

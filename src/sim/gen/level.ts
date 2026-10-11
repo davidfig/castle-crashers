@@ -33,6 +33,11 @@ export interface ClumpPlan {
   scene?: string;
   /** A mini-boss: a hulking elite of the biome and the crowd that follows it. The gate behind it holds the camera until the elite is dead. */
   elite?: boolean;
+  /** On a run's one road (sim/gen/road.ts), the level this encounter belongs to: its seed (for the encounter's random stream), biome and
+   *  slice of the cast. It may stream in while the party is still in the camp before its level, so it cannot go by the sim's own. */
+  seed?: number;
+  biome?: number;
+  mix?: readonly [number, number];
 }
 
 /** A road scene the level was told to leave room for. */
@@ -161,8 +166,8 @@ export function planGates(plan: readonly ClumpPlan[]): Gate[] {
   return gates;
 }
 
-function addMob(s: GameState, r: Rng, x: number, y: number, t: number): boolean {
-  const type = pickMobType(r, t, s.biome, s.mix);
+function addMob(s: GameState, r: Rng, x: number, y: number, plan: ClumpPlan): boolean {
+  const type = pickMobType(r, plan.t, plan.biome ?? s.biome, plan.mix ?? s.mix);
   const yy = y < 4 ? 4 : y > WORLD_H - 4 ? WORLD_H - 4 : y;
   const i = allocEntity(s.ents, Kind.Mob, type, x, yy, MOBS[type].hp);
   if (i < 0) return false;
@@ -178,7 +183,8 @@ export function hasBoss(s: GameState): boolean {
 
 /** The boss and the retinue that stands around it. Its health grows with the party; the retinue does too. */
 function spawnBoss(s: GameState, plan: ClumpPlan, index: number, scale: number): void {
-  const type = ROSTERS[s.biome].boss;
+  const biome = plan.biome ?? s.biome;
+  const type = ROSTERS[biome].boss;
   const def = MOBS[type];
   const b = def.boss!;
   const n = Math.max(1, Math.min(4, activePlayers(s)));
@@ -191,14 +197,14 @@ function spawnBoss(s: GameState, plan: ClumpPlan, index: number, scale: number):
   e.cool2[i] = 150; // a short breather before its first special move
   e.boss = i;
   // The retinue: a thick crowd around and in front of the boss, small fry up front, archers behind.
-  const r = createRng(s.seed, 1000 + (plan.rid ?? index));
+  const r = createRng(plan.seed ?? s.seed, 1000 + (plan.rid ?? index));
   const count = Math.round(b.retinue * scale);
   for (let k = 0; k < count; k++) {
     const ang = rngFloat(r); // in turns: the sim uses table trig, not Math.cos/sin (ADR-0004)
     const rad = 46 + rngFloat(r) * 90;
     const x = plan.x - 20 + cosTurns(ang) * rad * 1.3 - 30;
     const y = WORLD_H / 2 + sinTurns(ang) * rad * 0.8;
-    const type = pickSupport(r, false, s.biome);
+    const type = pickSupport(r, false, biome);
     const m = allocEntity(e, Kind.Mob, type, x, y < 6 ? 6 : y > WORLD_H - 6 ? WORLD_H - 6 : y, MOBS[type].hp);
     if (m < 0) return;
     e.flags[m] = 1;
@@ -229,20 +235,20 @@ export function spawnElite(s: GameState, type: number, kind: 1 | 2 | 3, x: numbe
 
 /** The mini-boss and its crowd: the brute stands in front, ordinary fighters of the level's mix fan out behind it. */
 function spawnMiniBoss(s: GameState, plan: ClumpPlan, index: number, scale: number): void {
-  const r = createRng(s.seed, 1000 + (plan.rid ?? index));
-  const types = eliteTypes(s.biome);
+  const r = createRng(plan.seed ?? s.seed, 1000 + (plan.rid ?? index));
+  const types = eliteTypes(plan.biome ?? s.biome);
   spawnElite(s, types[rngInt(r, types.length)], 1, plan.x, plan.y);
   const count = Math.round(plan.size * scale);
   for (let k = 0; k < count; k++) {
     const ang = rngFloat(r);
     const rad = 30 + rngFloat(r) * 70;
-    if (!addMob(s, r, plan.x + cosTurns(ang) * rad * 1.3, plan.y + sinTurns(ang) * rad * 0.8, plan.t)) return;
+    if (!addMob(s, r, plan.x + cosTurns(ang) * rad * 1.3, plan.y + sinTurns(ang) * rad * 0.8, plan)) return;
   }
 }
 
 /** R1: a few goblins around a cookfire. They do not attack, and they do not chase. */
 function spawnCamp(s: GameState, plan: ClumpPlan): void {
-  const r = createRng(s.seed, 1000 + (plan.rid ?? 0));
+  const r = createRng(plan.seed ?? s.seed, 1000 + (plan.rid ?? 0));
   const count = 3 + rngInt(r, 3);
   for (let k = 0; k < count; k++) {
     const ang = rngFloat(r);
@@ -258,7 +264,7 @@ function spawnCamp(s: GameState, plan: ClumpPlan): void {
 
 /** R3: a few goblins and archers who have already laid down their arms, kneeling in the road until the party reaches them. */
 function spawnSurrendered(s: GameState, plan: ClumpPlan): void {
-  const r = createRng(s.seed, 1000 + (plan.rid ?? 0));
+  const r = createRng(plan.seed ?? s.seed, 1000 + (plan.rid ?? 0));
   const count = 4 + rngInt(r, 3);
   for (let k = 0; k < count; k++) {
     const ang = rngFloat(r);
@@ -283,13 +289,13 @@ export function spawnClump(s: GameState, index: number, scale: number): void {
   if (plan.beat === 'R1') { spawnCamp(s, plan); return; }
   if (plan.beat === 'R3') { spawnSurrendered(s, plan); return; }
   // Each encounter has its own random stream, so its contents do not depend on when it was streamed in.
-  const r = createRng(s.seed, 1000 + (plan.rid ?? index));
+  const r = createRng(plan.seed ?? s.seed, 1000 + (plan.rid ?? index));
   const count = Math.round(plan.size * scale);
   if (plan.line) {
     for (let k = 0; k < count; k++) {
       const x = plan.x + (rngFloat(r) - 0.5) * 36 * Math.sqrt(scale);
       const y = rngFloat(r) * WORLD_H;
-      if (!addMob(s, r, x, y, plan.t)) return;
+      if (!addMob(s, r, x, y, plan)) return;
     }
   } else {
     // A bigger party faces a denser, somewhat wider crowd, not just a longer one.
@@ -297,7 +303,7 @@ export function spawnClump(s: GameState, index: number, scale: number): void {
     for (let k = 0; k < count; k++) {
       const x = plan.x + (rngFloat(r) + rngFloat(r) - 1) * spread;
       const y = plan.y + (rngFloat(r) + rngFloat(r) - 1) * spread * 0.9;
-      if (!addMob(s, r, x, y, plan.t)) return;
+      if (!addMob(s, r, x, y, plan)) return;
     }
   }
 }
@@ -318,6 +324,7 @@ export function sceneHold(s: GameState): boolean {
 /** Called every tick: spawn the encounters the camera is about to reach, sized for the current party. */
 export function streamLevel(s: GameState): void {
   if (s.tick < STREAM_DELAY_TICKS || s.tutorialHold) return;
+  if (s.road?.camp) return; // the next level's crowd waits until the party leaves the camp (it used to wait for the next level to begin)
   const scale = partyScale(activePlayers(s));
   const horizon = s.camX + VIEW_W + STREAM_AHEAD;
   while (s.nextClump < s.plan.length) {

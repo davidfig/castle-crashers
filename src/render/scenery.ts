@@ -6,10 +6,10 @@
 import { makeBlendedMood, type BiomeDef, type BlendedMood } from '../data/biomes';
 import { profile, profileSlope, spanIndexAt, type Span } from '../data/scenery/road';
 import type { World } from '../data/scenery/world';
-import { LEVEL_CAM_END, STORE_CAM_END } from '../sim/constants';
+import { ROAD_STRIDE } from '../sim/constants';
 
 /** The scenery is drawn in road coordinates: a level's camera plus how far along the road that level (and its store) begins, so the horizon, the ground and the hashes carry straight on from one level to the next. */
-export const ROAD_STRIDE = LEVEL_CAM_END + STORE_CAM_END;
+export { ROAD_STRIDE };
 export function roadOffset(levelIndex: number): number { return levelIndex * ROAD_STRIDE; }
 
 function hash3(x: number, y: number, salt: number): number {

@@ -43,7 +43,7 @@ export function drawCamps(b: Batcher, S: Sprites, s: GameState, camX: number, oy
  * (the scenery under it is the road's, see `Scenery`).
  */
 export function drawStore(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
-  const sx = Math.round(STORE_X - camX), sy = Math.round(FIELD_Y0 + STORE_Y + oy);
+  const sx = Math.round(s.shopX + STORE_X - camX), sy = Math.round(FIELD_Y0 + STORE_Y + oy);
   const px = (x: number, y: number, w: number, h: number, color: number, a = 1) => b.drawScaled(S.px, x, y, w, h, hex(color, a));
   if (sx < -140 || sx > VIEW_W + 140) return;
   // the stall: a counter in front of him, an awning over him on two poles, crates at the side
@@ -146,6 +146,7 @@ export function drawStoreWares(b: Batcher, S: Sprites, s: GameState, camX: numbe
 
 /** "STORE" over the peddler for a moment on arrival. */
 export function drawStoreHints(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
-  const sx = Math.round(STORE_X - camX), sy = Math.round(FIELD_Y0 + STORE_Y + oy);
-  if (s.tick < 400) drawText(b, S, 'STORE', Math.round(sx - 10), sy - 62, hex(0xffe9a8));
+  const sx = Math.round(s.shopX + STORE_X - camX), sy = Math.round(FIELD_Y0 + STORE_Y + oy);
+  const since = s.road ? (s.road.camp ? s.tick - s.road.since : Infinity) : s.tick;
+  if (since < 400) drawText(b, S, 'STORE', Math.round(sx - 10), sy - 62, hex(0xffe9a8));
 }
