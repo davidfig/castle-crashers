@@ -73,13 +73,15 @@ function knots(sp: Span, seed: number, k: number): void {
  * (up to 12% of a stage early or late), of random length. The longest turn is short enough that two neighbours, each as long and as far
  * off-centre as can be, still leave `MIN_PLATEAU` between them (`TURN_MAX`; checked in the tests).
  */
-export function planRoad(seed: number, stages: number, stageLen: number, bounds?: readonly number[]): Road {
+export function planRoad(seed: number, stages: number, stageLen: number, bounds?: readonly number[], after = false): Road {
   const spans: Span[] = [];
   for (let k = 0; k + 1 < stages; k++) {
     const rng = createRng(seed, 30 + k);
     const len = rngRange(rng, TURN_MIN, TURN_MAX) * (stageLen / 3);
     const centre = (bounds ? bounds[k + 1] : (k + 1) * stageLen) + rngRange(rng, -OFF_CENTRE, OFF_CENTRE) * stageLen;
-    const sp: Span = { a: k, b: k + 1, from: centre - len / 2, to: centre + len / 2, us: [], ss: [], ts: [] };
+    // `after`: each turn begins at its boundary, never before it (a crossroads stands there, and the biome beyond is not known until the party chooses)
+    const from = after && bounds ? bounds[k + 1] + rngRange(rng, 0, OFF_CENTRE) * stageLen : centre - len / 2;
+    const sp: Span = { a: k, b: k + 1, from, to: from + len, us: [], ss: [], ts: [] };
     knots(sp, seed, k);
     spans.push(sp);
   }

@@ -6,8 +6,9 @@ import { levelPlan, ROUTE_LEVELS } from '../campaign/route';
 import { VIEW_W, WORLD_W } from './constants';
 import { MOBS, MobType } from '../data/mobs';
 import { allocEntity, BYSTANDER, Kind, SURRENDERED } from './entities';
+import { activatePlayer } from './state';
 import { planLevel } from './gen/level';
-import { CLEAR_AFTER, CLEAR_BEFORE, layoutRoad, levelToRoad, roadJump, roadPart, stageBounds, type Calm } from './gen/road';
+import { CLEAR_AFTER, CLEAR_BEFORE, commitFork, forkChoice, forkOptions, layoutRoad, levelToRoad, roadBiomes, roadJump, roadLevel, roadPart, stageBounds, stageOf, type Calm } from './gen/road';
 import { createInputFrame } from './input';
 import { restore, snapshot } from './snapshot';
 import { createSim, Phase, type GameState } from './state';
@@ -58,7 +59,8 @@ test('the camera centre places the party: a calm place, or the level whose stret
   const lay = layoutRoad(3, 6);
   for (const [i, p] of lay.calm.entries()) {
     assert.deepEqual(roadPart(lay, (p.from + p.to) / 2), { level: p.level, calm: i });
-    assert.equal(roadPart(lay, p.from - 1).calm, -1);
+    // just before it: the level, or the camp a crossroads opens from
+    assert.equal(roadPart(lay, p.from - 1).calm, p.kind === 'fork' ? i - 1 : -1);
   }
   for (let k = 1; k < 6; k++) assert.equal(roadPart(lay, lay.levels[k].start + 1).level, k);
   assert.deepEqual(roadPart(lay, lay.length + 50_000), { level: 5, calm: -1 }, 'the last level runs on to the end');
@@ -67,7 +69,7 @@ test('the camera centre places the party: a calm place, or the level whose stret
 test('each level on the road is the level it would have been on its own, cut at its scene and moved along, with a lair gate behind its boss', () => {
   const s = plannedRoad(12, 6);
   for (let k = 0; k < 6; k++) {
-    const lp = levelPlan(12, k, 6);
+    const lp = levelPlan(12, k, 6, s.road!.biomes[stageOf(k)]);
     const own = planLevel(lp.seed, undefined, { boss: lp.boss, scale: lp.scale, heat: 0, opener: k === 0, length: WORLD_W });
     const mine = s.plan.filter((c) => c.seed === lp.seed && !c.scene);
     const lay = s.road!.layout.levels[k];
@@ -123,12 +125,14 @@ test('a simulated player walks the whole road in one sim, through every level, s
   assert.ok(run.won, `the run was won (last part ${JSON.stringify(run.parts.at(-1))})`);
   const camps = run.parts.filter((p) => p.calm === 'camp').map((p) => p.level);
   assert.deepEqual(camps, [0, 1, 2]);
+  assert.ok(run.parts.some((p) => p.calm === 'fork'), 'it came through the crossroads');
+  assert.equal(run.s.road!.choices.length, 1, 'and chose its road there');
   assert.ok(run.parts.some((p) => p.level === 3), 'the first boss did not end the run: the road went on past its lair');
 });
 
 test('each level plays with its own damage and biome, as its level plan says', () => {
   for (const p of run.parts.filter((q) => !q.calm)) {
-    const lp = levelPlan(3, p.level, 4);
+    const lp = roadLevel(run.s.road!, p.level);
     assert.equal(p.damage, lp.damage, `level ${p.level} damage`);
     assert.equal(p.biome, lp.biome, `level ${p.level} biome`);
   }
@@ -189,4 +193,76 @@ test('jumping to a level (dev) passes the road behind: nothing behind streams in
   assert.equal(s.road!.level, 4);
   assert.ok(s.plan.slice(s.nextClump).every((c) => c.x >= s.camX));
   assert.ok(s.gates.slice(s.gateIdx).every((g) => g.x >= s.camX));
+});
+
+// ---- Crossroads (docs/21-the-road.md, step 5)
+
+test('a crossroads closes every region but the last, past its last camp, offering two other biomes', () => {
+  const lay = layoutRoad(8, ROUTE_LEVELS);
+  const forks = lay.calm.filter((c) => c.kind === 'fork');
+  assert.equal(forks.length, ROUTE_LEVELS / 3 - 1);
+  for (const f of forks) {
+    const i = lay.calm.indexOf(f);
+    assert.equal(lay.calm[i - 1].kind, 'camp', 'it opens from the region\'s last camp');
+    assert.equal(lay.calm[i - 1].to, f.from);
+    assert.equal(f.level % 3, 2, 'after the third level of the region');
+    assert.equal(f.options!.length, 2);
+    assert.notEqual(f.options![0], f.options![1]);
+  }
+  for (let seed = 1; seed < 40; seed++) {
+    const opts = forkOptions(seed, 1, [0]);
+    assert.ok(!opts.includes(0), 'never back into the biome being left');
+    assert.deepEqual(opts, forkOptions(seed, 1, [0]), 'a function of the seed');
+  }
+});
+
+test('nothing past a crossroads is planned before the party chooses', () => {
+  const s = createSim(8, undefined, { road: { total: 6 } });
+  const fork = s.road!.layout.calm.find((c) => c.kind === 'fork')!;
+  s.camX = s.prevCamX = s.camMax = s.trigCamX = fork.from - VIEW_W / 2;
+  const pe = s.players[0].ent;
+  s.ents.x[pe] = s.ents.px[pe] = fork.from + 40;
+  step(s, [0, 1, 2, 3].map(createInputFrame));
+  assert.equal(s.road!.planned, 3, 'the first region is planned, the next is not');
+  assert.equal(s.road!.calm, s.road!.layout.calm.indexOf(fork), 'the party is at the crossroads');
+});
+
+test('the party chooses by walking: the side most heroes stand on when one crosses the line, a tie to the first hero', () => {
+  const s = createSim(8, undefined, { road: { total: 6 } });
+  activatePlayer(s, 1, 0, 0); activatePlayer(s, 2, 0, 0);
+  const fork = s.road!.layout.calm.find((c) => c.kind === 'fork')!;
+  const place = (k: number, x: number, y: number) => { const e = s.players[k].ent; s.ents.x[e] = x; s.ents.y[e] = y; };
+  place(0, fork.commit! - 50, 40); place(1, fork.commit! - 80, 200); place(2, fork.commit! - 90, 210);
+  assert.equal(forkChoice(s, fork), -1, 'nobody has crossed yet');
+  place(0, fork.commit! + 1, 40);
+  assert.equal(forkChoice(s, fork), 1, 'two of three on the lower road');
+  s.players[2].downed = true;
+  assert.equal(forkChoice(s, fork), 0, 'a downed hero has no say: a tie, and the first hero is on the upper road');
+});
+
+test('choosing a road lays out the road ahead for that biome, and leaves what lies behind as it was', () => {
+  const s = createSim(8, undefined, { road: { total: 9 } });
+  const before = structuredClone(s.road!.layout);
+  const fork = s.road!.layout.calm.find((c) => c.kind === 'fork')!;
+  commitFork(s, fork, 1);
+  assert.deepEqual(s.road!.choices, [1]);
+  assert.equal(s.road!.biomes[1], fork.options![1]);
+  assert.equal(roadLevel(s.road!, 3).biome, fork.options![1], 'the next region is the chosen biome');
+  const after = s.road!.layout;
+  const cut = before.calm.findIndex((c: Calm) => c.kind === 'fork');
+  assert.deepEqual(after.calm.slice(0, cut + 1), before.calm.slice(0, cut + 1), 'the road up to the crossroads is unchanged');
+  assert.deepEqual(after.levels.slice(0, 3), before.levels.slice(0, 3));
+  assert.equal(s.worldW, after.length);
+  const other = layoutRoad(8, 9, roadBiomes(8, 9, [0]));
+  assert.notDeepEqual(other.levels[3], after.levels[3], 'the other road would have been another road');
+});
+
+test('a run saved at a crossroads, after the choice, continues down the chosen road', () => {
+  const s = createSim(8, undefined, { road: { total: 6 } });
+  const fork = s.road!.layout.calm.find((c) => c.kind === 'fork')!;
+  commitFork(s, fork, 1);
+  const back = restore(snapshot(s));
+  assert.deepEqual(back.road!.choices, [1]);
+  assert.deepEqual(back.road!.biomes, s.road!.biomes);
+  assert.deepEqual(back.road!.layout, s.road!.layout);
 });

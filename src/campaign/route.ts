@@ -66,12 +66,16 @@ export function levelSeed(runSeed: number, level: number): number {
   return level === 0 ? runSeed >>> 0 : Math.imul((runSeed ^ 0x9e3779b9) >>> 0, Math.imul(level, 0x85ebca6b) + 1) >>> 0;
 }
 
-/** The level's seed, nudged until the seed's biome is the one the road is in (the biome is a function of the seed). A one-level dev run keeps its seed. */
-export function levelPlan(runSeed: number, level: number, total: number): LevelPlan {
+/**
+ * The level's seed, nudged until the seed's biome is the one the road is in (the biome is a function of the seed). A one-level dev run keeps
+ * its seed. `biome`: the biome the road chose for this level's stretch (on the one road a crossroads decides it, sim/gen/road.ts); by
+ * default the stage's own. How deep the level is (its horde, damage, slice of the cast, chapter) goes by its place on the road, not its biome.
+ */
+export function levelPlan(runSeed: number, level: number, total: number, biome?: number): LevelPlan {
   const base = levelSeed(runSeed, level);
   let seed = base;
   if (total > 1) {
-    const want = stageBiome(level);
+    const want = biome ?? stageBiome(level);
     for (let a = 1; a <= MAX_TRIES && biomeIndex(seed) !== want; a++) seed = Math.imul((base ^ Math.imul(a, 0xc2b2ae35)) >>> 0, 0x27d4eb2f) >>> 0;
   }
   const inBiome = level % LEVELS_PER_BIOME;

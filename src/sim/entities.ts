@@ -164,6 +164,7 @@ export function allocEntity(e: Entities, kind: number, sub: number, x: number, y
 
 export function freeEntity(e: Entities, i: number): void {
   if (!e.alive[i]) return;
+  if (e.boss === i) e.boss = -1; // however it goes (slain, walked off, left behind), a freed slot is no longer the boss
   e.alive[i] = 0;
   e.kind[i] = Kind.None;
   e.free[e.freeCount++] = i;

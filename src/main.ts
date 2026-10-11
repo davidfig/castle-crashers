@@ -35,7 +35,7 @@ import { Kind, allocEntity } from './sim/entities';
 import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
 import { spawnClump } from './sim/gen/level';
-import { layoutRoad, roadJump, roadMusicBiome, stageBounds } from './sim/gen/road';
+import { layoutRoad, roadBiomes, roadJump, roadMusicBiome, stageBounds, type RoadLayout } from './sim/gen/road';
 import { clearRunSave, describeRunSave, loadRunSave, makeRunSave, writeRunSave, type RunSave } from './campaign/runSave';
 import { restore } from './sim/snapshot';
 import { drawResumeHold, type ResumeView } from './render/resumeHud';
@@ -48,7 +48,8 @@ import type { StoreView } from './render/camp';
 import type { QuestView } from './render/quests';
 import { offersAfter } from './campaign/questBoard';
 import { makeQuest, questSpot, type MissionKind, type QuestDef, type RewardKind } from './data/quests';
-import { nearOffer, nearWare, TradeEv } from './sim/shop';
+import { nearGift, nearOffer, nearWare, TradeEv } from './sim/shop';
+import { giftSpot } from './data/gifts';
 import { Ev, EV_STRIDE } from './sim/events';
 import { runEndScreen, selectScreen, type LobbySlot, type Screen } from './campaign/view';
 import { drawScreen } from './render/menu';
@@ -155,19 +156,24 @@ applyParty(seed);
 // archetype (the enemies stay those of the seed's biomes); ?biome=N already forces both; ?world=N changes the scenery's seed alone.
 if (__DEV__ && params.has('roadx')) setRoadShift(Number(params.get('roadx')) || 0); // ?roadx=N draws the scenery N px further along the road
 let sceneryKey = '';
-function applyScenery(runSeed: number, total: number, road = params.get('road') === '1'): void {
+/** The scenery of a road (`?road=1`): its regions' biomes (the crossroads' upper roads until chosen) and where each region begins. */
+function roadScenery(runSeed: number, total: number): { biomes: number[]; layout: RoadLayout } {
+  const biomes = roadBiomes(runSeed, total, []);
+  return { biomes, layout: layoutRoad(runSeed, total, biomes) };
+}
+function applyScenery(runSeed: number, total: number, road = params.get('road') === '1' ? roadScenery(runSeed, total) : undefined): void {
   const stages = Math.max(1, Math.ceil(total / LEVELS_PER_BIOME));
   const want = __DEV__ ? (params.get('scenery') ?? '').toLowerCase() : '';
   const forced = want ? BIOMES.findIndex((b) => b.name.toLowerCase().includes(want)) : -1;
   const worldSeed = __DEV__ && params.has('world') ? Number(params.get('world')) >>> 0 : runSeed;
-  const archetypes = Array.from({ length: stages }, (_, k) => (forced >= 0 ? forced : levelPlan(runSeed, k * LEVELS_PER_BIOME, total).biome));
+  const archetypes = Array.from({ length: stages }, (_, k) => (forced >= 0 ? forced : road ? road.biomes[k] : levelPlan(runSeed, k * LEVELS_PER_BIOME, total).biome));
   // on the one road (?road=1) each biome's stretch is as long as its levels and the calm places between them grew it (sim/gen/road.ts)
-  const bounds = road ? stageBounds(layoutRoad(runSeed, total)) : undefined;
+  const bounds = road ? stageBounds(road.layout) : undefined;
   const key = `${worldSeed}:${archetypes.join(',')}:${bounds?.join(',') ?? ''}`;
   if (key === sceneryKey) return;
   sceneryKey = key;
   const stageLen = bounds ? Math.min(...bounds.slice(1).map((b, k) => b - bounds[k])) : LEVELS_PER_BIOME * ROAD_STRIDE;
-  const world = generateWorld(worldSeed, archetypes, stageLen, bounds);
+  const world = generateWorld(worldSeed, archetypes, stageLen, bounds, !!road); // on a road each turn waits for its crossroads
   installSceneryArt(sprites, renderer, world);
   setWorld(world);
 }
@@ -237,6 +243,7 @@ let route: Route = { index: 0, total: 1, plan: levelPlan(seed, 0, 1), store: fal
 // The people in the camp with a favour to ask: the party takes one (or none) for the next level, with the same trade button.
 // Both live in the sim (sim/shop.ts); what is kept here is only the word shown over a ware or a giver for a moment after a press.
 let shopNote: { ware: number; text: string } | undefined;
+let giftNote: { gift: number; text: string } | undefined;
 let questNote: { offer: number; text: string } | undefined;
 let questNoteUntil = 0;
 let shopNoteUntil = 0;
@@ -440,11 +447,12 @@ let savedRun: RunSave | undefined = (() => { const r = loadRunSave(runStore); re
 const AUTOSAVE_TICKS = 600;
 let lastSaveTick = -Infinity;
 let lastCalm = -2;
+let savedChoices = 0;
 function titleScreen(): Screen { return { kind: 'title', cont: savedRun ? describeRunSave(savedRun) : undefined }; }
 /** Saves the run being played, if it can be continued later (a run on the one road, still going). */
 function saveRun(): void {
   if (mode !== 'run' || !sim.road || sim.phase !== Phase.Playing || demo) return;
-  const save = makeRunSave(sim, { seed: cfg.seed, total: route.total, heat: runHeat }, Date.now());
+  const save = makeRunSave(sim, { seed: cfg.seed, total: route.total, heat: runHeat }, Date.now(), sim.road.choices);
   if (writeRunSave(runStore, save)) savedRun = save;
   lastSaveTick = sim.tick;
 }
@@ -470,7 +478,8 @@ function continueRun(): void {
   seed = save.config.seed;
   runHeat = save.config.heat;
   const total = save.config.total;
-  applyScenery(seed, total, true);
+  applyScenery(seed, total, restored.road ?? undefined);
+  paintedChoices = restored.road?.choices.length ?? 0;
   const plan = levelPlan(seed, save.level, total);
   cfg = { seed, chapter: plan.chapter };
   route = { index: save.level, total, plan, store: false, carry: undefined };
@@ -482,6 +491,7 @@ function continueRun(): void {
   if (sim.road) followRoad();
   lastSaveTick = sim.tick;
   lastCalm = sim.road?.calm ?? -2;
+  savedChoices = sim.road?.choices.length ?? 0;
   resume = { taken: [false, false, false, false], prev: [0, 0, 0, 0] };
   mode = 'run';
 }
@@ -547,10 +557,12 @@ function startRun(c: RunConfig, keepSlots = false): void {
   cfg = { ...c, chapter: plan.chapter, reservedBeat: at === 0 && !devRun ? { id: 'R1' } : c.reservedBeat };
   route = { index: at, total, plan, store: false, carry: undefined, };
   sim = newSim(roadMode ? levelPlan(c.seed, 0, total) : plan);
+  paintedChoices = 0;
   if (sim.road && at > 0) roadJump(sim, at);
   resume = null;
   lastSaveTick = -Infinity;
   lastCalm = -2;
+  savedChoices = 0;
   beginSim(keepSlots ? picks.map((p) => p.joined) : undefined);
   // A new player's first field opens with the controls tutorial. Dev: ?tutorial=1 plays it on any run, ?tutorial=0 never.
   const wantTutorial = __DEV__ && params.has('tutorial') ? params.get('tutorial') !== '0' : !devRun && !tutorialSeen(browserStore());
@@ -609,8 +621,11 @@ function enterNextLevel(): void {
 
 /** On the one road (`?road=1`) there is no cut between levels: the route just follows where the party is, for the HUD, the music and the summary. */
 let roadScene = -1;
+/** How many crossroads the scenery has been painted for: a choice repaints the road ahead in the chosen biome (well before any of it is in view). */
+let paintedChoices = 0;
 function followRoad(): void {
   const r = sim.road!;
+  if (r.choices.length !== paintedChoices) { paintedChoices = r.choices.length; applyScenery(cfg.seed, route.total, r); }
   if (sim.sceneIndex !== roadScene) { roadScene = sim.sceneIndex; cast.reset(sim); } // the next road scene along the way
   if (r.level !== route.index) { route.index = r.level; route.plan = levelPlan(cfg.seed, r.level, route.total); cfg = { ...cfg, chapter: route.plan.chapter }; }
   route.store = r.camp;
@@ -630,7 +645,10 @@ function noteTrades(from: number): void {
     const o = n * EV_STRIDE;
     if (ev.data[o] !== Ev.Trade) continue;
     const what = ev.data[o + 3], i = ev.data[o + 4], k = ev.data[o + 5];
-    if (what === TradeEv.Taken || what === TradeEv.Returned) {
+    if (what === TradeEv.Gift || what === TradeEv.HasGift || what === TradeEv.GiftMaxed) {
+      giftNote = { gift: i, text: what === TradeEv.Gift ? `P${k + 1} TOOK IT` : what === TradeEv.HasGift ? `P${k + 1} HAS ONE` : `P${k + 1} HAS THE MOST` };
+      shopNoteUntil = frameTick + 120;
+    } else if (what === TradeEv.Taken || what === TradeEv.Returned) {
       questNote = { offer: i, text: what === TradeEv.Taken ? `P${k + 1} ACCEPTED` : 'GIVEN BACK' };
       questNoteUntil = frameTick + 120;
     } else {
@@ -662,6 +680,13 @@ function storeView(): StoreView {
     }),
     near: sim.players.map((_, k) => nearWare(sim, k)),
     note: shopNote,
+    gifts: sim.gifts.map((up, i) => {
+      const sp = giftSpot(i), u = UPGRADES[up];
+      return { x: sp.x + sim.shopX, y: sp.y, icon: u.icon, name: u.name, text: u.text, takenBy: sim.giftPick.flatMap((g, k) => (g === i ? [k] : [])) };
+    }),
+    giftNear: sim.players.map((_, k) => nearGift(sim, k)),
+    giftNote,
+    giftDone: sim.giftPick.map((g) => g >= 0),
   };
 }
 
@@ -725,14 +750,14 @@ startLoop({
     if (sim.road) followRoad();
     if (sim.road && sim.phase === Phase.Playing) {
       const calm = sim.road.calm;
-      if (sim.tick - lastSaveTick >= AUTOSAVE_TICKS || (calm >= 0 && calm !== lastCalm)) saveRun();
+      if (sim.tick - lastSaveTick >= AUTOSAVE_TICKS || (calm >= 0 && calm !== lastCalm) || sim.road.choices.length !== savedChoices) { saveRun(); savedChoices = sim.road.choices.length; }
       lastCalm = calm;
     }
     if (tutorial) { updateTutorial(tutorial, sim, frames); if (tutorial.over) endTutorial(); }
     // The goods on the ground and the quest-givers: the sim trades (sim/shop.ts); here only the words shown after a press.
     if (route.store) {
       noteTrades(evFrom);
-      if (frameTick > shopNoteUntil) shopNote = undefined;
+      if (frameTick > shopNoteUntil) { shopNote = undefined; giftNote = undefined; }
       if (frameTick > questNoteUntil) questNote = undefined;
     }
     if (sim.phase === Phase.Playing) return;
@@ -794,7 +819,7 @@ startLoop({
       // a level won on the road is not a stopping point: the banner is only for the end of the road and for a party that is down
       hideEndBanner: routed && sim.phase === Phase.Won && !lastLevel,
       levelKeys: sim.players.map((_, k) => input.levelHint(k)),
-      storeHints: route.store ? sim.players.map((_, k) => (nearWare(sim, k) >= 0 || nearOffer(sim, k) >= 0 ? input.interactHint(k) : '')) : undefined,
+      storeHints: route.store ? sim.players.map((_, k) => (nearWare(sim, k) >= 0 || nearOffer(sim, k) >= 0 || nearGift(sim, k) >= 0 ? input.interactHint(k) : '')) : undefined,
       questView: route.store ? questView() : undefined,
       storeView: route.store ? storeView() : undefined,
       routeLabel: route.total > 1 ? (route.store ? `STORE  LEVEL ${route.index + 1} OF ${route.total}` : `LEVEL ${route.index + 1} OF ${route.total}`) : undefined,

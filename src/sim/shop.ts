@@ -1,5 +1,6 @@
 // The store: buying the peddler's goods off the ground and taking a quest from a giver, both with the trade button. Shared gold:
 // anyone can spend it, on themselves. It all happens in the sim (and so is saved with it, docs/21-the-road.md).
+import { giftSpot } from '../data/gifts';
 import { offerNear } from '../data/quests';
 import { MAX_LEVEL, UPGRADES } from '../data/upgrades';
 import { WARE_REACH_X, WARE_REACH_Y } from './constants';
@@ -27,8 +28,19 @@ export function buy(s: GameState, slot: number, ware: WareDef, price: number): B
   return 'ok';
 }
 
-/** What the trade button did (the `a` of an `Ev.Trade`). */
-export const TradeEv = { Bought: 0, Broke: 1, Maxed: 2, Taken: 3, Returned: 4 } as const;
+/** What the trade button did (the `a` of an `Ev.Trade`): bought, too dear, already maxed, a quest taken or given back, a gift taken, a gift refused (that hero has one, or has the boon at its height). */
+export const TradeEv = { Bought: 0, Broke: 1, Maxed: 2, Taken: 3, Returned: 4, Gift: 5, HasGift: 6, GiftMaxed: 7 } as const;
+
+/** The camp's gift beside hero `k`, or -1. */
+export function nearGift(s: GameState, k: number): number {
+  const p = s.players[k];
+  if (!p.active || p.downed) return -1;
+  for (let i = 0; i < s.gifts.length; i++) {
+    const sp = giftSpot(i);
+    if (Math.abs(s.ents.x[p.ent] - s.shopX - sp.x) < WARE_REACH_X && Math.abs(s.ents.y[p.ent] - sp.y) < WARE_REACH_Y) return i;
+  }
+  return -1;
+}
 
 /** The ware lying beside hero `k` (nearest first), or -1 if they are not standing by one. */
 export function nearWare(s: GameState, k: number): number {
@@ -59,6 +71,15 @@ export function updateTrade(s: GameState, inputs: readonly InputFrame[]): void {
     const p = s.players[k];
     if (!p.active || p.panel || !(inputs[k].buttons & ~p.rawPrev & Btn.Interact)) continue;
     const x = s.ents.x[p.ent], y = s.ents.y[p.ent];
+    const g = nearGift(s, k);
+    if (g >= 0) {
+      // one of the two for each hero: their own choice
+      const up = s.gifts[g];
+      if (s.giftPick[k] >= 0) emit(s.events, Ev.Trade, x, y, TradeEv.HasGift, g, k);
+      else if (p.ranks[up] >= UPGRADES[up].maxRank) emit(s.events, Ev.Trade, x, y, TradeEv.GiftMaxed, g, k);
+      else { p.ranks[up]++; s.giftPick[k] = g; emit(s.events, Ev.Trade, x, y, TradeEv.Gift, g, k); }
+      continue;
+    }
     const q = nearOffer(s, k);
     if (q >= 0) {
       s.questTaken = s.questTaken === q ? -1 : q;

@@ -70,3 +70,16 @@ test('a save far along a long road restores and plays on identically', () => {
   walk(a, 3000); walk(b, 3000);
   assert.equal(snapshot(b), snapshot(a));
 });
+
+test('a boss left far behind is removed and is no longer the boss', () => {
+  const s = createSim(3, undefined, { length: 30_000 });
+  const boss = MOBS.findIndex((m) => m.boss);
+  const b = allocEntity(s.ents, Kind.Mob, boss, 500, 100, MOBS[boss].hp);
+  s.ents.boss = b;
+  s.camX = s.camMax = s.prevCamX = s.trigCamX = 5000;
+  const pe = s.players[0].ent;
+  s.ents.x[pe] = s.ents.px[pe] = 5200;
+  step(s, [0, 1, 2, 3].map(createInputFrame));
+  assert.equal(s.ents.alive[b], 0);
+  assert.equal(s.ents.boss, -1);
+});

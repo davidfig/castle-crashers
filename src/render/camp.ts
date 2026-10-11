@@ -72,6 +72,12 @@ export interface StoreView {
   wares: StoreWare[];
   near: number[];
   note?: { ware: number; text: string };
+  /** A camp's gift on the road: its two boons (where they stand, what they are, which heroes took each), the one beside each hero, a line just said. */
+  gifts?: { x: number; y: number; icon: string; name: string; text: readonly string[]; takenBy: number[] }[];
+  giftNear?: number[];
+  giftNote?: { gift: number; text: string };
+  /** Each hero has taken one already. */
+  giftDone?: boolean[];
 }
 
 /** The goods on the ground with their prices beside them, a panel over the one a hero stands next to (what it is, what it does, what it
@@ -149,4 +155,43 @@ export function drawStoreHints(b: Batcher, S: Sprites, s: GameState, camX: numbe
   const sx = Math.round(s.shopX + STORE_X - camX), sy = Math.round(FIELD_Y0 + STORE_Y + oy);
   const since = s.road ? (s.road.camp ? s.tick - s.road.since : Infinity) : s.tick;
   if (since < 400) drawText(b, S, 'STORE', Math.round(sx - 10), sy - 62, hex(0xffe9a8));
+}
+
+/** A camp's gift: two boons on stone pedestals, each hero to take one (the panel over the one a hero stands beside says what it does). */
+export function drawGifts(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: StoreView | undefined, hints: readonly string[] | undefined): void {
+  if (!view?.gifts?.length) return;
+  const t = s.tick;
+  const px = (x: number, y: number, w: number, h: number, c: number, a = 1) => b.drawScaled(S.px, x, y, w, h, hex(c, a));
+  view.gifts.forEach((g, i) => {
+    const sx = Math.round(g.x - camX), sy = Math.round(FIELD_Y0 + g.y + oy);
+    if (sx < -60 || sx > VIEW_W + 60) return;
+    const near = view.giftNear?.some((n) => n === i) ?? false;
+    // the pedestal
+    px(sx - 9, sy - 10, 18, 12, 0x6a6660); px(sx - 9, sy - 10, 18, 2, 0x9a968e); px(sx - 11, sy, 22, 3, 0x4e4a46);
+    b.drawScaled(S.px, sx - 14, sy + 2, 28, 4, hex(0x9ed0ff, near ? 0.25 : 0.1));
+    const icon = S.ui.icons[g.icon];
+    const bob = Math.round(Math.sin(t / 16 + i * 2.1) * 1.5);
+    if (icon) b.drawScaled(icon, sx - icon.w, sy - 12 - icon.h * 2 + bob, icon.w * 2, icon.h * 2);
+    drawText(b, S, g.name, Math.round(sx - g.name.length * 2), sy + 6, hex(0xcfe8ff));
+    // who took this one: a mark in their colour
+    g.takenBy.forEach((k, n) => px(sx - 9 + n * 6, sy + 15, 4, 4, PLAYER_COLORS[k]));
+    if (!near) return;
+    const lines = [...g.text];
+    const rows: { text: string; color: number }[] = [];
+    view.giftNear!.forEach((n, k) => {
+      if (n !== i) return;
+      const done = view.giftDone?.[k];
+      rows.push({ text: done ? `P${k + 1} HAS ONE` : `${hints?.[k] ?? ''} TAKE IT`, color: done ? 0x8a8f99 : PLAYER_COLORS[k] });
+    });
+    const pw = 120, ph = 22 + lines.length * 8 + rows.length * 9;
+    const x = Math.max(4, Math.min(VIEW_W - pw - 4, sx - pw / 2)), y = sy - 46 - ph;
+    drawPanel(b, S, x, y, pw, ph, { fill: 'ink', ornaments: false });
+    drawText(b, S, 'A GIFT: ONE EACH', x + 8, y + 6, hex(0x9ed0ff));
+    lines.forEach((ln, k) => drawText(b, S, ln, x + 8, y + 16 + k * 8, 0xffffffff));
+    rows.forEach((r, k) => drawText(b, S, r.text, x + 8, y + 18 + lines.length * 8 + k * 9, hex(r.color)));
+  });
+  if (view.giftNote) {
+    const g = view.gifts[view.giftNote.gift];
+    if (g) drawText(b, S, view.giftNote.text, Math.round(g.x - camX - view.giftNote.text.length * 2), Math.round(FIELD_Y0 + g.y + oy) - 40, hex(0xffe9a8));
+  }
 }

@@ -192,6 +192,9 @@ export interface GameState {
   wares: Ware[];
   /** Where the store (or a camp on the road) begins: its goods and givers stand at their store spots plus this. */
   shopX: number;
+  /** A camp's gift (data/gifts.ts): two boons, each hero may take one; `giftPick` is which each hero (by slot) took, -1 for none yet. */
+  gifts: number[];
+  giftPick: number[];
   /** The run's one road (sim/gen/road.ts), or null for a field of its own (a level or a store). */
   road: RoadState | null;
   /** The quests offered by the givers standing in the store, and the one the party has taken (-1 = none) for the level that follows. */
@@ -345,6 +348,8 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     quest: opts.quest && !store ? createQuestRun(opts.quest) : null,
     wares: store ? (opts.stock ?? []).map((it) => ({ ware: it.ware, price: it.price, sold: false })) : [],
     shopX: store ? 0 : -1e9,
+    gifts: [],
+    giftPick: [-1, -1, -1, -1],
     road,
     offers: store ? (opts.offers ?? []).map((q) => ({ ...q })) : [],
     questTaken: -1,

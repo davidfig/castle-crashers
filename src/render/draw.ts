@@ -14,6 +14,7 @@ import { HEAT_NAMES } from '../data/heat';
 import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abilities';
 import { Phase, type GameState } from '../sim/state';
 import { campShown, roadProgress } from '../sim/gen/road';
+import { drawForkGround, drawForkLabels } from './fork';
 import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { drawWeather, stormCover } from './weather';
@@ -23,7 +24,7 @@ import { LEVELS_PER_BIOME } from '../campaign/route';
 import { roadOffset, Scenery } from './scenery';
 import { getWorld, levelsPlayed, roadShift } from './sceneryWorld';
 import { BLINK_TICKS, FIRE_RING_LIFE, SLASH_TICKS, type Fx } from './fx';
-import { drawCamps, drawStore, drawStoreHints, drawStoreWares, type StoreView } from './camp';
+import { drawCamps, drawGifts, drawStore, drawStoreHints, drawStoreWares, type StoreView } from './camp';
 import { drawQuestBoard, drawQuestGivers, drawQuestHud, drawQuestMarks, drawQuestNpc, type QuestView } from './quests';
 import { drawLevelUp } from './levelup';
 import { drawBoonPops, drawBoonStrip } from './boonHud';
@@ -227,6 +228,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawFog(b, S, scenery, camX + road, oy, ft);
   drawCamps(b, S, s, camX, oy);
   if (campShown(s)) { drawStore(b, S, s, camX, oy); drawQuestGivers(b, S, s, camX, oy, dbg.questView); }
+  if (s.road) drawForkGround(b, S, s, camX, oy);
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);
@@ -807,7 +809,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawLevelUp(b, S, s, dbg.levelKeys);
   drawQuestMarks(b, S, s, camX, oy, alpha);
   drawQuestHud(b, S, s);
-  if (campShown(s)) { drawStoreWares(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawQuestBoard(b, S, s, camX, oy, dbg.questView, dbg.storeHints); drawStoreHints(b, S, s, camX, oy); }
+  if (s.road) drawForkLabels(b, S, s, camX, oy);
+  if (campShown(s)) { drawStoreWares(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawGifts(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawQuestBoard(b, S, s, camX, oy, dbg.questView, dbg.storeHints); drawStoreHints(b, S, s, camX, oy); }
 }
 
 function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): void {
