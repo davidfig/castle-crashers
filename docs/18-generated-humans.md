@@ -25,6 +25,11 @@ run seed ──► generateFolk(seed) ──► Folk { livery, looks[NpcName] }
   stamps, the rim-and-ink post pass, the sheet packer; the monster composer uses the same). Four-frame `idle` (breathe, blink) and `talk` (mouth, a
   raised hand) loops, the shape of the hand-made NPC sheets, so `npcArt.ts` and every consumer read them unchanged.
 
+- **Names** (`data/humans/names.ts`). Each figure gets a personal name built from syllables in their office's own sound (nobles long and grand, captains short and
+  hard, heralds light, elders old-fashioned), unique within the run: `Folk.names`. The quest givers show them with their office (LORD ALDRIC in the hand-made
+  roster, LORD <name> in a run; the Registrar stays THE REGISTRAR). Text reads them through `npcName` in `data/quests.ts`, which falls back to the hand-made names
+  when no folk are installed (tests, `?folk=classic`).
+
 ## Determinism
 
 `generateFolk(seed)` is a pure function of the run seed with its own random streams (`Dice` salts), never the sim's, and nothing in the sim reads it:
@@ -40,5 +45,5 @@ people of one office, each a pure function of `(seed, role, n)`: the hook for cr
 
 ## Not yet
 
-Figures are only the six story slots; names and titles (LORD ALDRIC...) are still fixed in `data/quests.ts`; no walk or combat poses (a freed captive hops,
+Figures are only the six story slots; titles ("A NOBLE") and the quests' ask text are fixed, and road-scene speech still names offices, not people; no walk or combat poses (a freed captive hops,
 the ward is a still figure); the hand-made art stays for the art workbench screens.

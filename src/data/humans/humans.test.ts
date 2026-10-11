@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { NPC_NAMES } from '../../render/npcArt';
-import { generateFolk, generatePerson, NPC_ROLE } from './index';
+import { QUEST_NPCS, npcName } from '../quests';
+import { activeFolk, generateFolk, generatePerson, installFolk, NPC_ROLE } from './index';
 
 test('a seed always makes the same people', () => {
   assert.deepEqual(generateFolk(7), generateFolk(7));
@@ -40,4 +41,29 @@ test('the wardrobe is varied: many hairstyles, hats and builds turn up over some
   const hair = new Set<string>(), head = new Set<string>(), build = new Set<string>();
   for (let n = 0; n < 200; n++) { const l = generatePerson(11, 'commoner', n); hair.add(l.hair); head.add(l.head); build.add(l.build); }
   assert.ok(hair.size >= 6 && head.size >= 4 && build.size === 4, `${hair.size} ${head.size} ${build.size}`);
+});
+
+test('every run names its people: plain letters, all different, the same each time', () => {
+  for (let s = 1; s <= 60; s++) {
+    const f = generateFolk(s);
+    const names = NPC_NAMES.map((n) => f.names[n]);
+    assert.equal(new Set(names).size, names.length, `seed ${s} repeats a name`);
+    for (const n of names) assert.match(n, /^[A-Z][a-z]{2,8}$/, n);
+    assert.deepEqual(generateFolk(s).names, f.names);
+  }
+  const all = new Set<string>();
+  for (let s = 1; s <= 60; s++) for (const n of NPC_NAMES) all.add(generateFolk(s).names[n]);
+  assert.ok(all.size > 200, `${all.size} different names over 60 runs`);
+});
+
+test('quest givers wear the run\'s names, and the hand-made ones when no folk are installed', () => {
+  assert.equal(activeFolk(), null);
+  assert.equal(npcName(QUEST_NPCS[0]), 'LORD ALDRIC');
+  const f = generateFolk(9);
+  installFolk(f);
+  try {
+    assert.equal(npcName(QUEST_NPCS[0]), `LORD ${f.names.king.toUpperCase()}`);
+    assert.equal(npcName(QUEST_NPCS[4]), 'THE REGISTRAR');
+    for (const q of QUEST_NPCS) assert.match(npcName(q), /^[A-Z ]+$/);
+  } finally { installFolk(null); }
 });

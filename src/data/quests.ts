@@ -4,6 +4,7 @@
 // five givers x six missions x four rewards, so a run does not often see the same ask twice. Three are offered in each camp, chosen from
 // the run seed. Pure data and text; the sim plays the mission (sim/quests.ts) and the renderer shows it.
 import { createRng, rngFloat, rngInt, Stream } from '../engine/rng';
+import { activeFolk } from './humans';
 import { MOBS } from './mobs';
 import { ROSTERS } from './roster';
 import { UPGRADE_INDEX, UPGRADES } from './upgrades';
@@ -17,14 +18,23 @@ export interface QuestNpc {
   name: string;
   /** What a hero reads over their head before they have spoken. */
   title: string;
+  /** What goes before the run's generated name ("LORD" Aldric); empty for an office that is its own name (THE REGISTRAR). */
+  office: string;
+}
+
+/** The giver's name: the run's generated person with their office (LORD ALDRIC), or the hand-made name when no run's folk are installed. */
+export function npcName(n: QuestNpc): string {
+  const f = activeFolk();
+  if (!f || !n.office) return n.name;
+  return `${n.office} ${f.names[n.art].toUpperCase()}`;
 }
 
 export const QUEST_NPCS: readonly QuestNpc[] = [
-  { id: 'lord', art: 'king', name: 'LORD ALDRIC', title: 'A NOBLE' },
-  { id: 'captain', art: 'captain', name: 'CAPTAIN VESK', title: 'A CAPTAIN' },
-  { id: 'elder', art: 'elder', name: 'ELDER MORWEN', title: 'AN ELDER' },
-  { id: 'herald', art: 'herald', name: 'HERALD PIPPIN', title: 'A HERALD' },
-  { id: 'clerk', art: 'registrar', name: 'THE REGISTRAR', title: 'A CLERK' },
+  { id: 'lord', art: 'king', name: 'LORD ALDRIC', title: 'A NOBLE', office: 'LORD' },
+  { id: 'captain', art: 'captain', name: 'CAPTAIN VESK', title: 'A CAPTAIN', office: 'CAPTAIN' },
+  { id: 'elder', art: 'elder', name: 'ELDER MORWEN', title: 'AN ELDER', office: 'ELDER' },
+  { id: 'herald', art: 'herald', name: 'HERALD PIPPIN', title: 'A HERALD', office: 'HERALD' },
+  { id: 'clerk', art: 'registrar', name: 'THE REGISTRAR', title: 'A CLERK', office: '' },
 ];
 
 export type MissionKind = 'escort' | 'bounty' | 'cull' | 'rescue' | 'flawless' | 'swift';
@@ -114,7 +124,7 @@ function plural(mob: number): string {
 export function questGoalText(q: QuestDef, progress = 0): string {
   const npc = QUEST_NPCS[q.npc];
   switch (q.mission) {
-    case 'escort': return `KEEP ${npc.name} ALIVE`;
+    case 'escort': return `KEEP ${npcName(npc)} ALIVE`;
     case 'bounty': return 'SLAY THE MARKED BEAST';
     case 'cull': return `SLAY ${plural(q.mob)}  ${Math.min(progress, q.goal)}/${q.goal}`;
     case 'rescue': return progress > 0 ? 'SLAY THE GUARDS' : 'FREE THE CAPTIVE';

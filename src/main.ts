@@ -6,7 +6,7 @@ import { buildSprites } from './render/art';
 import { activeBestiary, bestiaryEpoch, ensureBestiary, generateBestiary, installBestiary } from './data/bestiary';
 import { installMonsterArt } from './render/monsterSprites';
 import { installFolkArt } from './render/folkSprites';
-import { generateFolk } from './data/humans';
+import { generateFolk, installFolk } from './data/humans';
 import { loadHeroImages } from './render/heroSheets';
 import { loadNpcImages } from './render/npcSheets';
 import { drawFrame } from './render/draw';
@@ -136,7 +136,9 @@ let folkSeed = -1;
 function applyFolk(runSeed: number): void {
   if (classicFolk || folkSeed === runSeed) return;
   folkSeed = runSeed;
-  installFolkArt(sprites, renderer, generateFolk(runSeed));
+  const folk = generateFolk(runSeed);
+  installFolk(folk);
+  installFolkArt(sprites, renderer, folk);
 }
 applyFolk(seed);
 
