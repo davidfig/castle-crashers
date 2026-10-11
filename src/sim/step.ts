@@ -127,7 +127,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
     flushProcs(s);
     if (s.blastN === 0 && s.procN === 0) break;
   }
-  const advance = sceneHold(s) ? 0 : Math.max(0, s.camX - s.trigCamX);
+  const advance = sceneHold(s) || s.tutorialHold ? 0 : Math.max(0, s.camX - s.trigCamX);
   s.trigCamX = Math.max(s.trigCamX, s.camX);
   if (!s.store) { runDirector(s, advance); runFlanks(s, advance); }
   updateCamera(s);

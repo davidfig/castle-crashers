@@ -93,7 +93,10 @@ export function activePlayers(s: GameState): number {
 }
 
 /** Plan options. A level that is not the last of a route has no boss: it is won by reaching the far end. */
-export interface PlanOptions { boss?: boolean; scene?: SimScene; /** Enemy count multiplier (default 1). */ scale?: number; /** The party's chosen heat: higher heat plans more mini-bosses. */ heat?: number }
+export interface PlanOptions { boss?: boolean; scene?: SimScene; /** Enemy count multiplier (default 1). */ scale?: number; /** The party's chosen heat: higher heat plans more mini-bosses. */ heat?: number; /** The first field of a run: its first few encounters are small, to find the controls on. */ opener?: boolean }
+
+/** On the opening field, the first encounters are this fraction of their planned size (then the horde as usual). */
+const OPENER_RAMP: readonly number[] = [0.3, 0.55, 0.8];
 
 export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}): ClumpPlan[] {
   const r = createRng(seed, Stream.level);
@@ -102,7 +105,8 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
   for (let c = 0; c < clumps; c++) {
     const t = c / (clumps - 1);
     const x = 760 + t * (WORLD_W - 1100) + rngRange(r, -40, 40);
-    const size = Math.floor((16 + t * 26 + rngRange(r, 0, 10)) * (opts.scale ?? 1));
+    const ramp = opts.opener ? OPENER_RAMP[c] ?? 1 : 1;
+    const size = Math.floor((16 + t * 26 + rngRange(r, 0, 10)) * (opts.scale ?? 1) * ramp);
     const line = c % 4 === 3;
     const y = rngRange(r, 8, WORLD_H - 8); // anywhere from the very top to the very bottom
     plan.push({ x, y, size, line, t, gate: line, rid: c });
@@ -311,7 +315,7 @@ export function sceneHold(s: GameState): boolean {
 
 /** Called every tick: spawn the encounters the camera is about to reach, sized for the current party. */
 export function streamLevel(s: GameState): void {
-  if (s.tick < STREAM_DELAY_TICKS) return;
+  if (s.tick < STREAM_DELAY_TICKS || s.tutorialHold) return;
   const scale = partyScale(activePlayers(s));
   const horizon = s.camX + VIEW_W + STREAM_AHEAD;
   while (s.nextClump < s.plan.length) {
@@ -324,6 +328,26 @@ export function streamLevel(s: GameState): void {
     spawnClump(s, s.nextClump, scale);
     s.nextClump++;
   }
+}
+
+/**
+ * The controls tutorial's enemies: `count` of the field's weakest kind, just off the right edge of the screen, awake and heading for the party.
+ * `salt` keeps each wave's look and placement its own, whatever the party did before it.
+ */
+export function spawnTutorialWave(s: GameState, count: number, salt: number): number[] {
+  const r = createRng(s.seed, 5000 + salt);
+  const ids: number[] = [];
+  const x0 = s.camX + VIEW_W + 50;
+  for (let k = 0; k < count; k++) {
+    const type = pickMobType(r, 0, s.biome, s.mix);
+    const y = WORLD_H * (0.25 + 0.5 * (count === 1 ? 0.5 : k / (count - 1)));
+    const i = allocEntity(s.ents, Kind.Mob, type, x0 + k * 22 + rngRange(r, 0, 14), y + rngRange(r, -10, 10), MOBS[type].hp);
+    if (i < 0) break;
+    s.ents.face[i] = -1;
+    s.ents.flags[i] = 1;
+    ids.push(i);
+  }
+  return ids;
 }
 
 /** Spawn every remaining encounter right now (tests and tools that want the whole battlefield at once). */

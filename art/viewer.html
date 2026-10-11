@@ -48,15 +48,13 @@
       <label>zoom <select id="cmpZoom"></select></label>
       <label>variant <select id="cmpVar"><option value="0">default</option><option value="1">P1</option><option value="2">P2</option><option value="3">P3</option><option value="4">P4</option></select></label>
       <label>background <select id="cmpBg"><option value="#4b8039">grass (game)</option><option value="#5a5f6a">slate</option><option value="#9cc5df">sky (game)</option><option value="#14121a">near-black</option><option value="#d6cfc2">bone</option></select></label>
-      <button id="cmpRef" class="on" title="White boxes = the game's current placeholder sprites (hero 10×14, goblin 8×9, orc 12×13), drawn to scale on the ground line">size ref boxes</button>
       <button id="cmpFlip">flip</button>
-      <button id="cmpDead" class="on" title="Show each enemy's corpse frame beside it (sheets without a dead frame are unaffected)">corpse</button>
     </div>
     <div class="stagewrap" style="padding:8px"><div id="cmpGrid" style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end"></div></div>
     <p class="note">Each cell is drawn at the same integer zoom with its own timing and the ground line aligned, so height, silhouette and motion can be judged directly. Click a label to open that sheet below.</p>
   </section>
   <section class="wide">
-    <h2>All poses — every frame of every animation (including the corpse) for the selected sheet, at once</h2>
+    <h2>All poses — every frame of every animation for the selected sheet, at once</h2>
     <div class="row"><label>zoom <select id="pzoom"></select></label><span class="note" style="margin:0">uses the sheet, variant and background chosen at the top</span></div>
     <div class="stagewrap" style="padding:10px"><div id="poses" style="display:flex;flex-wrap:wrap;gap:16px 22px;align-items:flex-start"></div></div>
   </section>
@@ -81,7 +79,7 @@
   </section>
   <section class="wide">
     <h2>In-game scale — 1 art pixel = 1 game pixel on a 640×360 view, shown at an exact integer multiple</h2>
-    <div class="row"><label>scale <select id="gzoom"></select></label><button id="regen">reshuffle horde</button><button id="ref" class="on">game placeholders (size ref)</button></div>
+    <div class="row"><label>scale <select id="gzoom"></select></label></div>
     <div class="stagewrap"><canvas id="game"></canvas></div>
     <p class="note">Everything above is drawn with imageSmoothingEnabled=false, CSS image-rendering: pixelated, and a canvas backing store that is an exact integer multiple of the art (devicePixelRatio-aware), so there is nothing for the browser to blur.</p>
   </section>
@@ -96,7 +94,6 @@ const mem = {
   set(k, v) { try { localStorage.setItem('wb.' + k, String(v)); } catch { /* private mode etc. */ } },
 };
 let animName = mem.get('anim', null), frameIdx = 0, last = 0, paused = mem.get('paused', '0') === '1', flip = mem.get('flip', '0') === '1', showGrid = mem.get('grid', '1') === '1';
-let horde = [];
 
 /** Size a canvas so one art pixel is exactly `k` device pixels (crisp at any devicePixelRatio). */
 function fit(c, wArt, hArt, k) {
@@ -183,7 +180,7 @@ function drawSheet() {
   for (let y = 0; y <= meta.size[1]; y += meta.cell[1]) { g.beginPath(); g.moveTo(0, y * kk + .5); g.lineTo(meta.size[0] * kk, y * kk + .5); g.stroke(); }
   $('sheetInfo').textContent = `${meta.title} — ${meta.size[0]}×${meta.size[1]} px, rows = animations (${Object.keys(meta.anims).join(', ')}). ${meta.notes}`;
 }
-// ---- every pose at once: each animation's frames as static tiles, ground lines aligned, with the corpse included
+// ---- every pose at once: each animation's frames as static tiles, ground lines aligned
 function drawPoses() {
   if (!meta || !img) return;
   const [cw, ch] = meta.cell, box = $('poses');
@@ -221,9 +218,6 @@ function drawShadow(g, kk, cx, gy, size) {
     if (dx * dx + dy * dy <= 1.05) g.fillRect((x0 + x) * kk, (y0 + y) * kk, kk, kk);
   }
 }
-// ---- in-game scale stage: ground + one of each character + a horde of mobs, all at 1:1 art pixels
-function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-function reshuffle() { const r = mulberry(Date.now() & 0xffff); horde = Array.from({ length: 70 }, () => ({ x: r() * 640, y: 150 + r() * 190, who: (() => { const q = r(); return q < 0.52 ? 'goblin' : q < 0.62 ? 'orc' : q < 0.77 ? 'mobarcher' : q < 0.9 ? 'shieldbearer' : 'bomber'; })(), t: r() * 8, flip: r() < 0.5 })); }
 function drawGame() {
   if (!Object.keys(imgs).length) return;
   const k = Number($('gzoom').value);
@@ -231,18 +225,13 @@ function drawGame() {
   g.fillStyle = '#9cc5df'; g.fillRect(0, 0, 640 * kk, 130 * kk);
   g.fillStyle = '#6c8c84'; for (let x = 0; x < 640; x += 2) { const h = 100 + Math.sin(x / 40) * 10 + Math.sin(x / 9) * 3; g.fillRect(x * kk, h * kk, 2 * kk, (130 - h) * kk); }
   g.fillStyle = '#4b8039'; g.fillRect(0, 130 * kk, 640 * kk, 230 * kk);
-  const items = [];
-  for (const h of horde) items.push({ ...h });
-  items.push({ x: 120, y: 250, who: 'warrior', t: 0, flip: false, hero: true });
-  items.push({ x: 160, y: 262, who: 'warrior', t: 1, flip: false, hero: true, v: 1 });
-  items.push({ x: 200, y: 254, who: 'warrior', t: 2, flip: false, hero: true, v: 2 });
-  items.push({ x: 240, y: 266, who: 'warrior', t: 3, flip: false, hero: true, v: 3 });
-  items.sort((a, b) => a.y - b.y);
-  drawRef(g, kk);
   const now = performance.now() / 1000;
+  // one of each sheet in a row, idling on the ground (the party first, then the story figures)
+  const names = Object.keys(imgs), step = 640 / (names.length + 1);
+  const items = names.map((who, i) => ({ who, x: step * (i + 1), y: 250, t: i * 0.37, flip: false }));
   for (const it of items) {
     const s = imgs[it.who]; if (!s) continue;
-    const m = s.meta; const anim = it.hero ? 'idle' : 'walk'; const a = m.anims[anim]; if (!a) continue;
+    const m = s.meta; const a = m.anims.idle ?? m.anims[Object.keys(m.anims)[0]]; if (!a) continue;
     const total = a.ms.reduce((x, y) => x + y, 0); let tt = ((now + it.t) * 1000) % total, fi = 0; while (tt >= a.ms[fi]) { tt -= a.ms[fi]; fi++; } const f = m.frames[a.frames[fi]];
     const dx = Math.round(it.x - m.pivot[0]), dy = Math.round(it.y - m.pivot[1]);
     // shadow
@@ -253,26 +242,6 @@ function drawGame() {
   }
 }
 
-// The game's current placeholder sprites (src/render/art.ts), drawn 1:1 so our art can be judged against the real scale.
-const REF = {
-  hero: { pal: { h: '#b8c2cc', H: '#7d8a99', s: '#f2c9a0', e: '#1b1b2b', P: '#e0443a', p: '#8c2b24', b: '#5a3a22', w: '#eef3f7', g: '#e0b43a' },
-    rows: ['...PP.....','..hhhh....','.hhhhhH...','.hsseeH..w','.hssssH..w','..hhhH...w','..PPPPp..w','.PPPPPPpgg','.PsPPPPp.w','.pPPPPPp..','..PPPPp...','..hh.hh...','..hh.hh...','..bb.bb...'] },
-  goblin: { pal: { G: '#6fbf3f', g: '#3f7f2a', y: '#ffe94a', k: '#2a1a1a', d: '#c9d1d9' },
-    rows: ['g.GGGG.g','ggGGGGgg','.GyGGyG.','.GGkkGG.','..GGGG.d','.gGGGGgd','..GGGG..','..g..g..','..g..g..'] },
-  orc: { pal: { O: '#a05a3a', o: '#6e3a24', t: '#f2ecd0', r: '#ff4040', a: '#7d8a99', x: '#5a3a22', w: '#dde4ea' },
-    rows: ['...oooooo...','..oOOOOOOo..','..OrrOOrrO..','..OOOOOOOO..','..OtOOOOtO.x','.aaaaaaaaaxw','aaaaaaaaaaxw','aOaaaaaaaOx.','aO.aaaaaa.x.','...aaaaaa...','...oo..oo...','...oo..oo...','..ooo..ooo..'] },
-};
-function drawRef(g, kk) {
-  if (!$('ref').classList.contains('on')) return;
-  let x = 14; const y0 = 340;
-  for (const [name, r] of Object.entries(REF)) {
-    const h = r.rows.length, w = r.rows[0].length;
-    r.rows.forEach((row, yy) => [...row].forEach((ch, xx) => { const c = r.pal[ch]; if (c) { g.fillStyle = c; g.fillRect((x + xx) * kk, (y0 - h + yy) * kk, kk, kk); } }));
-    g.fillStyle = '#fff'; g.font = `${Math.max(8, 4 * kk)}px monospace`; g.fillText(`${name} ${w}x${h}`, x * kk, (y0 + 8) * kk);
-    x += w + 8;
-  }
-  g.fillText('= game placeholders today', (x + 2) * kk, (y0 + 8) * kk);
-}
 // ---- compare view
 const cmp = { sel: new Set(JSON.parse(mem.get('cmpSel', '[]'))), anim: mem.get('cmpAnim', 'idle'), cells: [], flip: false };
 function buildCompare() {
@@ -303,7 +272,6 @@ function rebuildCells() {
     box.append(cv, lab); grid.appendChild(box); cmp.cells.push({ n, cv });
   }
 }
-const REF_SIZES = [['hero', 10, 14], ['goblin', 8, 9], ['orc', 12, 13]];
 let cmpBusy = false;
 async function drawCompare() {
   if (!cmp.cells.length || cmpBusy) return;
@@ -311,7 +279,7 @@ async function drawCompare() {
   try { await drawCompareInner(); } finally { cmpBusy = false; }
 }
 // Every box is the same large size with the ground line at the same height, so each sprite sits with space all around.
-// The box grows to fit the largest selected sheet (a boss cell is far bigger than a goblin's), never smaller than the default.
+// The box grows to fit the largest selected sheet, never smaller than the default.
 async function drawCompareInner() {
   const vi = Number($('cmpVar').value), bg = $('cmpBg').value, flip = cmp.flip;
   const now = performance.now();
@@ -320,7 +288,7 @@ async function drawCompareInner() {
     if (!imgs[c.n]) continue;
     const { meta } = imgs[c.n];
     BOX_BASE = Math.max(BOX_BASE, meta.pivot[1] + 3);
-    BOX_W = Math.max(BOX_W, Math.ceil(meta.cell[0] * ($('cmpDead').classList.contains('on') && meta.anims.dead ? 1.95 : 1.1)));
+    BOX_W = Math.max(BOX_W, Math.ceil(meta.cell[0] * 1.1));
   }
   const BOX_H = BOX_BASE + 18;
   // keep one box inside the panel: shrink the zoom for big sheets instead of letting them be clipped
@@ -329,27 +297,16 @@ async function drawCompareInner() {
   for (const c of cmp.cells) {
     if (!imgs[c.n]) continue;
     const { meta } = imgs[c.n]; const im = await loadVariantImg(c.n, vi);
-    const a = meta.anims[cmp.anim] ?? (cmp.anim === 'idle' ? meta.anims.walk : undefined);   // enemies have no idle: show their walk
+    const a = meta.anims[cmp.anim];
     const { g, k: kk } = fit(c.cv, BOX_W, BOX_H, k);
     g.fillStyle = bg; g.fillRect(0, 0, BOX_W * kk, BOX_H * kk);
     // faint 8px grid + centre line so the margins are easy to judge
     g.strokeStyle = 'rgba(255,255,255,.07)'; g.lineWidth = 1;
     for (let x = 0; x <= BOX_W; x += 8) { g.beginPath(); g.moveTo(x * kk + .5, 0); g.lineTo(x * kk + .5, BOX_H * kk); g.stroke(); }
     for (let y = 0; y <= BOX_H; y += 8) { g.beginPath(); g.moveTo(0, y * kk + .5); g.lineTo(BOX_W * kk, y * kk + .5); g.stroke(); }
-    const showDead = $('cmpDead').classList.contains('on') && meta.anims.dead;      // corpse goes on the right, the live sprite shifts left
-    const cx = showDead ? Math.round(BOX_W * 0.3) : BOX_W / 2;
-    const ox = Math.round(cx - meta.pivot[0]), oy = BOX_BASE - meta.pivot[1];       // where the cell's origin lands in the box
+    const cx = BOX_W / 2, ox = Math.round(cx - meta.pivot[0]), oy = BOX_BASE - meta.pivot[1];   // where the cell's origin lands in the box
     drawShadow(g, kk, cx, BOX_BASE, meta.shadow ?? [9, 5]);
-    if (showDead) {
-      const cxd = Math.round(BOX_W * 0.74), df = meta.frames[meta.anims.dead.frames[0]];
-      drawShadow(g, kk, cxd, BOX_BASE, meta.shadow ?? [9, 5]);
-      g.drawImage(im, df.x, df.y, df.w, df.h, Math.round(cxd - meta.pivot[0]) * kk, oy * kk, df.w * kk, df.h * kk);
-      g.fillStyle = 'rgba(255,255,255,.55)'; g.font = '10px monospace'; g.fillText('dead', (cxd - 7) * kk, (BOX_BASE + 7) * kk);
-    }
     g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(0, (BOX_BASE + 1) * kk, BOX_W * kk, 1);
-    if ($('cmpRef').classList.contains('on')) {
-      let rx = 3; for (const [nm, w, h] of REF_SIZES) { g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 1; g.strokeRect(rx * kk + .5, (BOX_BASE + 1 - h) * kk + .5, w * kk - 1, h * kk - 1); g.fillStyle = 'rgba(255,255,255,.8)'; g.font = '10px monospace'; g.fillText(nm + ' ' + w + '×' + h, rx * kk + 2, (BOX_BASE + 1 - h) * kk - 3); rx += w + 3; }
-    }
     if (!a) { g.fillStyle = '#fff'; g.font = '12px monospace'; g.fillText('(no ' + cmp.anim + ')', 6, 16); continue; }
     const total = a.ms.reduce((x, y) => x + y, 0); let tt = now % (total + (a.loop === false ? 500 : 0)), fi = a.frames.length - 1;
     if (tt < total) { fi = 0; while (tt >= a.ms[fi]) { tt -= a.ms[fi]; fi++; } }
@@ -372,9 +329,6 @@ $('cmpZoom').value = localStorage.getItem('wb.cmpZoom') || 4;
 $('pzoom').value = mem.get('pzoom', 4);
 $('pzoom').onchange = () => { mem.set('pzoom', $('pzoom').value); drawPoses(); };
 $('cmpZoom').onchange = () => localStorage.setItem('wb.cmpZoom', $('cmpZoom').value);
-$('cmpRef').onclick = () => { $('cmpRef').classList.toggle('on'); mem.set('cmpRef', $('cmpRef').classList.contains('on') ? 1 : 0); };
-$('cmpDead').classList.toggle('on', mem.get('cmpDead', '1') === '1');
-$('cmpDead').onclick = () => { $('cmpDead').classList.toggle('on'); mem.set('cmpDead', $('cmpDead').classList.contains('on') ? 1 : 0); };
 $('cmpFlip').onclick = () => { cmp.flip = !cmp.flip; mem.set('cmpFlip', cmp.flip ? 1 : 0); $('cmpFlip').classList.toggle('on', cmp.flip); };
 $('cmpVar').onchange = () => mem.set('cmpVar', $('cmpVar').value);
 $('cmpBg').onchange = () => mem.set('cmpBg', $('cmpBg').value);
@@ -391,8 +345,6 @@ $('fps').oninput = () => { $('fpsv').textContent = $('fps').value + '%'; mem.set
 $('flip').onclick = () => { flip = !flip; mem.set('flip', flip ? 1 : 0); $('flip').classList.toggle('on', flip); };
 $('grid').onclick = () => { showGrid = !showGrid; mem.set('grid', showGrid ? 1 : 0); $('grid').classList.toggle('on', showGrid); };
 $('pause').onclick = () => { paused = !paused; mem.set('paused', paused ? 1 : 0); $('pause').classList.toggle('on', paused); };
-$('regen').onclick = reshuffle;
-$('ref').onclick = () => { $('ref').classList.toggle('on'); mem.set('ref', $('ref').classList.contains('on') ? 1 : 0); };
 window.addEventListener('keydown', (e) => { if (e.key === ' ') { e.preventDefault(); $('pause').click(); } if (e.key === 'ArrowRight' && paused) frameIdx++; if (e.key === 'ArrowLeft' && paused) frameIdx = Math.max(0, frameIdx - 1); });
 
 // restore remembered control state (before the first load so sheets/anims open as you left them)
@@ -400,10 +352,8 @@ $('fps').value = mem.get('speed', 100); $('fpsv').textContent = $('fps').value +
 $('cmpVar').value = mem.get('cmpVar', '0'); $('cmpBg').value = mem.get('cmpBg', '#4b8039');
 cmp.flip = mem.get('cmpFlip', '0') === '1';
 $('flip').classList.toggle('on', flip); $('grid').classList.toggle('on', showGrid); $('pause').classList.toggle('on', paused);
-$('ref').classList.toggle('on', mem.get('ref', '1') === '1'); $('cmpRef').classList.toggle('on', mem.get('cmpRef', '1') === '1');
 $('cmpFlip').classList.toggle('on', cmp.flip);
 
-reshuffle();
 (async () => { await loadIndex(); await loadAllSheets(); buildCompare(); drawGame(); requestAnimationFrame(tick); })();
 const es = new EventSource('/events');
 es.onmessage = async (e) => { if (e.data === 'reload') { $('err').textContent = ''; await loadIndex(); await loadAllSheets(); buildCompare(); } else if (e.data.startsWith('error')) $('err').textContent = JSON.parse(e.data.slice(6)); };

@@ -262,6 +262,18 @@ export class InputManager {
     return code.replace(/^Key/, '').replace('BracketLeft', '[');
   }
 
+  /** What to press for a hero's action on the device that holds `slot` ("J", "RT"), or '' while the slot is unclaimed. */
+  actionHint(slot: number, action: 'move' | 'attack' | 'ability1' | 'ability2' | 'dodge' | 'skip'): string {
+    const id = this.slots[slot];
+    if (!id) return '';
+    if (id.startsWith('pad')) return { move: 'STICK', attack: 'RT', ability1: 'X', ability2: 'RB', dodge: 'LT', skip: 'B' }[action];
+    const sc = SCHEMES[Number(id.slice(2))];
+    if (!sc) return '';
+    if (action === 'move') return sc.up === 'KeyW' ? 'WASD' : 'ARROWS';
+    const code = { attack: sc.attack, ability1: sc.ability1, ability2: sc.ability2, dodge: sc.dodge, skip: sc.standDown }[action];
+    return code.replace(/^Key/, '').replace('Quote', 'QUOTE').replace('Semicolon', 'SEMI').replace('Slash', '/').replace('Period', 'PERIOD').replace('Comma', 'COMMA'); // (the pixel font has no punctuation)
+  }
+
   /** What to press to trade with the peddler on the device that holds `slot` ("U", "B"), or '' while the slot is unclaimed. */
   interactHint(slot: number): string {
     const id = this.slots[slot];

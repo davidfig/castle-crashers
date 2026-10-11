@@ -127,6 +127,10 @@ Hub (meta) → choose class(es) + modifiers → Run:
   Final boss → Victory / Defeat → Renown payout → Hub
 ```
 
+**The opening is gentle.** On the first field of a run the first three encounters are 30%, 55% and 80% of their planned size (`OPENER_RAMP`, `planLevel`'s `opener` option), so the horde builds rather than arrives.
+
+**Controls tutorial (first run in a browser only).** A new player's first field opens with a scripted lesson (`src/campaign/tutorial.ts`, drawn by `render/tutorialHud.ts`). While it runs the sim's planned encounters, reinforcements and flank packs are held back (`GameState.tutorialHold`); the tutorial brings its own small waves just off the right edge (`spawnTutorialWave`). A card at the top of the screen names the move (with the class's own name for it, from `NOUNS`) and the button on each hero's device (`InputManager.actionHint`; unclaimed devices show the P1 keyboard), and lights each hero's key once they have done it. Steps: move, attack (3 presses; the cleric's aura 1), ability 1, ability 2, dodge, then a last small band to use everything on. A step ends when every hero on their feet has done it *and* its enemies are dead; fury and stamina are topped up until a hero has tried the move, and heroes are healed at each step. Holding stand-down (U / pad B) for a second skips it. Finishing or skipping sets `localStorage` `game.tutorialDone`, so it never plays again; blocked storage just replays it. Dev: `?tutorial=1` plays it on any run, `?tutorial=0` never (entered-seed runs skip it by default).
+
 **Rest rooms:** campfire/shop-like safe rooms with no menus that pause the game: you walk to things (a merchant NPC, a shrine, a forge) and interact with in-world prompts. Details in [06](06-ui.md).
 
 ## Death & failure

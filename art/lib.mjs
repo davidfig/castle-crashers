@@ -76,42 +76,6 @@ export function smear({ cx, cy, a0, a1, r, t, core = '6', rim = '5', tail = '4',
 /** Parse a part drawn with a leading ruler-free block into rows (trims blank edge lines). */
 export const rows = (s) => s.split('\n').map((r) => r.trim()).filter((r) => r.length);
 
-/** Thick polyline limb drawn straight into a frame. Returns a frame entry (function). pts = [[x,y],...] cell coords. */
-export function limb(pts, { w = 3, body = '4', hi = null, lo = null, ink = null, cap = null } = {}) {
-  return (put) => {
-    const segs = [];
-    for (let i = 0; i < pts.length - 1; i++) segs.push([pts[i], pts[i + 1]]);
-    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-    const x0 = Math.min(...xs) - w - 1, x1 = Math.max(...xs) + w + 1, y0 = Math.min(...ys) - w - 1, y1 = Math.max(...ys) + w + 1;
-    const r = w / 2;
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      let best = 1e9, side = 0;
-      for (const [[ax, ay], [bx, by]] of segs) {
-        const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
-        const t = Math.max(0, Math.min(1, ((x + 0.5 - ax - 0.5) * dx + (y + 0.5 - ay - 0.5) * dy) / L2));
-        const px = ax + 0.5 + t * dx, py = ay + 0.5 + t * dy;
-        const d = Math.hypot(x + 0.5 - px, y + 0.5 - py);
-        if (d < best) { best = d; side = -(x + 0.5 - px) - (y + 0.5 - py); }
-      }
-      if (best <= r) put(x, y, side > 0.4 && hi ? hi : side < -0.4 && lo ? lo : body);
-      else if (ink && best <= r + 1) put(x, y, ink);
-    }
-    if (cap) {
-      const [ex, ey] = pts[pts.length - 1];
-      for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) put(ex + x, ey + y, cap);
-    }
-  };
-}
-
-/** Transpose-rotate rows 90 degrees counter-clockwise (head of a standing figure ends up on the left). */
-export function rot90ccw(part) {
-  const rows = Array.isArray(part) ? part : part.rows;
-  const h = rows.length, w = rows[0].length;
-  const out = [];
-  for (let x = w - 1; x >= 0; x--) { let r = ''; for (let y = 0; y < h; y++) r += rows[y][x] ?? '.'; out.push(r); }
-  return out;
-}
-
 /**
  * A walking leg: slide the foot sideways by `foot` (hip stays put) and optionally lift it by cutting `lift` rows
  * out of the shin, so the boot rises instead of sliding along the ground. Use lift on the swing leg only.
@@ -132,20 +96,4 @@ export function ring({ rx, ry, thick = 1, ch = 'N', inner = null }) {
     else if (inner && d <= 1 - thick / Math.max(rx, ry) && d > 1 - (thick + 1.4) / Math.max(rx, ry)) g[y][x] = inner;
   }
   return { rows: g.map((r) => r.join('')), ax: cx, ay: cy };
-}
-
-/** A 1px line between two cell points, as a frame entry. */
-export function line(p0, p1, ch) {
-  return (put) => {
-    let [x0, y0] = p0.map(Math.round); const [x1, y1] = p1.map(Math.round);
-    const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-    let err = dx + dy;
-    for (;;) {
-      put(x0, y0, ch);
-      if (x0 === x1 && y0 === y1) break;
-      const e2 = 2 * err;
-      if (e2 >= dy) { err += dy; x0 += sx; }
-      if (e2 <= dx) { err += dx; y0 += sy; }
-    }
-  };
 }
