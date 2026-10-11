@@ -5,6 +5,8 @@ import { Renderer } from './platform/gl/renderer';
 import { buildSprites } from './render/art';
 import { activeBestiary, bestiaryEpoch, ensureBestiary, generateBestiary, installBestiary } from './data/bestiary';
 import { installMonsterArt } from './render/monsterSprites';
+import { installFolkArt } from './render/folkSprites';
+import { generateFolk, installFolk } from './data/humans';
 import { loadHeroImages } from './render/heroSheets';
 import { loadNpcImages } from './render/npcSheets';
 import { drawFrame } from './render/draw';
@@ -128,6 +130,19 @@ function applyCast(runSeed: number): void {
   installMonsterArt(sprites, renderer, activeBestiary()!);
 }
 applyCast(seed);
+
+// A run's people (the Registrar, King, Herald, Captain, Elder and peddler) are generated from the seed too (data/humans): the same faces and
+// clothes all run, new ones next run. ?folk=classic keeps the hand-made figures from the art workbench.
+const classicFolk = __DEV__ && params.get('folk') === 'classic';
+let folkSeed = -1;
+function applyFolk(runSeed: number): void {
+  if (classicFolk || folkSeed === runSeed) return;
+  folkSeed = runSeed;
+  const folk = generateFolk(runSeed);
+  installFolk(folk);
+  installFolkArt(sprites, renderer, folk);
+}
+applyFolk(seed);
 
 // A run's scenery is generated from its seed (data/scenery/world.ts): one biome per stage of the road, each its archetype varied, and the road
 // turning each into the next. Drawn into the atlas before any level of the run is shown. Dev aid: ?scenery=frozen makes the whole road that
@@ -406,6 +421,7 @@ function endTutorial(): void {
 
 function startRun(c: RunConfig, keepSlots = false): void {
   applyCast(c.seed);
+  applyFolk(c.seed);
   cfg = c;
   if (!keepSlots) picks = [];
   seed = c.seed;

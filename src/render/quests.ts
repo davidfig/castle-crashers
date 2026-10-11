@@ -1,6 +1,6 @@
 // Side quests, drawn (docs/15-quests.md): the people in the camp who offer them, the ward and the captive on the field, the marked brute,
 // and the tracker that follows the party. Purely presentation: it reads the sim and never feeds back.
-import { QUEST_NPCS, missionText, questAsk, questGoalText, rewardText, type QuestArt, type QuestDef } from '../data/quests';
+import { QUEST_NPCS, npcName, missionText, questAsk, questGoalText, rewardText, type QuestArt, type QuestDef } from '../data/quests';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { lerp } from '../engine/math';
@@ -108,7 +108,7 @@ export function drawQuestBoard(b: Batcher, S: Sprites, s: GameState, camX: numbe
     const cx = Math.round(o.x - camX);
     const x = Math.max(4, Math.min(VIEW_W - w - 4, cx - w / 2)), y = Math.round(FIELD_Y0 + o.y + oy) - 40 - h;
     drawPanel(b, S, x, y, w, h, { fill: 'ink', ornaments: false });
-    drawText(b, S, npc.name, x + 8, y + 7, hex(0xffe9a8));
+    drawText(b, S, npcName(npc), x + 8, y + 7, hex(0xffe9a8));
     const mt = missionText(o.def);
     drawText(b, S, mt, x + w - 8 - mt.length * 4, y + 7, hex(0x9ed0ff));
     drawText(b, S, `PAYS ${rewardText(o.def)}`, x + 8, y + 17, hex(0x7dff9a));
@@ -208,7 +208,7 @@ export function drawQuestHud(b: Batcher, S: Sprites, s: GameState): void {
   const right = VIEW_W - 6;
   const put = (text: string, y: number, color: number): void => { drawText(b, S, text, right - text.length * 4, y, color); };
   if (q.status === QuestStatus.Active) {
-    put(`QUEST  ${npc.name}`, 6, hex(0xffe9a8));
+    put(`QUEST  ${npcName(npc)}`, 6, hex(0xffe9a8));
     put(questGoalText(q.def, q.progress), 15, 0xffffffff);
     const life = q.def.mission === 'escort' || captiveOf(s) >= 0;
     if (life) lifeBar(b, S, right - 60, 25, 60, wardFrac(s));

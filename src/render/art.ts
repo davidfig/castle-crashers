@@ -65,6 +65,8 @@ const ATLAS_W = 2048;
 const MONSTER_BAND_H = 1024;
 /** Height of the strip reserved for a run's generated scenery (five biomes' strips, tiles, decals and patches are ~1.4M px). */
 export const SCENERY_BAND_H = 1024;
+/** Height of the strip for a run's generated people (six figures of a few thousand px each; see folkSprites.ts). */
+const FOLK_BAND_H = 64;
 
 export interface Sprites {
   atlas: HTMLCanvasElement;
@@ -90,6 +92,8 @@ export interface Sprites {
   mobArt: MobArt;
   /** The strip of the atlas generated monsters are drawn into: a run's cast is repainted here, over the last run's. */
   monsterBand: { x: number; y: number; w: number; h: number };
+  /** Where a run's generated people are drawn (folkSprites.ts). */
+  folkBand: { x: number; y: number; w: number; h: number };
   /** The strip of the atlas a run's generated scenery is drawn into (sceneryArt.ts). */
   sceneryBand: { x: number; y: number; w: number; h: number };
   /** Ground tile sets (16 px tiles, several variants each), by the key a biome's ground names. */
@@ -253,6 +257,8 @@ export function buildSprites(heroImages: HTMLImageElement[], npcImages: HTMLImag
   usedH += MONSTER_BAND_H;
   const sceneryBand = { x: 0, y: usedH, w: ATLAS_W, h: SCENERY_BAND_H };
   usedH += SCENERY_BAND_H;
+  const folkBand = { x: 0, y: usedH, w: ATLAS_W, h: FOLK_BAND_H };
+  usedH += FOLK_BAND_H;
   let H = 1;
   while (H < usedH) H <<= 1;
 
@@ -275,5 +281,5 @@ export function buildSprites(heroImages: HTMLImageElement[], npcImages: HTMLImag
   const mob = mobArt.walk;
   const corpse: Frame[] = [];
 
-  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, staminaPotion, chest, shrine, heroes, mobArt, monsterBand, sceneryBand, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, staminaPotion, chest, shrine, heroes, mobArt, monsterBand, sceneryBand, folkBand, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
 }

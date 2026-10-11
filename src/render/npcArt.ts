@@ -1,6 +1,7 @@
 // Non-player characters from the art workbench (art/chars/registrar.mjs, peddler.mjs -> art/out/*): figures that stand beside
 // the text on the story screens. Each has an idle and a talk loop. The sheet loader is in npcSheets.ts; this file is the
 // metadata and the mapping to atlas frames, kept free of image imports so tests can use it.
+import type { HumanSheet } from '../data/humanLook';
 import type { Frame } from '../platform/gl/batcher';
 import registrarMeta from '../../art/out/registrar.json';
 import peddlerMeta from '../../art/out/peddler.json';
@@ -47,6 +48,21 @@ export function buildNpcSets(places: { x: number; y: number }[], atlasW: number,
     out[NPC_NAMES[i]] = { pivotX: meta.pivot[0], pivotY: meta.pivot[1], anims };
   });
   return out;
+}
+
+/** The set of one generated person (humanArt.ts), whose composed sheet sits at `place` in the atlas. */
+export function npcSetFromSheet(sheet: HumanSheet, place: { x: number; y: number }, atlasW: number, atlasH: number): NpcSet {
+  const anims: Record<string, NpcAnim> = {};
+  for (const [name, a] of Object.entries(sheet.anims)) {
+    anims[name] = {
+      ms: a.ms,
+      frames: a.frames.map((fn) => {
+        const r = sheet.frames[fn];
+        return { u0: (place.x + r.x) / atlasW, v0: (place.y + r.y) / atlasH, u1: (place.x + r.x + r.w) / atlasW, v1: (place.y + r.y + r.h) / atlasH, w: r.w, h: r.h };
+      }),
+    };
+  }
+  return { pivotX: sheet.pivot[0], pivotY: sheet.pivot[1], anims };
 }
 
 /** The frame of an animation at `ms` milliseconds into its loop. */
