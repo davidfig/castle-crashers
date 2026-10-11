@@ -20,7 +20,7 @@ test('every class has sane numbers', () => {
   for (const c of CLASSES) {
     for (const [k, v] of Object.entries(c)) if (typeof v === 'number') assert.ok(Number.isFinite(v), `${c.name}.${k}`);
     assert.ok(c.hp > 0 && c.speed > 0 && c.combo.length >= 1, c.name);
-    for (const sw of [...c.combo, c.special]) assert.ok(sw.range > 0 && sw.damage > 0 && sw.cooldown > 0 && sw.dot >= -1 && sw.dot <= 1, `${c.name} swing`);
+    for (const sw of c.totems ? [] : [...c.combo, c.special]) assert.ok(sw.range > 0 && sw.damage > 0 && sw.cooldown > 0 && sw.dot >= -1 && sw.dot <= 1, `${c.name} swing`);
   }
 });
 

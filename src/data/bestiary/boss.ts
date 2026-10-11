@@ -23,7 +23,7 @@ export interface MadeBoss {
 const HARMFUL: ReadonlySet<SpecialKind> = new Set(['lob', 'nova', 'storm', 'trap', 'beam', 'whiteout', 'leap', 'gust', 'pit', 'wail', 'bolt', 'ring', 'cone', 'totem']);
 const SUPPORT: ReadonlySet<SpecialKind> = new Set(['heal', 'ward', 'rally']);
 
-export function makeBoss(bp: BiomePlan, faction: Faction, names: Set<string>, seed: number): MadeBoss {
+export function makeBoss(bp: BiomePlan, faction: Faction, names: Set<string>, seed: number, seen?: Map<string, number>): MadeBoss {
   const d = new Dice(seed, bp.boss * 104729 + 5);
   const frost = bp.biome === FROZEN;
   const primary = pickAffinity(d, bp.biome, 0.04);
@@ -80,7 +80,7 @@ export function makeBoss(bp: BiomePlan, faction: Faction, names: Set<string>, se
   for (const el of elements.slice(0, 2)) if (!motifs.includes(ELEMENTS[el].motif)) motifs.push(ELEMENTS[el].motif);
   for (const k of kinds) for (const m of SKILL_RULES[k]?.motifs ?? []) if (!motifs.includes(m) && motifs.length < 3) motifs.push(m);
   if (frost && !motifs.includes('frost') && motifs.length < 3) motifs.push('frost');
-  const look = lookFor(d, { def, traits: new Set(kinds), motifs: motifs.slice(0, 3), boss: true, faction, u: 1, elements });
+  const look = lookFor(d, { def, traits: new Set(kinds), motifs: motifs.slice(0, 3), boss: true, faction, biome: bp.biome, seen, u: 1, elements });
   boss.title = bossTitle(look, d, names, elements);
   names.add(boss.title);
   def.name = boss.title.toLowerCase();

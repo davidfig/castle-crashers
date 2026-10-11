@@ -3,13 +3,13 @@
 // wall clock, so a run costs only the sim (tens of thousands of ticks a second). A run is a pure function of its options.
 import { CLASSES } from '../data/classes';
 import { roadSceneFor, roadSceneT } from '../data/story/road';
-import { stockFor, WARES, wareSpot, type StockItem } from '../data/wares';
-import { MAX_PLAYERS, WARE_REACH_X, WARE_REACH_Y } from '../sim/constants';
+import { stockFor, WARES } from '../data/wares';
+import { MAX_PLAYERS } from '../sim/constants';
 import { applyCarry, arriveAt, captureCarry, restCarry, type Carry } from '../sim/carry';
 import { Kind, ShrineKind } from '../sim/entities';
 import { Ev, EV_STRIDE } from '../sim/events';
-import { createInputFrame, Btn } from '../sim/input';
-import { buy } from '../sim/shop';
+import { createInputFrame } from '../sim/input';
+import { TradeEv } from '../sim/shop';
 import { SiteEv } from '../sim/sites';
 import { activatePlayer, createSim, Phase, type GameState } from '../sim/state';
 import { step } from '../sim/step';
@@ -126,6 +126,7 @@ function makeSim(seed: number, plan: LevelPlan, index: number, total: number, st
     mix: plan.mix,
     store,
     nextBiome,
+    stock: store ? stockFor(seed, index) : undefined,
     scene: sc ? { id: sc.id, t: roadSceneT(plan.seed) } : undefined,
   });
   if (carry) { applyCarry(s, carry); arriveAt(s, carry); }
@@ -302,41 +303,23 @@ function roundAll(o: Record<string, number>): Record<string, number> {
 /** The store after a level: the party shops and walks out the far end, as it would on the road. */
 function playStore(seed: number, plan: LevelPlan, index: number, total: number, carry: Carry, party: PartyMember[], heat: number, pilots: Pilot[], inputs: ReturnType<typeof createInputFrame>[], cap: number): { sim: GameState; report: StoreReport } {
   const s = makeSim(seed, plan, index, total, true, carry, party, heat);
-  const stock: StockItem[] = stockFor(seed, index);
-  const sold = stock.map(() => false);
   const bought: string[] = [];
-  const prevBtn: number[] = new Array(MAX_PLAYERS).fill(0);
-  const panelBefore: boolean[] = new Array(MAX_PLAYERS).fill(false);
   for (const p of pilots) p.resetForStore();
   const gold0 = s.gold;
   let t = 0;
   for (; t < Math.min(cap, 60 * 60 * 6) && s.phase === Phase.Playing; t++) {
-    const ctx: StoreCtx = { stock, sold, allDone: pilots.every((p, k) => p.storeDone && s.players[k].pending === 0) };
+    const ctx: StoreCtx = { allDone: pilots.every((p, k) => p.storeDone && s.players[k].pending === 0) };
     for (let k = 0; k < pilots.length; k++) pilots[k].drive(s, inputs[k], ctx);
-    s.players.forEach((p, k) => { panelBefore[k] = p.panel; });
     step(s, inputs);
-    s.events.n = 0;
-    for (let k = 0; k < MAX_PLAYERS; k++) {
-      const edge = inputs[k].buttons & ~prevBtn[k];
-      prevBtn[k] = inputs[k].buttons;
-      if (!(edge & Btn.Interact) || panelBefore[k]) continue;
-      const i = nearWare(s, k, stock);
-      if (i < 0 || sold[i]) continue;
-      if (buy(s, k, WARES[stock[i].ware], stock[i].price) === 'ok') { sold[i] = true; bought.push(`${CLASSES[s.players[k].classId].name}:${WARES[stock[i].ware].id}`); }
+    // the sim trades (sim/shop.ts); note what was bought from its events
+    for (let n = 0; n < s.events.n; n++) {
+      const o = n * EV_STRIDE;
+      if (s.events.data[o] !== Ev.Trade || s.events.data[o + 3] !== TradeEv.Bought) continue;
+      const i = s.events.data[o + 4], k = s.events.data[o + 5];
+      bought.push(`${CLASSES[s.players[k].classId].name}:${WARES[s.wares[i].ware].id}`);
     }
+    s.events.n = 0;
   }
   return { sim: s, report: { index, ticks: s.tick, spent: Math.max(0, gold0 - s.gold), bought, timedOut: s.phase !== Phase.Won } };
 }
 
-/** The ware lying beside hero `k` (nearest first), or -1. Mirrors main.ts. */
-function nearWare(s: GameState, k: number, stock: readonly StockItem[]): number {
-  const p = s.players[k];
-  if (!p.active || p.downed) return -1;
-  let best = -1, bestD = Infinity;
-  stock.forEach((_, i) => {
-    const sp = wareSpot(i, stock.length);
-    const dx = Math.abs(s.ents.x[p.ent] - sp.x), dy = Math.abs(s.ents.y[p.ent] - sp.y);
-    if (dx < WARE_REACH_X && dy < WARE_REACH_Y && dx < bestD) { best = i; bestD = dx; }
-  });
-  return best;
-}

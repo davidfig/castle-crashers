@@ -43,10 +43,15 @@ run seed ──► generateBestiary(seed) ──► Bestiary { defs[], looks[], 
   bosses (about 700 health, radius 22), so a boss is a new fight but never an unfair one.
 - **Names.** `<mark> <kind>`, from the look and powers: "cinder hound", "bile mite", "rime brute"; boss titles like `HOAR HOUND COLOSSUS`. Unique within a run.
   The run summary tallies by name.
+- **Species** (`data/bestiary/species.ts`). A look starts from a fantasy creature (goblin, orc, skeleton, wolf, wraith, cultist, ogre, golem, frog, imp...): the species fixes body plan, head, gear and natural colours, and is picked by role, size, biome and the powers worn (a `hop` power wants a frog, `revive` a skeleton). Elements only light the eyes and trim, except on species made of them (sprite, slime). Names come from the species ("cinder goblin", "frost wolf"). To add a creature, add a row; look at the result with `art/mobs.html` (the monster roller).
 - **Looks** (`data/monsterLook.ts`, `data/bestiary/look.ts`). A recipe of pieces: body plan (blob, tall, squat, wedge, round, serpent, insect, floater), head, limbs,
-  back (wings, tail, shell, spikes, cape...), crown (horns, antlers, halo...), held item, eyes, motifs that tell its powers (fire, frost, poison, ghost, armour...),
-  a palette from a colour family each biome shares for the run, and a size from its hit radius. Powers pull the pieces: shooters carry bows, casters staves,
-  chargers horns, flame-wreathed things are hot-coloured.
+  back (wings, tail, shell, spikes, cape, quills, mane, pack, crystals, banner...), crown (horns, antlers, halo, mohawk, hat, sprout, eye stalks...), held item
+  (club, sword, axe, mace, hammer, dagger, trident, scythe, torch, pick, bow, staff...), body pattern (belly, stripes, spots, patches, scales, chevron, mottled),
+  jaw (fangs, tusks, beak, mandibles, whiskers, beard), worn gear (belt, pauldrons, necklace, scarf, sash, collar, bracers), eyes, motifs that tell its powers
+  (fire, frost, poison, ghost, armour...), a palette from a colour family each biome shares for the run, and a size from its hit radius. Each species lists
+  which of these suit it (repeats weight a choice). Powers pull the pieces: shooters carry bows, casters staves, chargers horns, flame-wreathed things are
+  hot-coloured. On top of that the composer varies each look's proportions (head, legs, arms, and how far the crown, back and weapon reach) from its seed,
+  and picks horn, ear, wing, hat and eye variants, so two goblins of one run seldom match.
 - **Sprites** (`render/monsterArt.ts`). The look is composed at run start, as pixels, from parametric shapes and small stamps (no rotation or resampling of pixel art,
   flat fills, upper-left light, rim and ink) into a sheet per monster with the poses the renderer looks up (walk, idle, windup, strike, hurt, dead, cast,
   aim/release, lit, paw/charge/dazed, rise; slam/roar/smash for bosses). `render/monsterSprites.ts` packs the sheets into the atlas's **monster band** and

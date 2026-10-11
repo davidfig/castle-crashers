@@ -28,8 +28,12 @@ import { drawLevelUp } from './levelup';
 import { drawBoonPops, drawBoonStrip } from './boonHud';
 import { drawMercy } from './mercy';
 import { heroFrame } from './hero';
+import { drawBag, drawTotems } from './totems';
+import { CANNON_SHOT } from '../data/totems';
+import { CANNON_FLAG } from '../sim/totems';
 import { mobPose } from './mobArt';
 import { heldOf, shadowSize } from './mobStyle';
+import { MELEE_HELD } from '../data/monsterLook';
 import { activeBestiary } from '../data/bestiary';
 import type { FrameStats } from '../platform/perf';
 import type { RoadCast } from './roadCast';
@@ -262,7 +266,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const ix = lerp(e.px[i], e.x[i], alpha);
     const sx = ix - camX;
     if (sx < -20 || sx > VIEW_W + 20) continue;
-    if (e.kind[i] === Kind.Coin || e.kind[i] === Kind.Potion || e.kind[i] === Kind.Zone || e.kind[i] === Kind.Chest || e.kind[i] === Kind.Shrine) continue; // pickups and ground zones are drawn in their own passes
+    if (e.kind[i] === Kind.Coin || e.kind[i] === Kind.Potion || e.kind[i] === Kind.Zone || e.kind[i] === Kind.Chest || e.kind[i] === Kind.Shrine || e.kind[i] === Kind.Totem) continue; // pickups and ground zones are drawn in their own passes
     if (e.kind[i] === Kind.Mob && (e.flags[i] & 2) && e.y[i] < 0) continue; // climbing the far side of the hill: drawn earlier
     const yb = Math.min(WORLD_H, Math.max(0, Math.floor(e.y[i]))) + 1;
     bucket[yb]++;
@@ -369,6 +373,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     }
   }
 
+  drawTotems(b, S, s, camX, oy, alpha);
+
   // --- the cleric's aura: while it is on, a ring of holy light turns steadily on the ground around her (the damage is continuous, see sim/step.ts)
   for (const pl of s.players) {
     if (!pl.active || pl.downed || !pl.auraOn) continue;
@@ -426,7 +432,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       const dx = e.vx[i] / vl, dy = e.vy[i] / vl;
       // A player's projectile (sub = 1 + slot) is drawn by its class's shot: a fireball for splash shots, a golden arrow otherwise.
       const owner = e.sub[i] > 0 ? s.players[e.sub[i] - 1] : null;
-      const shot = owner ? ((e.flags[i] & 4) ? CLASSES[owner.classId].specialShot : CLASSES[owner.classId].shot) : null;
+      const shot = owner ? ((e.flags[i] & CANNON_FLAG) ? CANNON_SHOT : (e.flags[i] & 4) ? CLASSES[owner.classId].specialShot : CLASSES[owner.classId].shot) : null;
       if (shot && shot.splash && (e.flags[i] & 4)) {
         // the mage's great fireball: a big, slow, flickering orb with a smoky ember trail
         const flick = ((s.tick >> 1) + i) & 1;
@@ -597,6 +603,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       }
       // overhead hp + ability pips
       const cls = CLASSES[p.classId];
+      if (cls.totems) drawBag(b, S, s, sx, sy - H.top - 24, slot);
       bar(b, S, Math.round(sx - 8), Math.round(sy - H.top - 6), 16, 2, e.hp[i] / cls.hp, 0x4fd05a);
       // Stamina: only shown while it is not full (or the hero is winded), so a rested hero stays uncluttered.
       if (p.stamina < cls.staminaMax - 0.5 || p.winded) {
@@ -1396,7 +1403,7 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
   // Animated weapons.
   const pivotX = sx + face * (f.w / 2 - 2) + ox, pivotY = sy - f.h * 0.5 + oy + drop;
   const held = heldOf(type);
-  if (held === 'sword' || held === 'club' || held === 'axe' || held === 'spear') {
+  if (MELEE_HELD.has(held)) {
     // The weapon is baked into the body frames (mobPose picks the windup/strike pose); only the swing trail is drawn here,
     // fanned out from the hand.
     const big = def.radius >= 5;
@@ -1426,7 +1433,7 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
 }
 
 /**
- * The boss: its own detailed sheet (art/chars/boss.mjs), authored poses for each move, plus code tells.
+ * The boss: authored poses for each move, plus code tells.
  * Modes (see step.ts): 1 charge windup, 2 charging, 3 ground slam, 4 war cry, 5 club smash.
  */
 function drawBoss(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: number, sx: number, sy: number, flip: boolean, hurtFlash: number): void {

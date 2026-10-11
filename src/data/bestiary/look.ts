@@ -1,10 +1,12 @@
 // From a generated monster's stats and powers to the recipe for its picture (`MonsterLook`): a monster that shoots carries a bow,
 // one that casts carries a staff, a flame-wreathed one is hot-coloured, a charger has horns. The body plan and the colours are
-// otherwise dice, softened by a per-biome-per-run colour family so a biome's monsters read as kin. They do not have to make sense.
+// otherwise dice, softened by a per-biome-per-run colour family so a biome's monsters read as kin. They are creatures of a fantasy bestiary (species.ts), not a dice roll over parts.
 import { Behavior, ProjStyle, type MobDef } from '../mobs';
-import type { BackKind, Build, CrownKind, HeadKind, HeldKind, LimbKind, MonsterLook, MonsterPalette, Motif } from '../monsterLook';
+import type { BackKind, CrownKind, HeldKind, MonsterLook, MonsterPalette, Motif } from '../monsterLook';
 import { ELEMENTS } from '../elements';
 import { Dice, clamp } from './rand';
+import { SPECIES, speciesWeight, type Species } from './species';
+import { FROZEN } from './traits';
 
 /** The colour family one biome's monsters share in one run. */
 export interface Faction {
@@ -41,137 +43,98 @@ export interface LookInput {
   motifs: readonly Motif[];
   boss: boolean;
   faction: Faction;
+  /** The biome it lives in (ROSTERS order). */
+  biome: number;
+  /** Species already in this run's cast (counted), so the cast stays varied; updated as monsters are made. */
+  seen?: Map<string, number>;
   /** 0..1 position in the biome's roster (a boss is 1). */
   u: number;
   /** The elements its powers are made of, the one it leans on first (none: a plain brawler). They set its colours, its eyes and its motifs. */
   elements?: readonly number[];
 }
 
-const has = (m: readonly Motif[], x: Motif): boolean => m.includes(x);
-
-function paletteFor(d: Dice, f: Faction, motifs: readonly Motif[], size: number, elements: readonly number[] = []): MonsterPalette {
-  let h = d.pick(f.hues) + d.range(-14, 14);
-  let s = f.sat + d.range(-0.08, 0.1);
-  let l = f.light + (size < 11 ? 0.08 : size > 20 ? -0.04 : 0) + d.range(-0.05, 0.06);
-  let eye = hsl(d.pick([0, 48, 180, 300, 90]), 0.9, 0.58);
-  const roll = d.f();
-  if (elements.length > 0 && roll < 0.85) {
-    // made of an element: its hue, its glow in the eyes, and the second element (if any) in the trim
-    const def = ELEMENTS[elements[0]];
-    h = def.hue + d.range(-10, 10);
-    s = elements[0] === 6 || elements[0] === 8 ? 0.45 : d.range(0.5, 0.7);
-    l = (elements[0] === 5 ? 0.3 : elements[0] === 2 || elements[0] === 6 || elements[0] === 8 ? 0.58 : 0.4) + (size < 11 ? 0.06 : 0) + d.range(-0.04, 0.05);
-    eye = def.glow;
-    const base = hsl(h, s, l);
-    const trim = ELEMENTS[elements[1] ?? elements[0]];
-    const accent = elements.length > 1 ? trim.core : hsl(h + d.pick([-40, 35, 180]), clamp(s + 0.1, 0.3, 0.8), clamp(l + d.range(0.05, 0.18), 0.3, 0.75));
-    const metal = f.warmMetal ? hsl(d.range(24, 40), 0.35, 0.52) : hsl(d.range(205, 225), 0.14, 0.6);
-    return { base, accent, eye, metal };
-  }
-  if (has(motifs, 'fire') && roll < 0.7) { h = d.range(4, 34); s = 0.7; l = 0.42; eye = hsl(d.range(40, 56), 1, 0.62); }
-  else if (has(motifs, 'frost') && roll < 0.7) { h = d.range(185, 220); s = 0.5; l = 0.6; eye = hsl(190, 0.9, 0.8); }
-  else if (has(motifs, 'poison') && roll < 0.65) { h = d.range(80, 135); s = 0.5; l = 0.4; eye = hsl(d.range(70, 95), 1, 0.6); }
-  else if ((has(motifs, 'bones') || has(motifs, 'bandage')) && roll < 0.7) { h = d.range(35, 55); s = 0.18; l = 0.74; eye = hsl(d.pick([0, 280]), 0.8, 0.5); }
-  else if (has(motifs, 'ghost') && roll < 0.7) { h = d.range(200, 270); s = 0.25; l = 0.7; eye = hsl(d.pick([170, 300]), 0.9, 0.75); }
-  else if (has(motifs, 'stone') && roll < 0.7) { h = d.range(20, 50); s = 0.1; l = 0.46; }
+/** Natural colours for the creature (or the biome's cloth for robed ones); an element lights the eyes and trims it, and only tints a body made of it. */
+function paletteFor(d: Dice, f: Faction, sp: Species, biome: number, elements: readonly number[] = []): MonsterPalette {
+  const el = elements.length > 0 ? ELEMENTS[elements[0]] : null;
+  let h = sp.cloth ? d.pick(f.hues) + d.range(-10, 10) : d.range(sp.hue[0], sp.hue[1]);
+  let s = sp.cloth ? f.sat * 0.8 : d.range(sp.sat[0], sp.sat[1]);
+  let l = sp.cloth ? clamp(f.light - 0.06, 0.28, 0.42) : d.range(sp.light[0], sp.light[1]);
+  // a frozen land bleaches fur and hide; a dry one scorches it
+  if (biome === FROZEN && !sp.cloth && sp.id !== 'skeleton' && sp.id !== 'yeti') { l = Math.min(0.82, l + 0.14); s *= 0.7; h = h * 0.6 + 205 * 0.4; }
+  const natural = { h, s, l };
+  if (el && (sp.tint || elements[0] === 5 && sp.id === 'sprite')) { h = el.hue + d.range(-10, 10); s = elements[0] === 6 || elements[0] === 8 ? 0.45 : d.range(0.5, 0.7); l = elements[0] === 5 ? 0.3 : elements[0] === 2 || elements[0] === 6 || elements[0] === 8 ? 0.58 : 0.45; }
+  else if (el && sp.id === 'slime') { h = el.hue + d.range(-12, 12); s = Math.max(s, 0.45); l = clamp(l, 0.4, 0.58); }
+  else if (el && sp.id === 'golem') { h = natural.h; s = natural.s; l = natural.l; }
   const base = hsl(h, s, l);
-  const accent = hsl(h + d.pick([-50, 40, 150, 180, 210]), clamp(s + 0.1, 0.3, 0.8), clamp(l + d.range(-0.05, 0.16), 0.3, 0.72));
+  const eye = el ? el.glow : hsl(d.pick(sp.id === 'skeleton' || sp.id === 'zombie' || sp.id === 'wraith' ? [0, 280, 160] : [48, 40, 0, 90, 20]), 0.9, 0.58);
+  // trim: the second element's colour, else a natural contrast (a belly, a cloak lining)
+  let accent: number;
+  if (elements.length > 1) accent = ELEMENTS[elements[1]].core;
+  else if (el && (sp.tint || d.chance(0.55))) accent = el.core;
+  else accent = hsl(natural.h + d.pick(sp.trim), clamp(natural.s + 0.1, 0.2, 0.7), clamp(natural.l + d.range(0.08, 0.2), 0.3, 0.78));
   const metal = f.warmMetal ? hsl(d.range(24, 40), 0.35, 0.52) : hsl(d.range(205, 225), 0.14, 0.6);
   return { base, accent, eye, metal };
 }
 
-function heldFor(d: Dice, def: MobDef, traits: ReadonlySet<string>, boss: boolean, limbs: LimbKind): HeldKind {
-  if (def.behavior === Behavior.Bomber) return 'bomb';
-  if (limbs === 'many' || limbs === 'none') return def.behavior === Behavior.Caster && d.chance(0.6) ? 'orb' : 'none';
-  if (def.behavior === Behavior.Caster) return d.pick(['staff', 'staff', 'orb', 'orb', 'none']);
+function heldFor(d: Dice, def: MobDef, traits: ReadonlySet<string>, sp: Species, boss: boolean): HeldKind {
+  const hands = sp.limbs === 'biped';
+  if (def.behavior === Behavior.Bomber) return 'bomb'; // the lit-fuse pose needs one in hand (a bloat or a skull carries it on its back)
+  if (!hands) return def.behavior === Behavior.Caster && sp.build[0] === 'floater' && d.chance(0.4) ? 'orb' : 'none';
+  if (def.behavior === Behavior.Caster) return d.pick<HeldKind>(['staff', 'staff', 'orb', 'none']);
   if (def.behavior === Behavior.Ranged) {
     switch (def.shot?.style) {
       case ProjStyle.Harpoon: return 'spear';
-      case ProjStyle.Glob: return d.pick(['sling', 'none']);
+      case ProjStyle.Glob: return 'sling';
       case ProjStyle.Falcon: return 'none';
-      case ProjStyle.Orb: case ProjStyle.Mote: return d.pick(['orb', 'staff', 'orb', 'none']);
-      case ProjStyle.Spike: case ProjStyle.Comet: return 'bow';
-      case ProjStyle.Fire: return d.pick(['bow', 'orb']);
+      case ProjStyle.Orb: case ProjStyle.Mote: return d.pick<HeldKind>(['orb', 'staff', 'orb']);
       default: return 'bow';
     }
   }
   if (traits.has('shield')) return 'shield';
-  if (limbs === 'quad' && !boss) return d.chance(0.15) ? 'club' : 'none';
-  return d.weighted<HeldKind>(['club', 'sword', 'axe', 'spear', 'none'], (k) => (k === 'none' ? 1.2 : 2)) ?? 'club';
+  return d.pick(sp.held);
 }
 
-/** Builds the look. Every choice is the dice's, nudged by what the monster is and does. */
+/** Builds the look: picks the creature it is, then dresses it the way that creature is, tinted by what its powers are made of. */
 export function lookFor(d: Dice, inp: LookInput): MonsterLook {
   const { def, traits, motifs, boss, faction } = inp;
   const r = def.radius;
   const size = boss ? Math.round(d.range(46, 58)) : Math.round(clamp((r - 2) / 0.2 + d.range(-1.5, 2), 7, 26));
-  const tiny = size <= 10, big = size >= 18;
-  const caster = def.behavior === Behavior.Caster, ranged = def.behavior === Behavior.Ranged;
-
-  const build = d.weighted<Build>(['blob', 'tall', 'squat', 'wedge', 'round', 'serpent', 'insect', 'floater'], (b) => {
-    let w = 1;
-    if (has(motifs, 'ghost') && b === 'floater') w += 4;
-    if (traits.has('burrow') && b === 'serpent') w += 6;
-    if ((traits.has('hop') || traits.has('spores')) && (b === 'round' || b === 'squat' || b === 'blob')) w += 2;
-    if (tiny && (b === 'insect' || b === 'blob')) w += 2;
-    if (tiny && (b === 'serpent' || b === 'tall')) w -= 0.5;
-    if (big && (b === 'squat' || b === 'tall' || b === 'wedge')) w += 2;
-    if (big && (b === 'insect' || b === 'floater' || b === 'serpent')) w -= 0.6;
-    if (caster && (b === 'tall' || b === 'floater')) w += 2;
-    if (ranged && (b === 'tall' || b === 'wedge')) w += 1.5;
-    if (def.behavior === Behavior.Bomber && (b === 'round' || b === 'blob' || b === 'insect')) w += 2;
-    if (traits.has('weave') && (b === 'wedge' || b === 'insect')) w += 1.5;
-    if (boss && (b === 'insect' || b === 'serpent' || b === 'blob')) w -= 0.8;
-    return w;
-  })!;
-
-  const limbs: LimbKind = build === 'floater' ? (d.chance(0.35) ? 'tentacles' : 'none')
-    : build === 'serpent' ? 'none'
-    : build === 'insect' ? 'many'
-    : (build === 'wedge' || traits.has('pack') || traits.has('weave') || traits.has('charge')) && !boss && d.chance(0.65) ? 'quad'
-    : build === 'blob' ? d.pick<LimbKind>(['biped', 'quad', 'none', 'none'])
-    : d.chance(boss ? 0.15 : 0.25) ? 'quad' : 'biped';
-
-  const held = heldFor(d, def, traits, boss, limbs);
-  const arms: 0 | 1 | 2 = limbs === 'many' || build === 'serpent' ? 0 : held === 'none' ? (limbs === 'biped' ? 2 : 0) : held === 'shield' || held === 'bow' || held === 'sling' ? 2 : d.pick<1 | 2>([1, 2, 2]);
-
-  const head: HeadKind = build === 'blob' && d.chance(0.35) ? 'none'
-    : has(motifs, 'bones') && d.chance(0.6) ? 'skull'
-    : caster && d.chance(0.5) ? 'hood'
-    : (traits.has('armor') || traits.has('shield')) && d.chance(0.5) ? 'helm'
-    : (traits.has('drain') || traits.has('spores')) && d.chance(0.4) ? 'maw'
-    : limbs === 'quad' && d.chance(0.6) ? 'beast'
-    : d.weighted<HeadKind>(['round', 'skull', 'beast', 'horned', 'cyclops', 'maw', 'hood', 'helm'], (h) => (h === 'round' ? 2.5 : h === 'cyclops' ? 0.8 : 1))!;
-
-  const crown: CrownKind = traits.has('charge') || traits.has('launch') || traits.has('berserk') ? d.pick<CrownKind>(['horns', 'horns', 'antlers'])
-    : traits.has('heal') || traits.has('ward') ? 'halo'
-    : boss || traits.has('rally') || traits.has('summon') ? d.pick<CrownKind>(['crown', 'horns', 'crest'])
-    : build === 'insect' ? 'antenna'
-    : d.weighted<CrownKind>(['horns', 'antlers', 'ears', 'crest', 'antenna', 'none'], (c) => (c === 'none' ? 3 : 1))!;
-
+  const sp = d.weighted(SPECIES, (x) => speciesWeight(x, { role: def.behavior, biome: inp.biome, size, boss, traits, motifs, seen: inp.seen })) ?? SPECIES[0];
+  inp.seen?.set(sp.id, (inp.seen.get(sp.id) ?? 0) + 1);
+  const picked = d.pick(sp.build);
+  // a squat boss in armour, or a squat giant on four legs, reads as a dome: stand it up
+  const build = boss && sp.id === 'knight' ? 'tall' : picked === 'squat' && size >= 24 && sp.limbs === 'quad' ? 'wedge' : picked;
+  const limbs = sp.limbs;
+  const held = heldFor(d, def, traits, sp, boss);
+  const arms: 0 | 1 | 2 = limbs !== 'biped' ? 0 : held === 'none' ? 2 : held === 'shield' || held === 'bow' || held === 'sling' ? 2 : d.pick<1 | 2>([1, 2, 2]);
+  const head = d.pick(sp.head);
+  // what its powers need shows on top of its kind: a charger is horned, a healer haloed, a flame-wreathed one burns
+  const crown: CrownKind = (traits.has('heal') || traits.has('ward')) && !boss && sp.id !== 'skeleton' ? 'halo'
+    : (traits.has('charge') || traits.has('launch')) && sp.crown.includes('horns') ? 'horns'
+    : boss ? (sp.crown.includes('horns') ? 'horns' : sp.crown.includes('crown') ? 'crown' : d.pick<CrownKind>(['crown', ...sp.crown]))
+    : d.pick(sp.crown);
   const back: BackKind = traits.has('flame') ? 'flame'
-    : traits.has('gust') || traits.has('blink') || traits.has('falcon') ? d.pick<BackKind>(['wings', 'wings', 'cape'])
-    : traits.has('thorns') || traits.has('berserk') ? 'spikes'
-    : (traits.has('armor') || build === 'round') && d.chance(0.5) ? 'shell'
-    : caster && d.chance(0.5) ? 'cape'
-    : build === 'serpent' ? d.pick<BackKind>(['fins', 'none', 'spikes'])
-    : limbs === 'quad' && d.chance(0.6) ? 'tail'
-    : d.weighted<BackKind>(['wings', 'tail', 'shell', 'spikes', 'cape', 'tentacles', 'fins', 'none'], (b) => (b === 'none' ? 4 : b === 'tentacles' || b === 'fins' ? 0.5 : 1))!;
+    : (traits.has('gust') || traits.has('falcon')) && !sp.back.includes('wings') && limbs === 'biped' && sp.stout[1] < 1.2 ? 'wings'
+    : traits.has('thorns') && limbs !== 'none' && build !== 'serpent' ? 'spikes'
+    : traits.has('armor') && sp.build.includes('squat') && d.chance(0.4) ? 'shell'
+    : d.pick(sp.back);
+  const eyes = d.int(sp.eyes[0], sp.eyes[1]);
+  const teeth = sp.teeth && def.behavior !== Behavior.Caster;
+  const jaw = d.pick(sp.jaw), pattern = d.pick(sp.pattern);
+  // a boss dresses for it
+  const worn = boss && sp.worn.includes('pauldron') && d.chance(0.5) ? 'pauldron' : d.pick(sp.worn);
 
-  const eyes = head === 'cyclops' ? 1 : build === 'insect' || (build === 'floater' && d.chance(0.4)) ? d.int(2, 4) : build === 'blob' ? d.int(1, 3) : d.chance(0.12) ? 3 : 2;
-  const teeth = !caster && !ranged && d.chance(0.5);
-
-  const all = [...motifs];
-  if (all.length < 2 && d.chance(0.35)) all.push(d.pick<Motif>(['fur', 'stone', 'slime', 'glow', 'armor', 'bones', 'thorns', 'bandage']));
-  const uniq = [...new Set(all)].slice(0, 3);
+  // species' own tells, then what its powers add
+  const uniq = [...new Set<Motif>([...sp.motifs, ...motifs.filter((m) => !(sp.id === 'skeleton' && m === 'bandage'))])].slice(0, 3);
+  const stout = Math.round(d.range(sp.stout[0], sp.stout[1]) * (boss ? 1.05 : 1) * 100) / 100;
 
   return {
     seed: d.u32(),
-    size,
-    stout: Math.round(d.range(boss ? 0.95 : 0.78, boss ? 1.3 : traits.has('armor') || traits.has('shield') ? 1.45 : 1.3) * 100) / 100,
-    build, head, limbs, arms, back, crown, held, eyes, teeth,
+    kind: sp.id,
+    size, stout,
+    build, head, limbs, arms, back, crown, held, pattern, jaw, worn, eyes, teeth,
     motifs: uniq,
-    palette: paletteFor(d, faction, uniq, size, inp.elements),
+    palette: paletteFor(d, faction, sp, inp.biome, inp.elements),
     boss,
   };
 }

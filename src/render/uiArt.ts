@@ -1,7 +1,7 @@
 // The UI kit's sprites (docs/13-ui-art.md): the story font, panel corner flourishes, a cursor, a star, a divider and the 9x9
 // icons. Procedural, defined as text bitmaps like the rest of the placeholder art and packed into the atlas at startup, so
 // they can be replaced by drawn art without touching a screen: screens only call the helpers in ui.ts.
-// Colours are the "Glass" palette (art/palette.mjs): lead outline, gold leaf, vellum, lapis, crimson.
+// Colours: lead outline, gold leaf, vellum, lapis, crimson.
 import type { Frame } from '../platform/gl/batcher';
 import { glyphWidth, GLYPH_H, STORY_GLYPHS } from '../data/storyFont';
 import { TITLE_LINES } from '../data/title';

@@ -28,6 +28,8 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 | [17 Generated Scenery](17-generated-scenery.md) | Per-run generated biomes, the road that turns one into the next over a long stretch, the painter and the atlas band |
 | [18 Shaman and Totems](18-shaman-and-totems.md) | Design for the shaman (no damage of its own, fights through planted totems): the totem bag controls, scaling through the class tree, solo and co-op |
 | [19 Generated Humans](19-generated-humans.md) | Per-run people for the story figures: offices, wardrobes, the court's livery, the sprite composer |
+| [20 Generated Heroes](20-generated-heroes.md) | Per-run player characters: a person per slot, always wearing their class's defining kit |
+| [21 The Road](21-the-road.md) | Proposed: a run as one long level: the starting town, a finite road of regions with forks and choices, save and continue at any moment (any party), joining mid-run, then generated places per region |
 | [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster) |
 | [Open Questions](open-questions.md) | Things we haven't decided |
 | [Decisions (ADRs)](decisions/README.md) | Log of decisions and why |

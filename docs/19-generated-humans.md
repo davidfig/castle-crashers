@@ -2,8 +2,8 @@
 
 The people of the story (the Registrar, the King, the Herald, the Captain, the Elder and the peddler) are **built from the run seed**: the same
 run always has the same faces and clothes, the next run has new people in the same offices. A run's King might be a stout bearded man in
-green with a fur collar; the next, a tall clean-shaven woman in crimson with a circlet. They fill the same slots as the hand-made figures,
-so road scenes, quest givers and the story screens use them with no other change.
+green with a fur collar; the next, a tall clean-shaven woman in crimson with a circlet. They fill the same slots the hand-made figures once did,
+so road scenes, quest givers and the peddler's stall use them with no other change.
 
 ```
 run seed ──► generateFolk(seed) ──► Folk { livery, looks[NpcName] }
@@ -23,12 +23,12 @@ run seed ──► generateFolk(seed) ──► Folk { livery, looks[NpcName] }
   (spectacles, chain, sash, pauldrons, pack, apron...), face (eye spacing, brow, nose) and a six-colour palette (skin, hair, cloth, accent, trim, leather).
 - **Sprites** (`render/humanArt.ts`). Composed at run start from the shared pixel kit (`render/pixelKit.ts`: shaded ellipses, rects, lines, polygons, ASCII
   stamps, the rim-and-ink post pass, the sheet packer; the monster composer uses the same). Four-frame `idle` (breathe, blink) and `talk` (mouth, a
-  raised hand) loops, the shape of the hand-made NPC sheets, so `npcArt.ts` and every consumer read them unchanged.
+  raised hand) loops, the shape the old hand-made NPC sheets had, so `npcArt.ts` and every consumer read them unchanged.
 
 - **Names** (`data/humans/names.ts`). Each figure gets a personal name built from syllables in their office's own sound (nobles long and grand, captains short and
   hard, heralds light, elders old-fashioned), unique within the run: `Folk.names`. The quest givers show them with their office (LORD ALDRIC in the hand-made
   roster, LORD <name> in a run; the Registrar stays THE REGISTRAR). Text reads them through `npcName` in `data/quests.ts`, which falls back to the hand-made names
-  when no folk are installed (tests, `?folk=classic`).
+  when no folk are installed (tests).
 
 ## Determinism
 
@@ -41,9 +41,8 @@ people of one office, each a pure function of `(seed, role, n)`: the hook for cr
 | | |
 |---|---|
 | `node tools/folk-sheet.mjs --seeds 1,2,3 --scale 8 --out folk.png` | contact sheet: a row of the six story figures per seed (`--extra N` adds commoners, `--anim talk`, `--frames`) |
-| `?folk=classic` (dev) | keep the hand-made figures from the art workbench |
 
 ## Not yet
 
 Figures are only the six story slots; titles ("A NOBLE") and the quests' ask text are fixed, and road-scene speech still names offices, not people; no walk or combat poses (a freed captive hops,
-the ward is a still figure); the hand-made art stays for the art workbench screens.
+the ward is a still figure). The hand-made NPC rigs have been deleted.

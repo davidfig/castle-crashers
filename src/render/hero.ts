@@ -1,23 +1,18 @@
-// Hero sprites from the art workbench (art/chars/*.mjs -> art/out/*, built by tools/art.mjs).
-// art.ts packs the four player-colour sheets into the atlas (heroSheets.ts loads them); this file maps game state to a frame.
+// Hero sprites: a run's generated heroes (heroArt.ts, docs/20-generated-heroes.md). heroSprites.ts packs their sheets into the atlas and builds the
+// sets; this file maps game state to a frame.
 import type { Frame } from '../platform/gl/batcher';
 import { CLASSES } from '../data/classes';
 import { REVIVE_TICKS } from '../sim/step';
 import type { GameState } from '../sim/state';
 import { SLASH_TICKS, type Fx } from './fx';
-import warriorMeta from '../../art/out/warrior.json';
-import mageMeta from '../../art/out/mage.json';
-import clericMeta from '../../art/out/cleric.json';
-import rogueMeta from '../../art/out/rogue.json';
-import archerMeta from '../../art/out/archer.json';
+import { HERO_CLASS_NAMES } from '../data/heroLook';
 
-/** Art for each class, in CLASSES order (see data/classes.ts). A class's art lives in art/chars/<name>.mjs. */
-export const HERO_CLASSES = ['warrior', 'mage', 'cleric', 'rogue', 'archer'] as const;
-const HERO_METAS = [warriorMeta, mageMeta, clericMeta, rogueMeta, archerMeta] as unknown as HeroMeta[];
+/** Art for each class, in CLASSES order (see data/classes.ts). A run's heroes are generated (heroArt.ts, docs/20-generated-heroes.md). */
+export const HERO_CLASSES = HERO_CLASS_NAMES;
 /** Player colours per class sheet (one sheet per slot). */
 export const HERO_SLOTS = 4;
 
-interface HeroMeta {
+export interface HeroMeta {
   pivot: number[]; top: number; frames: Record<string, { x: number; y: number; w: number; h: number }>;
   anims: Record<string, { frames: string[]; ms: number[] }>;
 }
@@ -33,17 +28,22 @@ export interface HeroSet {
   anims: Record<string, HeroAnim>[];
 }
 
-/** places: one atlas placement per sheet, class-major then slot (HERO_CLASSES x HERO_SLOTS). Returns one set per class. */
-export function buildHeroSets(places: { x: number; y: number }[], atlasW: number, atlasH: number): HeroSet[] {
-  return HERO_METAS.map((meta, c) => {
+/**
+ * metas and places: one sheet and one atlas placement per (class, slot), class-major then slot (HERO_CLASSES x HERO_SLOTS). Returns one set per class.
+ * The four slots of a class must share one cell size and pivot (heroSprites.ts makes them).
+ */
+export function buildHeroSets(metas: HeroMeta[], places: { x: number; y: number }[], atlasW: number, atlasH: number): HeroSet[] {
+  return HERO_CLASSES.map((_, c) => {
+    const meta = metas[c * HERO_SLOTS];
     const anims = Array.from({ length: HERO_SLOTS }, (_, slot) => {
       const pl = places[c * HERO_SLOTS + slot];
+      const m = metas[c * HERO_SLOTS + slot];
       const out: Record<string, HeroAnim> = {};
-      for (const [name, a] of Object.entries(meta.anims)) {
+      for (const [name, a] of Object.entries(m.anims)) {
         out[name] = {
           ms: a.ms,
           frames: a.frames.map((fn) => {
-            const r = meta.frames[fn];
+            const r = m.frames[fn];
             return { u0: (pl.x + r.x) / atlasW, v0: (pl.y + r.y) / atlasH, u1: (pl.x + r.x + r.w) / atlasW, v1: (pl.y + r.y + r.h) / atlasH, w: r.w, h: r.h };
           }),
         };
@@ -92,6 +92,9 @@ export function heroFrame(set: HeroSet, s: GameState, fx: Fx, slot: number, movi
     const elapsed = REVIVE_TICKS - p.downTimer;
     return A.down.frames[elapsed < 10 ? 0 : elapsed < 20 ? 1 : 2];
   }
+
+  // The shaman plants: the cast pose plays across the plant's cooldown.
+  if (cls.totems && p.cdAttack > 0) return byProgress(A.cast, 1 - p.cdAttack / cls.totems.cooldown);
 
   // Ranged classes (the archer) have no swing: the shot animation runs off the fire cooldown. Each shot plays release -> follow ->
   // nock -> draw -> full draw over the ticks until the next one, so holding fire reads as a steady draw-and-loose.

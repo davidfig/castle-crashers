@@ -3,7 +3,7 @@ import { HEAT_NAMES } from '../data/heat';
 import { BEAT_BY_ID } from '../data/story/beats';
 import { chapterDef, FINAL_CHAPTER } from '../data/story/chapters';
 import { writLines, type Writ } from '../data/story/writs';
-import { boardGreeting, cityMood, CLASS_ORDER, registrarRemark, type Backdrop, type ClassName, type Scene } from '../data/story/hub';
+import { boardGreeting, cityMood, CLASS_ORDER, registrarAside, registrarRemark, type Backdrop, type ClassName, type Scene } from '../data/story/hub';
 import { CLASSES } from '../data/classes';
 import { storySafe } from '../data/storyFont';
 import { biomeIndex } from '../data/roster';
@@ -23,8 +23,6 @@ export interface SelectSlot { joined: boolean; ready: boolean; classId: number; 
 export interface PickCard { name: string; text: string[]; rank: number; icon: string; /** Border tier: 0 common, 1 rare, 2 legendary. */ tier: number }
 /** One player's panel at the camp: their pending picks, one card each for the level being chosen. */
 export interface PickLane { active: boolean; slot: number; name: string; level: number; pending: number; ready: boolean; cursor: number; cards: PickCard[] }
-/** A story figure standing beside the text, and whether they are speaking (their talk loop) or listening (idle). */
-export interface Figure { name: 'registrar' | 'peddler'; talking: boolean }
 export interface DoorView { biome: number; label: string; tag: string; icon: string }
 
 export type Screen =
@@ -33,8 +31,8 @@ export type Screen =
   | { kind: 'select'; header: string; sub: string; biome: number; slots: SelectSlot[]; footer: string }
   | { kind: 'board'; header: string; sub: string; mood: string; cards: Card[]; sel: number; footer: string }
   | { kind: 'title' }
-  | { kind: 'text'; header: string; body: Line[]; footer: string; figure?: Figure }
-  | { kind: 'scene'; header: string; backdrop: Backdrop; lines: Line[]; speaker: 'narrator' | 'registrar' | 'party'; voices: ClassName[]; party: string[]; /** Whether the Registrar is in the scene (he stands there only where he speaks). */ registrar: boolean; page: number; pages: number; footer: string };
+  | { kind: 'text'; header: string; body: Line[]; footer: string }
+  | { kind: 'scene'; header: string; backdrop: Backdrop; lines: Line[]; speaker: 'narrator' | 'registrar' | 'party'; voices: ClassName[]; party: string[]; page: number; pages: number; footer: string };
 
 /** The bitmap font has 0-9, A-Z and : . - / ! + ? only. */
 export function fontSafe(text: string): string {
@@ -81,8 +79,6 @@ export function boardScreen(l: Ledger, writs: readonly Writ[], sel: number, save
 
 /** Characters per wrapped line on a page (the story font advances about 5-6 px a character, the page is about 540 px wide). */
 const WHO_WIDTH = 84;
-/** Narrower when a figure stands beside the text. */
-const FIG_WIDTH = 66;
 
 /** The class voices in a party that have something to say in a scene line: party order first, then the usual order, at most two. */
 export function speakers(says: Partial<Record<ClassName, string>>, party: readonly string[]): ClassName[] {
@@ -118,7 +114,7 @@ export function sceneScreen(scene: Scene, party: readonly string[] = [], page = 
   const stand = party.length > 0 ? [...party] : ['warrior', 'cleric'];
   return {
     kind: 'scene', header: fontSafe(scene.title), backdrop: scene.backdrop, lines: p.lines, speaker: p.speaker, voices: p.voices,
-    party: stand.slice(0, 2), registrar: scene.lines.some((l) => l.who === 'registrar'), page, pages: pages.length, footer: page + 1 >= pages.length ? 'ATTACK TO FINISH' : 'ATTACK TO CONTINUE',
+    party: stand.slice(0, 2), page, pages: pages.length, footer: page + 1 >= pages.length ? 'ATTACK TO FINISH' : 'ATTACK TO CONTINUE',
   };
 }
 
@@ -149,23 +145,25 @@ export function summaryScreen(sum: RunSummary, cfg: RunConfig, before: Ledger, a
     body.push(ln(''), ln('Off the ledger. This run does not count.', 'dim'));
   } else {
     const epi = sum.outcome === 'won' ? epitaph(w) : [];
-    if (epi.length) { body.push(ln('')); for (const e of epi) for (const t of wrap(storySafe(e), FIG_WIDTH)) body.push({ text: t, tone: 'red' }); }
+    if (epi.length) { body.push(ln('')); for (const e of epi) for (const t of wrap(storySafe(e), WHO_WIDTH)) body.push({ text: t, tone: 'red' }); }
     const played = after.beatsSeen.filter((id) => !before.beatsSeen.includes(id));
     for (const id of played) {
       const b = BEAT_BY_ID[id];
       if (!b) continue;
       body.push(ln(''), ln(`Story: ${b.title}`, 'gold'));
-      for (const t of wrap(storySafe(b.summary), FIG_WIDTH)) body.push({ text: t, tone: 'normal' });
+      for (const t of wrap(storySafe(b.summary), WHO_WIDTH)) body.push({ text: t, tone: 'normal' });
     }
     body.push(ln(''));
-    for (const t of registrarRemark(after.campaignSeed ^ Math.imul(after.runs + 7, 0x85ebca6b), { chapter: w.chapter, outcome: sum.outcome, spared, betrayed: sum.betrayed })) {
-      for (const l of wrap(storySafe(`Registrar: ${t}`), FIG_WIDTH)) body.push({ text: l, tone: 'gold' });
+    const remarkSeed = after.campaignSeed ^ Math.imul(after.runs + 7, 0x85ebca6b);
+    const aside = registrarAside(remarkSeed, w.chapter);
+    for (const t of [...registrarRemark(remarkSeed, { chapter: w.chapter, outcome: sum.outcome, spared, betrayed: sum.betrayed }), ...(aside ? [aside] : [])]) {
+      for (const l of wrap(storySafe(`Registrar: ${t}`), WHO_WIDTH)) body.push({ text: l, tone: 'gold' });
     }
     if (after.chapter > before.chapter) {
       body.push(ln(''), ln(after.chapter > FINAL_CHAPTER ? 'The campaign is complete.' : `Chapter ${ROMAN[after.chapter - 1]} begins: ${chapterDef(after.chapter).name}`, 'gold'));
     }
   }
-  return { kind: 'text', header, body, footer: 'ATTACK TO CONTINUE', figure: sum.offLedger ? undefined : { name: 'registrar', talking: true } };
+  return { kind: 'text', header, body, footer: 'ATTACK TO CONTINUE' };
 }
 
 /** What each class is for, shown on the character select (docs/04-classes-progression.md, "What each class is best at"): a headline, then how. */
@@ -175,6 +173,7 @@ export const BLURB: Record<string, string[]> = {
   cleric: ['KEEPS ALLIES ALIVE', 'ATTACK TOGGLES AURA', 'AURA HURTS ALL NEAR', 'DODGE HEALS PARTY'],
   rogue: ['BURST FROM BEHIND', 'UNSEEN UNTIL HE STRIKES', 'AMBUSH: HUGE SWEEP', 'BACKSTAB: 2.5X'],
   archer: ['SNIPER', 'FAR SHOTS HIT HARDER', 'ARROW FAN AND RAIN', 'STAY BACK'],
+  shaman: ['TOTEMS DO THE FIGHTING', 'STONE EMBER CANNON', 'HOLD ALT: MORE TOTEMS', 'ONLY TOTEMS HURT'],
 };
 
 export interface LobbySlot { joined: boolean; ready: boolean; classId: number }

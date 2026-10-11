@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Level Walk</title>
+<style>
+  :root { --bg:#14121a; --panel:#1d1a25; --line:#322d3f; --fg:#e6e0d4; --dim:#8d8697; --acc:#e8873a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display:block; background:#000; }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:14px; margin:0 12px 0 0; letter-spacing:.08em; text-transform:uppercase; color:var(--acc); }
+  header a { color:var(--dim); }
+  select, button, input { background:var(--panel); color:var(--fg); border:1px solid var(--line); padding:4px 8px; font:inherit; border-radius:3px; cursor:pointer; }
+  input[type=number] { width:11ch; cursor:text; }
+  button.on { border-color:var(--acc); color:var(--acc); }
+  label { color:var(--dim); display:flex; gap:6px; align-items:center; }
+  main { padding:16px; }
+  #bar { display:flex; gap:12px; align-items:center; margin-top:10px; }
+  #scrub { flex:1; padding:0; accent-color:var(--acc); }
+  #info { color:var(--dim); min-width:34ch; text-align:right; }
+  .note { color:var(--dim); margin:8px 0 0; }
+  #err { color:#ff7b6b; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Level Walk</h1>
+  <a href="/art/mobs.html">monsters</a>
+  <a href="/art/heroes.html">heroes</a>
+  <a href="/art/screens.html">screens</a>
+  <label>seed <input type="number" id="seed" min="0" step="1"></label>
+  <label>level <select id="level"></select></label>
+  <button id="prev" title="[">&lt;</button>
+  <button id="next" title="]">&gt;</button>
+  <label>weather <select id="weather">
+    <option value="">road's own</option><option value="none">clear</option><option>rain</option><option>rain,lightning</option>
+    <option>snow</option><option>fog</option><option>sandstorm</option>
+  </select></label>
+  <label>speed <select id="speed"><option>0.5</option><option selected>1</option><option>2</option><option>4</option><option>8</option></select></label>
+  <label>zoom <select id="zoom"><option>1</option><option selected>2</option><option>3</option></select></label>
+  <button id="play" title="space">pause</button>
+  <button id="skip" title="s">skip stop</button>
+  <span id="err"></span>
+</header>
+<main>
+  <canvas id="game" width="1280" height="720" style="width:1280px;height:720px"></canvas>
+  <div id="bar"><input type="range" id="scrub" min="0" max="1" step="1" value="0"><span id="info"></span></div>
+  <p class="note">The real renderer on a real level of the seed's road, with every monster removed. The hero walks on by itself and stops at the road scene
+    until the conversation has played (<b>skip stop</b> / <b>s</b> walks on). Drag the bar to jump along the level. <b>space</b> pause, <b>[</b> <b>]</b> previous / next level,
+    <b>←</b> <b>→</b> nudge. Levels are the seed's 9-level road, so the biomes turn along it. <code>?seed=N&amp;level=N</code> are remembered in the URL.</p>
+</main>
+<script type="module" src="/art/walk.js"></script>
+<script src="/art/nav.js"></script>
+</body>
+</html>

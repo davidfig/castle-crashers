@@ -13,7 +13,7 @@ import { LINE_H, storyWidth } from '../data/storyFont';
 import { CLASSES } from '../data/classes';
 import { drawBackdrop, SCENE_FLOOR, STAGE } from './sceneArt';
 import { npcFrame } from './npcArt';
-import { TIER_BORDER, drawCard, drawCursor, drawDivider, drawIcon, drawNpc, drawPanel, drawShadow, drawStory, PAGE_TONE } from './ui';
+import { TIER_BORDER, drawCard, drawCursor, drawDivider, drawIcon, drawPanel, drawShadow, drawStory, PAGE_TONE } from './ui';
 import { GLASS } from './uiArt';
 import { drawTitle, promptOn } from './titleArt';
 
@@ -205,12 +205,6 @@ function drawPage(b: Batcher, S: Sprites, scr: Extract<Screen, { kind: 'text' }>
     if (l.text) drawStory(b, S, l.text, x + 22, ty, PAGE_TONE[l.tone]);
     ty += LINE_H;
   }
-  if (scr.figure) {
-    // the speaker stands on the page's right, over a little dais of gold rule
-    const fx = x + w - 84, fy = y + h - 44;
-    b.drawScaled(S.px, fx - 40, fy + 1, 80, 1, hex(GLASS.g));
-    drawNpc(b, S, scr.figure.name, fx, fy, 4, scr.figure.talking, tick);
-  }
   if (promptOn(tick)) drawText(b, S, scr.footer, Math.round(VIEW_W / 2 - scr.footer.length * 2), y + h - 16, hex(GLASS.b));
 }
 
@@ -242,7 +236,6 @@ function drawScene(b: Batcher, S: Sprites, scr: Extract<Screen, { kind: 'scene' 
     drawShadow(b, S, x, feet, 1, 1, PLAYER_COLORS[i % PLAYER_COLORS.length]);
     b.draw(f, x - H.pivotX, feet - H.pivotY + bob);
   });
-  if (scr.registrar) drawNpc(b, S, 'registrar', stage.registrar, feet, 1, scr.speaker === 'registrar', tick);
   // the talk
   const px = 20, py = 262, pw = VIEW_W - 40, ph = 92;
   drawPanel(b, S, px, py, pw, ph, { fill: 'ink' });

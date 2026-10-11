@@ -192,7 +192,7 @@ export function post(s: Spr, ink: number): Spr {
 }
 
 
-/** A sheet's metadata, in the shape of the game's own sheet json (tools/art.mjs writes the same to art/out/<name>.json). */
+/** A sheet's metadata, in the shape of the game's own sheet json (the shape the sprite sheets have always used). */
 export interface SheetMeta {
   frames: Record<string, { x: number; y: number; w: number; h: number }>;
   anims: Record<string, { frames: string[] }>;
@@ -202,16 +202,16 @@ export interface BuiltSheet { width: number; height: number; rgba: Uint8ClampedA
 /**
  * Packs finished sprites into one sheet. Frames whose anims share a group (`groupOf`) share a cell size: each cell is centred on the
  * character's centre line with the ground on its bottom row and only as big as the group's largest frame (at most maxW x maxH); identical
- * frames of a group share one rect.
+ * frames of a group share one rect. `min` makes every cell at least that big (half-width E, rows above the ground), so sheets of one family share a pivot.
  */
-export function buildSheet(frames: { name: string; anim: string; spr: Spr }[], groupOf: (anim: string) => string, maxW: number, maxH: number): BuiltSheet {
+export function buildSheet(frames: { name: string; anim: string; spr: Spr }[], groupOf: (anim: string) => string, maxW: number, maxH: number, min?: { E: number; top: number }): BuiltSheet {
   const gOf = groupOf;
   // Cells: frames of one anim share a cell (anims of one group share it too, so identical frames can share a rect). Each cell is centred
   // on the character's centre line with the ground on its bottom row, and only as big as its largest frame.
   const groups = new Map<string, { E: number; top: number; frames: number[] }>();
   frames.forEach((f, i) => {
     const key = gOf(f.anim);
-    const g = groups.get(key) ?? { E: 1, top: 1, frames: [] };
+    const g = groups.get(key) ?? { E: min?.E ?? 1, top: min?.top ?? 1, frames: [] };
     g.E = Math.max(g.E, f.spr.ax, f.spr.w - f.spr.ax); g.top = Math.max(g.top, f.spr.gy);
     g.frames.push(i);
     groups.set(key, g);

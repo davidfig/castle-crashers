@@ -1,4 +1,6 @@
 // One fixed simulation tick. Pure function of (state, inputs); no platform access.
+import { actionOf, bagInput, biteTotem, canDo, actionCost, CANNON_FLAG, herd, plantTotem, shotHitsTotem, tauntOf, updateTotems } from './totems';
+import { CANNON_SHOT, HERDS } from '../data/totems';
 import { CLASSES, type ArrowDef, type ClassDef, type RainDef, type Swing } from '../data/classes';
 import { ARROW_DAMAGE, ARROW_SPEED, ARROW_TTL, BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, ProjStyle, MOBS, MobType, isBossType, type BossDef, type ChargeDef, type MobDef } from '../data/mobs';
 import { clamp, cosTurns, sinTurns } from '../engine/math';
@@ -21,6 +23,7 @@ import { activePlayers, hasBoss, partyScale, sceneHold, streamLevel } from './ge
 import { heatDamage, heatReward, heatSpeed } from '../data/heat';
 import { heroOffer } from './offers';
 import { onEliteDown, updateSites } from './sites';
+import { updateTrade } from './shop';
 import { biteCaptive, lureOf, questKill, settleQuest, shotHitsWard, updateQuest } from './quests';
 
 export const REVIVE_TICKS = 600;
@@ -102,6 +105,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
     return;
   }
 
+  if (s.store) updateTrade(s, inputs);
   if (s.hitStop > 0) {
     s.hitStop--;
     bufferInputs(s, inputs);
@@ -116,6 +120,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   updateProjectiles(s);
   updateZones(s);
   updateRain(s);
+  updateTotems(s);
   updateMobs(s);
   updateCoins(s);
   updatePotions(s);
@@ -169,6 +174,7 @@ function bufferInputs(s: GameState, inputs: InputFrame[]): void {
     if (pressed & Btn.Ability1) p.bufAbility1 = INPUT_BUFFER;
     if (pressed & Btn.Ability2) p.bufAbility2 = INPUT_BUFFER;
     if (pressed & Btn.Dodge) p.bufDodge = INPUT_BUFFER;
+    if (CLASSES[p.classId].totems) bagInput(p, CLASSES[p.classId], pressed, inp.buttons);
   }
 }
 
@@ -320,6 +326,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   if (p.bufAbility1 > 0) p.bufAbility1--;
   if (p.bufAbility2 > 0) p.bufAbility2--;
   if (p.bufDodge > 0) p.bufDodge--;
+  if (p.plantT > 0 && --p.plantT === 0) p.bufPlant = 0;
   if (p.comboTimer > 0) p.comboTimer--;
   if (p.echoLeft > 0 && !p.downed && --p.echoT <= 0) { echoPulse(s, slot, cls); p.echoLeft--; p.echoT = NOVA_ECHO_TICKS; }
   // Stamina comes back once the regen delay (since the last spend) has passed; a winded hero is back on their
@@ -333,6 +340,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   if (pressed & Btn.Ability1) p.bufAbility1 = INPUT_BUFFER;
   if (pressed & Btn.Ability2) p.bufAbility2 = INPUT_BUFFER;
   if (pressed & Btn.Dodge) p.bufDodge = INPUT_BUFFER;
+  if (cls.totems) bagInput(p, cls, pressed, inp.buttons); // (after the dodge's buffer: with Alt held that button is an action, not a roll)
 
   if (p.downed) {
     p.downTimer -= 1 + vigilBonus(s, slot);
@@ -462,10 +470,10 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
       }
     }
     const acted = p.cdAttack + p.cdSpecial + p.cdAbility1;
-    if (!cls.rain && p.silenceT === 0 && p.bufAbility1 > 0 && p.cdAbility1 === 0 && p.fury >= novaCost(p.ranks, cls.novaCost, cls.furyMax)) {
+    if (!cls.rain && !cls.totems && p.silenceT === 0 && p.bufAbility1 > 0 && p.cdAbility1 === 0 && p.fury >= novaCost(p.ranks, cls.novaCost, cls.furyMax)) {
       nova(s, slot, cls);
       p.bufAbility1 = 0;
-    } else if (p.silenceT === 0 && p.bufAbility2 > 0 && p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost * costMul(p.ranks, 1) && (p.cdAttack === 0 || p.auraOn)) {
+    } else if (!cls.totems && p.silenceT === 0 && p.bufAbility2 > 0 && p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost * costMul(p.ranks, 1) && (p.cdAttack === 0 || p.auraOn)) {
       // Ability 2: the big sweep. Stamina is its cooldown; cdSpecial only spans the cast itself.
       spendStamina(s, slot, cls.specialCost * costMul(p.ranks, 1));
       p.cdSpecial = cls.specialShot ? cls.specialCooldown : Math.round(cls.specialCooldown * (1 - QUICK_MELEE * rankOf(p.ranks, 1, 2))); // a quicker melee special recovers sooner
@@ -476,6 +484,15 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
         p.cdAttack = cls.specialShot.cooldown;
       } else swing(s, slot, cls, cls.special, true);
       onSpecial(s, slot);
+    } else if (cls.totems) {
+      // The shaman does no damage: the buttons plant totems and herd mobs (sim/totems.ts, data/totems.ts, docs/18).
+      const act = p.bufPlant > 0 ? actionOf(p.classId, p.bufPlant, p) : null;
+      if (act && canDo(p, act)) {
+        spendStamina(s, slot, actionCost(act) * costMul(p.ranks, 0));
+        if ('totem' in act) { plantTotem(s, slot, act.totem); p.cdAttack = cls.totems.cooldown; }
+        else if ('herd' in act) { herd(s, slot, act.herd); if (act.herd === 'gale') p.cdAbility1 = HERDS.gale.cooldown; else p.cdSpecial = HERDS.gather.cooldown; }
+        p.bufPlant = 0;
+      }
     } else if (inp.buttons & Btn.Attack && !cls.auraDrain && p.cdAttack === 0 && !p.winded && p.stamina >= cls.attackCost * costMul(p.ranks, 0)) {
       if (cls.shot) {
         spendStamina(s, slot, cls.attackCost * costMul(p.ranks, 0));
@@ -1086,6 +1103,11 @@ function burstShot(s: GameState, i: number, radius: number, skip: number): void 
   }
 }
 
+/** The shot a player's projectile is: a cannon totem's fireball, the class's special fan, or its basic shot. */
+function shotOf(cls: ClassDef, flags: number): ArrowDef | undefined {
+  return flags & CANNON_FLAG ? CANNON_SHOT : flags & 4 ? cls.specialShot : cls.shot;
+}
+
 function updateProjectiles(s: GameState): void {
   const e = s.ents;
   for (let i = 0; i < e.highWater; i++) {
@@ -1098,7 +1120,7 @@ function updateProjectiles(s: GameState): void {
       // A player's fireball reaching the end of its range fizzles into a small splash.
       const owner = e.sub[i] - 1;
       const pl = s.players[owner];
-      const a = (e.flags[i] & 4) ? CLASSES[pl.classId].specialShot : CLASSES[pl.classId].shot;
+      const a = shotOf(CLASSES[pl.classId], e.flags[i]);
       const x = e.x[i], y = e.y[i], special = (e.flags[i] & 4) !== 0;
       freeEntity(e, i);
       if (a && a.splash) explodeShot(s, owner, a, x, y, -1, special ? 1 : SPLASH_FIZZLE); // a special runs out of range with its full blast
@@ -1118,7 +1140,7 @@ function updateProjectiles(s: GameState): void {
       const owner = e.sub[i] - 1;
       const pl = s.players[owner];
       const ocls = CLASSES[pl.classId];
-      const a = (e.flags[i] & 4) ? ocls.specialShot : ocls.shot;
+      const a = shotOf(ocls, e.flags[i]);
       if (!a) { freeEntity(e, i); continue; }
       const pierce = (e.flags[i] & 2) !== 0;
       const ab: AbilityKind = (e.flags[i] & 4) ? 1 : 0;
@@ -1140,6 +1162,7 @@ function updateProjectiles(s: GameState): void {
       continue;
     }
     if (s.quest && shotHitsWard(s, i)) continue; // a quest's ward takes the arrow meant for the party
+    if (shotHitsTotem(s, i, e.rem[i] > 0 ? e.rem[i] : ARROW_DAMAGE)) continue; // and so does a totem standing in its way
     for (let slot = 0; slot < s.players.length; slot++) {
       const p = s.players[slot];
       if (!p.active || p.downed) continue;
@@ -1691,7 +1714,9 @@ function updateMobs(s: GameState): void {
     }
     // A guard by a rescue's captive may go for the captive instead (sim/quests.ts): it walks, swings and shoots at them, and `target` stays
     // the nearest hero for everything that needs one.
-    const lure = s.quest && (def.behavior === Behavior.Melee || def.behavior === Behavior.Ranged) && !(e.flags[i] & 2) ? lureOf(s, i, best) : -1;
+    const fights = (def.behavior === Behavior.Melee || def.behavior === Behavior.Ranged) && !(e.flags[i] & 2);
+    let lure = s.quest && fights ? lureOf(s, i, best) : -1;
+    if (lure < 0 && fights) lure = tauntOf(s, i); // a Stone totem holds whoever comes within its reach (sim/totems.ts)
     if (lure >= 0) { aimX = e.x[lure]; aimY = e.y[lure] - 3; best = (aimX - x) * (aimX - x) + (aimY - y) * (aimY - y); }
 
     // Awake from the moment it exists.
@@ -1872,7 +1897,7 @@ function updateMobs(s: GameState): void {
           // Strike lands where the player is *now*; stepping away in time dodges it.
           const hpe = players[target].ent;
           if (lure >= 0) {
-            if (dist <= def.reach + 4) biteCaptive(s, lure, def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1) * (e.elite[i] ? ELITE_BITE : 1));
+            if (dist <= def.reach + 4) (e.kind[lure] === Kind.Totem ? biteTotem : biteCaptive)(s, lure, def.damage * packMul * ((e.flags[i] & BERSERK) ? 1.5 : 1) * (e.elite[i] ? ELITE_BITE : 1));
             if (def.retreat !== undefined) e.rem[i] = def.retreat;
           } else if (dist <= def.reach + 4 && Math.hypot(e.x[hpe] - e.x[i], e.y[hpe] - e.y[i]) <= def.reach + 4) { // (a swing at a decoy spot hits nothing)
             const hp = players[target];

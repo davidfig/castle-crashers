@@ -30,14 +30,15 @@ export function generateBestiary(seed: number): Bestiary {
   const traits: string[][] = new Array(n);
   const elements: number[][] = new Array(n);
   const names = new Set<string>();
+  const kinds = new Map<string, number>();
   for (const bp of slotPlans()) {
     const faction = makeFaction(new Dice(seed, 0x1000 + bp.biome));
-    const led = { used: new Set<string>(), names };
+    const led = { used: new Set<string>(), names, kinds };
     for (const p of bp.entries) {
       const m = makeMob(p, bp, faction, led, seed);
       defs[p.slot] = m.def; looks[p.slot] = m.look; traits[p.slot] = m.traits; elements[p.slot] = m.elements;
     }
-    const b = makeBoss(bp, faction, names, seed);
+    const b = makeBoss(bp, faction, names, seed, kinds);
     defs[bp.boss] = b.def; looks[bp.boss] = b.look; traits[bp.boss] = b.traits; elements[bp.boss] = b.elements;
   }
   return { seed, defs, looks, traits, elements };

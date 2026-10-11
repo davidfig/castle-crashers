@@ -12,6 +12,7 @@
 // (the guards and the Herald get a say even when the King holds court). `scriptFor` picks which one plays.
 // The story font draws no accents or curly quotes: plain ASCII only.
 import type { NpcName } from '../../render/npcArt';
+import { generateScript } from './roadGen';
 
 export interface RoadFigure {
   npc: NpcName;
@@ -52,14 +53,19 @@ function idHash(id: string): number {
 }
 
 /**
- * The script for a scene heard `heard` times before: the set first-time script on the first meeting, then the variants in a
- * rotation (starting point fixed by the scene id) so the same conversation never plays twice running and every one is heard
- * before any repeats. `forced` (dev aid, ?variant=N) picks one directly: 0 the first-time script, k the k-th variant.
+ * The script for a scene heard `heard` times before: the set first-time script on the first meeting (it carries the beat), then
+ * alternating a generated conversation (`generateScript`: the same beat put a new way, with new small talk and new things named)
+ * and the next hand-written variant in a rotation (starting point fixed by the scene id), so no conversation plays twice running.
+ * `forced` (dev aid, ?variant=N) picks one directly: 0 the first-time script, k the k-th variant, and -k the k-th generated one.
  */
 export function scriptFor(sc: RoadScene, heard: number, forced?: number): RoadScript {
-  if (forced !== undefined) return forced <= 0 || sc.variants.length === 0 ? sc.lines : sc.variants[(forced - 1) % sc.variants.length];
-  if (heard <= 0 || sc.variants.length === 0) return sc.lines;
-  return sc.variants[(idHash(sc.id) + heard - 1) % sc.variants.length];
+  if (forced !== undefined) {
+    if (forced < 0) return generateScript(sc, -forced);
+    return forced === 0 || sc.variants.length === 0 ? sc.lines : sc.variants[(forced - 1) % sc.variants.length];
+  }
+  if (heard <= 0) return sc.lines;
+  if (heard % 2 === 1 || sc.variants.length === 0) return generateScript(sc, idHash(sc.id) + heard);
+  return sc.variants[(idHash(sc.id) + heard / 2 - 1) % sc.variants.length];
 }
 
 export const ROAD_SCENES: readonly RoadScene[] = [
@@ -1025,3 +1031,6 @@ export const ROAD_REACTIONS: Readonly<Record<string, readonly (readonly [string,
     ['They knew us by sight. We never knew them.', 'I will carry this into the hills for good.'],
   ],
 };
+
+// Placeholder until the shaman has writing of their own (docs/18).
+(ROAD_REACTIONS as Record<string, (typeof ROAD_REACTIONS)[string]>).shaman = ROAD_REACTIONS.cleric;

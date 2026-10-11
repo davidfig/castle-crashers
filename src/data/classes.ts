@@ -1,4 +1,7 @@
-// Class definitions (see docs/04-classes-progression.md). The order matters: art/chars + render/hero.ts use the same one.
+// Class definitions (see docs/04-classes-progression.md). The order matters: data/heroLook.ts HERO_CLASS_NAMES and render/hero.ts use the same one.
+import type { TotemBagDef } from './totems';
+import { CANNON, EMBER, SPIRIT, STONE, STORM } from './totems';
+
 export interface Swing {
   range: number;
   /** Minimum dot(facing, direction-to-target); lower = wider arc. */
@@ -103,6 +106,8 @@ export interface ClassDef {
   shot?: ArrowDef;
   /** Ranged classes: the special is a fan of projectiles instead of a big sweep (`special` is then unused). */
   specialShot?: ArrowDef & { count: number; spread: number };
+  /** The basic attack plants totems from a bag instead of attacking, and the class does no damage itself (the shaman, docs/18). */
+  totems?: TotemBagDef;
   /** Replaces the radial nova with a rain of arrows (the archer). */
   rain?: RainDef;
   /** Replaces the radial nova with a ground-splitting shockwave straight down the field (the warrior): px long and px to either side. */
@@ -246,6 +251,23 @@ CLASSES.push(
     novaRadius: 60, novaDamage: 7, novaBigRadius: 95, novaBigDamage: 12,
     // Ability 1: a rain of arrows that lands about halfway out along his arrows' range (4.2 px/tick x 50 ticks / 2).
     rain: { arrows: 24, bigArrows: 38, radius: 36, bigRadius: 50, damage: 4, knock: 1.5, hitRadius: 9, reach: 105 },
+  },
+  {
+    ...WARRIOR, name: 'shaman', hp: 70, speed: 1.5, attackMove: 0.7,
+    // No attack of any kind: the buttons plant totems and herd mobs (data/totems.ts); the sim leaves the swing, special and nova out.
+    // (`combo` and `special` are required by the type but never used for this class.)
+    combo: [swing({ range: 1, dot: 1, damage: 0, knock: 0, cooldown: 14 })],
+    special: swing({ range: 1, dot: 1, damage: 0, knock: 0, cooldown: 14 }),
+    // Attack: Stone (holds enemies), Ability 1: Ember (burns a ring), Ability 2: Cannon (lobs fireballs). With Alt held: plant the selected extra,
+    // step the selection, Gather, Gale. (Q, outside Alt, steps the selection back.)
+    totems: {
+      plain: [{ totem: STONE }, { totem: EMBER }, { totem: CANNON }],
+      alt: [{ pick: true }, { cycle: 1 }, { herd: 'gather' }, { herd: 'gale' }],
+      extras: [SPIRIT, STORM],
+      cooldown: 10, reach: 20,
+    },
+    dashSpeed: 3.2, dashTicks: 8, dashCost: 20, dashCooldown: 28, dashDamage: 0,
+    novaRadius: 1, novaDamage: 0, novaBigRadius: 1, novaBigDamage: 0,
   },
 );
 

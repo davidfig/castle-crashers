@@ -5,13 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "node tools/dev.mjs",
+    "kill": "pkill -f \"node tools/[d]ev.mjs\" && echo \"dev servers stopped\" || echo \"no dev servers running\"",
     "build": "node tools/build.mjs",
-    "typecheck": "node tools/art.mjs && tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "node tools/test.mjs",
     "check": "node tools/check-sim.mjs",
     "playtest": "node tools/playtest.mjs",
-    "art": "node tools/art-dev.mjs",
-    "art:build": "node tools/art.mjs",
     "sim": "node tools/sim.mjs"
   },
   "devDependencies": {

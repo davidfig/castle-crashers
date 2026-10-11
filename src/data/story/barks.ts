@@ -5,6 +5,7 @@
 // avoids repeating a line it said recently. Tiers follow the chapters: 0 = I, 1 = II-III, 2 = IV-V.
 // The bitmap font has no commas or apostrophes: write without them.
 import { createRng, rngInt, Stream } from '../../engine/rng';
+import { genBark } from './barkGen';
 
 export type BarkTrigger =
   | 'start'   // a few seconds in
@@ -319,6 +320,9 @@ export const VOICES: Record<string, Voice> = {
   },
 };
 
+// Placeholder until the shaman has writing of their own: they speak in the cleric's voice for now (docs/18).
+VOICES.shaman = VOICES.cleric;
+
 /** Kill counts at which the party remarks on the tally, and gold amounts at which it remarks on the purse. */
 /** How many surrenders make the party remark on it (the first, then a little later). */
 export const SURRENDER_MARKS: readonly number[] = [1, 8, 25];
@@ -332,6 +336,11 @@ export const COIN_MARKS: readonly number[] = [80, 250, 500];
 export function pickBark(seed: number, trigger: BarkTrigger, className: string, chapter: number, salt = 0, avoid?: ReadonlySet<string>): string | undefined {
   const all = VOICES[className]?.[trigger][voiceTier(chapter)];
   if (!all || all.length === 0) return undefined;
+  // Ambient chatter is mostly composed on the spot (barkGen.ts): the road never runs out of things to say.
+  if (trigger === 'idle' && ((seed >>> 3) + Math.imul(salt + 1, 0x9e3779b1)) % 5 < 3) {
+    const made = genBark(seed, className, voiceTier(chapter), salt, avoid);
+    if (made) return made;
+  }
   const fresh = avoid ? all.filter((l) => !avoid.has(l)) : all;
   const lines = fresh.length > 0 ? fresh : all;
   const r = createRng((seed ^ Math.imul(salt + 1, 0x9e3779b1) ^ Math.imul(BARK_TRIGGERS.indexOf(trigger) + 1, 0x85ebca6b)) >>> 0, Stream.story);

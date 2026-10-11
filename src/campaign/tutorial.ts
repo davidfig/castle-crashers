@@ -31,6 +31,9 @@ interface StepDef {
   need: (classId: number) => number;
 }
 
+/** The shaman has no nova and no big swing (docs/18): those steps pass at once for a hero who plants totems. */
+const totems = (classId: number): boolean => !!CLASSES[classId]?.totems;
+
 const noun = (classId: number, k: 0 | 1 | 2 | 3): string => NOUNS[classId]?.[k] ?? '';
 
 const STEPS: readonly StepDef[] = [
@@ -38,11 +41,11 @@ const STEPS: readonly StepDef[] = [
   {
     action: 'attack', wave: 2,
     title: (c) => `ATTACK  ${noun(c, 0)}`,
-    text: (c) => (c === AURA_CLASS ? 'Press to switch your aura on, then stand among the goblins.' : 'Hit the goblins. Press again in rhythm to chain a combo.'),
+    text: (c) => (c === AURA_CLASS ? 'Press to switch your aura on, then stand among the goblins.' : totems(c) ? 'Press to plant a Stone: enemies go for it. Ability 1 plants an Ember, Ability 2 a Cannon. Hold Alt for more.' : 'Hit the goblins. Press again in rhythm to chain a combo.'),
     need: (c) => (c === AURA_CLASS ? 1 : 3),
   },
-  { action: 'ability1', wave: 4, title: (c) => `ABILITY 1  ${noun(c, 2)}`, text: () => 'Fury builds as you fight. Spend it on a big area attack.', need: () => 1 },
-  { action: 'ability2', wave: 5, title: (c) => `ABILITY 2  ${noun(c, 1)}`, text: () => 'Your heavy move. It costs stamina, so use it when it counts.', need: () => 1 },
+  { action: 'ability1', wave: 4, title: (c) => `ABILITY 1  ${noun(c, 2)}`, text: () => 'Fury builds as you fight. Spend it on a big area attack.', need: (c) => (totems(c) ? 0 : 1) },
+  { action: 'ability2', wave: 5, title: (c) => `ABILITY 2  ${noun(c, 1)}`, text: () => 'Your heavy move. It costs stamina, so use it when it counts.', need: (c) => (totems(c) ? 0 : 1) },
   { action: 'dodge', wave: 3, title: (c) => `DODGE  ${noun(c, 3)}`, text: () => 'Slip out of trouble, or through it. It costs stamina too.', need: () => 1 },
   { action: null, wave: 6, title: () => 'PUT IT TOGETHER', text: () => 'One more band. Use everything you have learned.', need: () => 0 },
 ];

@@ -50,7 +50,7 @@ Status: **built, in tuning.** XP and levels with non-blocking picks; 5 classes; 
 
 ## M6.5 — UI & Screen Art
 The menus, the camp, the board and the story screens work but are placeholder: flat rectangles and a 3x5 caps-only font. This milestone gives them a look. Plan and status per screen in [13 UI & Screen Art](13-ui-art.md).
-- **The look:** an illuminated ledger: vellum pages, lead outlines, gold leaf (the "Glass" palette in `art/palette.mjs`), because the game is about a bounty office and its books.
+- **The look:** an illuminated ledger: vellum pages, lead outlines, gold leaf, because the game is about a bounty office and its books.
 - **Kit first:** panel and card frames, rarity borders, cursors, ornaments; a story font with lowercase and punctuation; icons for upgrades, wares, node types and the level-up pip. Everything else reuses these.
 - **Then:** portraits (the Registrar, the peddler, one per class), scene art for the hub (tavern, board, market, city square), the camp backdrop, the title and logo, clan banners.
 - **Exit:** every screen in a full run, from the Writ board to the summary, is drawn from the kit with no flat-rectangle placeholders left.

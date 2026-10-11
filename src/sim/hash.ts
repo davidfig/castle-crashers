@@ -130,6 +130,9 @@ export function hashState(s: GameState): number {
     h = mixNum(h, p.rerolls);
     h = mixNum(h, p.banishes);
     h = mixNum(h, p.salt);
+    h = mixNum(h, p.bufPlant);
+    h = mixNum(h, p.plantT);
+    h = mixNum(h, p.pick);
     h = mix(h, p.banned);
   }
   return h >>> 0;

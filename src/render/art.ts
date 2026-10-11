@@ -2,12 +2,12 @@
 // at startup. Swap for real PNG atlases (tools/pack-atlas) once there is art. The biome backgrounds' builders live in
 // bgArt.ts, and the pixel helpers they share in pix.ts.
 import type { Frame } from '../platform/gl/batcher';
-import { buildHeroSets, type HeroSet } from './hero';
+import type { HeroSet } from './hero';
 import type { MobArt } from './mobArt';
 import { makeCrag, makeFog, makeKeep, makeMottle, makeMoon, makeCloud, makeDither } from './bgArt';
 import { bitmap, makeEllipse, type Pix } from './pix';
 import { buildUiArt, type UiArt } from './uiArt';
-import { buildNpcSets, type NpcName, type NpcSet } from './npcArt';
+import type { NpcName, NpcSet } from './npcArt';
 
 export const PLAYER_COLORS = [0xe0443a, 0x3a7be0, 0xe8c43a, 0xa04ae0];
 
@@ -67,6 +67,8 @@ const MONSTER_BAND_H = 1024;
 export const SCENERY_BAND_H = 1024;
 /** Height of the strip for a run's generated people (six figures of a few thousand px each; see folkSprites.ts). */
 const FOLK_BAND_H = 64;
+/** Height of the strip for a run's generated heroes (six classes x four players, a few thousand px each; see heroSprites.ts). */
+const HERO_BAND_H = 640;
 
 export interface Sprites {
   atlas: HTMLCanvasElement;
@@ -86,8 +88,10 @@ export interface Sprites {
   chest: Frame[];
   /** Shrines by ShrineKind (curse, charge, greed, mercy): a stone pillar with a glowing crystal. */
   shrine: Frame[];
-  /** Player sprites from the art workbench: one set per class (CLASSES order), each with a sheet per player slot (see hero.ts). */
+  /** Player sprites: one set per class (CLASSES order), each with a sheet per player slot (see hero.ts). Empty until a run's generated heroes are installed (heroSprites.ts). */
   heroes: HeroSet[];
+  /** The strip of the atlas a run's generated heroes are drawn into. */
+  heroBand: { x: number; y: number; w: number; h: number };
   /** Enemy art in play: a run's generated monsters, empty until `installMonsterArt` has drawn them (see monsterSprites.ts). */
   mobArt: MobArt;
   /** The strip of the atlas generated monsters are drawn into: a run's cast is repainted here, over the last run's. */
@@ -122,11 +126,11 @@ export interface Sprites {
   glyph: Record<string, Frame>;
   /** The UI kit: story font, panel flourishes, cursor and icons (uiArt.ts). */
   ui: UiArt;
-  /** Story figures from the art workbench: the Registrar and the peddler (npcArt.ts). */
+  /** The story figures (npcArt.ts): empty until a run's generated people are installed (folkSprites.ts). */
   npcs: Record<NpcName, NpcSet>;
 }
 
-export function buildSprites(heroImages: HTMLImageElement[], npcImages: HTMLImageElement[] = []): Sprites {
+export function buildSprites(): Sprites {
   const blank: Frame = { u0: 0, v0: 0, u1: 0, v1: 0, w: 0, h: 0 };
   const mk = (): Frame => ({ ...blank });
   const items: { w: number; h: number; rgba: Uint8ClampedArray; frame: Frame }[] = [];
@@ -212,47 +216,11 @@ export function buildSprites(heroImages: HTMLImageElement[], npcImages: HTMLImag
     x += it.w + 1;
     if (it.h > rowH) rowH = it.h;
   }
-  // The atlas is wider than the procedural shelf: enemy sheets stack under the procedural sprites, and the player sheets
-  // (5 classes x 4 colours) are shelf-packed, tallest first, into the free space beside the procedural strip and then below it.
+  // The procedural sprites form a strip at the top; the enemy sheets stack under it, and then the bands a run's generated art is painted into.
   const stripH = y + rowH + 1;
   let usedH = stripH;
-  // Story-figure sheets are shelf-packed, tallest first, across the full atlas width (stacked in one column they would
-  // pass the 16384 px texture limit once there are dozens of sheets).
-  const sheets = [...npcImages];
-  const sheetPlaces: { x: number; y: number }[] = new Array(sheets.length);
-  {
-    let sx = 0, sy = stripH, sh = 0;
-    for (const i of sheets.map((_, k) => k).sort((a, b) => sheets[b].height - sheets[a].height)) {
-      const im = sheets[i];
-      if (sx + im.width + 1 > ATLAS_W) { sx = 0; sy += sh + 1; sh = 0; }
-      sheetPlaces[i] = { x: sx, y: sy };
-      sx += im.width + 1;
-      sh = Math.max(sh, im.height);
-    }
-    usedH = sy + sh + 1;
-  }
-  const npcPlaces = sheetPlaces;
-  const heroPlaces: { x: number; y: number }[] = new Array(heroImages.length);
-  {
-    // Region A: the free space right of the procedural strip. Region B: full width below the enemy sheets.
-    const regions = [{ x0: W, y0: 0, w: ATLAS_W - W, h: stripH }, { x0: 0, y0: usedH, w: ATLAS_W, h: Infinity }];
-    let ri = 0, cx = regions[0].x0, cy = regions[0].y0, rh = 0, bottom = usedH;
-    const byHeight = heroImages.map((_, i) => i).sort((a, b) => heroImages[b].height - heroImages[a].height);
-    for (const i of byHeight) {
-      const im = heroImages[i];
-      for (;;) {
-        const R = regions[ri];
-        if (cx + im.width + 1 > R.x0 + R.w) { cx = R.x0; cy += rh + 1; rh = 0; }
-        if (cy + im.height + 1 > R.y0 + R.h && ri < regions.length - 1) { ri++; cx = regions[ri].x0; cy = regions[ri].y0; rh = 0; continue; }
-        break;
-      }
-      heroPlaces[i] = { x: cx, y: cy };
-      cx += im.width + 1;
-      rh = Math.max(rh, im.height);
-      bottom = Math.max(bottom, cy + im.height + 1);
-    }
-    usedH = bottom;
-  }
+  const heroBand = { x: 0, y: usedH, w: ATLAS_W, h: HERO_BAND_H };
+  usedH += HERO_BAND_H;
   const monsterBand = { x: 0, y: usedH, w: ATLAS_W, h: MONSTER_BAND_H };
   usedH += MONSTER_BAND_H;
   const sceneryBand = { x: 0, y: usedH, w: ATLAS_W, h: SCENERY_BAND_H };
@@ -273,13 +241,10 @@ export function buildSprites(heroImages: HTMLImageElement[], npcImages: HTMLImag
     f.w = p.it.w; f.h = p.it.h;
   }
 
-  heroImages.forEach((img, k) => ctx.drawImage(img, heroPlaces[k].x, heroPlaces[k].y));
-  npcImages.forEach((img, k) => ctx.drawImage(img, npcPlaces[k].x, npcPlaces[k].y));
-  const heroes = buildHeroSets(heroPlaces, ATLAS_W, H);
   const mobArt: MobArt = { walk: [], anims: [] };
-  const npcs = buildNpcSets(npcPlaces, ATLAS_W, H);
+  const npcs = {} as Record<NpcName, NpcSet>;
   const mob = mobArt.walk;
   const corpse: Frame[] = [];
 
-  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, staminaPotion, chest, shrine, heroes, mobArt, monsterBand, sceneryBand, folkBand, groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
+  return { atlas: canvas, px, mob, shadow, corpse, coin, potion, staminaPotion, chest, shrine, mobArt, monsterBand, sceneryBand, folkBand, heroBand, heroes: [], groundSets, layers, layerLights, fog, fogLarge, flame, dither, disc, moon, clouds, landmarks, decor, patch, glyph, ui, npcs };
 }

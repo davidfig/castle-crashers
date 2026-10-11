@@ -7,7 +7,7 @@
 // or resampled except the corpse, which is the standing body turned a quarter turn. Each frame then gets the house post pass:
 // a 1px rim light on the top/left silhouette edges and a 1px dark ink outline all round (see art/README.md "House style").
 import { buildSheet, Cv, CX, GY, H, W, OP, bres, clamp, crop, ell, flat, hash2, line, lum, matOf, mixc, mulberry, pick, poly, post, rect, ri, stamp, ch, type Mat, type Shade, type Spr } from './pixelKit';
-import type { MonsterLook, MonsterPalette, MonsterSheet, MonsterSheetMeta, Motif } from '../data/monsterLook';
+import type { JawKind, MonsterLook, MonsterPalette, MonsterSheet, MonsterSheetMeta, Motif, PatternKind, WornKind } from '../data/monsterLook';
 
 interface Pal {
   base: Mat; acc: Mat; met: Mat; wood: Mat; bone: Mat; dark: Mat;
@@ -45,7 +45,10 @@ interface Model {
   legL: number; bodyH: number; bodyW: number; headH: number; headW: number; overlap: number;
   armLen: number; limbW: number; headOff: number;
   taper: number; exp: number;
-  v: { ear: number; horn: number; tip: number; pat: number; snout: number; wing: number; brow: number; lean: number };
+  v: { ear: number; horn: number; tip: number; pat: number; snout: number; wing: number; brow: number; lean: number; hat: number; eye: number };
+  /** Size of what sticks out (crown, back, weapon), from the seed: the same creature is not always cut from one template. */
+  kp: number;
+  pattern: PatternKind; jaw: JawKind; worn: WornKind;
   motifs: ReadonlySet<Motif>;
   seed: number;
 }
@@ -61,13 +64,23 @@ const BUILD: Record<MonsterLook['build'], BuildSpec> = {
   insect: { leg: 0.3, head: 0.3, bw: 0.85, hw: 0.38, e: 2, taper: 0 },
   floater: { leg: 0.26, head: 0.3, bw: 0.6, hw: 0.4, e: 2, taper: -0.2 },
 };
-const HEADW: Record<MonsterLook['head'], number> = { round: 1.1, skull: 1.0, beast: 1.15, horned: 1.1, cyclops: 1.05, maw: 1.4, hood: 0.95, helm: 1.0, none: 0 };
+const HEADW: Record<MonsterLook['head'], number> = { round: 1.1, skull: 1.0, beast: 1.15, horned: 1.1, cyclops: 1.05, maw: 1.4, hood: 0.95, helm: 1.0, long: 1.4, toad: 1.35, cone: 0.95, mask: 1.05, none: 0 };
+const PATTERNS: readonly PatternKind[] = ['belly', 'stripes', 'spots'];
 
 function makeModel(look: MonsterLook): Model {
   const S = clamp(ri(Number.isFinite(look.size) ? look.size : 12), 7, 64);
   const tier = look.boss ? 3 : S < 11 ? 0 : S < 18 ? 1 : 2;
   const rnd = mulberry((look.seed | 0) ^ 0x51ed270b);
-  const spec = BUILD[look.build] ?? BUILD.blob;
+  // proportions wander a little per look (a boss less, so its sheet stays in budget)
+  const jr = mulberry((look.seed | 0) ^ 0x2c1b3c6d), amp = look.boss ? 0.5 : 1;
+  const jit = (lo: number, hi: number): number => 1 + (lo + (hi - lo) * jr()) * amp;
+  const kHead = jit(-0.12, 0.16), kLeg = jit(-0.22, 0.22), kArm = jit(-0.15, 0.22), kp = jit(-0.18, 0.22);
+  let spec = BUILD[look.build] ?? BUILD.blob;
+  // a big squat figure scaled up whole is a flat dome: the larger it is, the more it stands up like a bruiser (longer legs, a smaller head, a narrower chest)
+  if (look.build === 'squat' && S >= 18) {
+    const t = clamp((S - 18) / 22, 0, 1);
+    spec = { ...spec, bw: spec.bw - 0.32 * t, head: spec.head - 0.12 * t, leg: spec.leg + 0.08 * t, hw: spec.hw - 0.14 * t };
+  }
   const stout = clamp(Number.isFinite(look.stout) ? look.stout : 1, 0.7, 1.4);
   const motifs = new Set<Motif>(look.motifs ?? []);
   const ghost = motifs.has('ghost');
@@ -84,14 +97,16 @@ function makeModel(look: MonsterLook): Model {
   const headKind = look.head;
   const headless = headKind === 'none';
   const quad = limbs === 'quad' && look.build !== 'serpent' && look.build !== 'insect';
-  let legL = ri(S * spec.leg);
+  let legL = ri(S * spec.leg * kLeg);
   if (limbs === 'none' && !wisp) legL = 0;
   if (limbs === 'tentacles') legL = Math.max(legL, ri(S * 0.26));
   if (wisp) legL = Math.max(legL, ri(S * 0.28));
   if (limbs === 'many' && look.build !== 'insect') legL = Math.max(legL, ri(S * 0.22));
-  if (quad) legL = Math.max(legL, ri(S * 0.2));
-  let headH = headless ? 0 : Math.max(3, ri(S * spec.head));
+  if (quad) legL = Math.max(S >= 24 ? ri(S * 0.19) : legL, ri(S * 0.2)); // a big beast stands on short thick legs, not stilts
+  let headH = headless ? 0 : Math.max(3, ri(S * spec.head * kHead));
   if (headKind === 'maw') headH = Math.max(3, ri(headH * 0.92));
+  if (headKind === 'toad') headH = Math.max(3, ri(headH * 0.82));
+  if (headKind === 'cone') headH = Math.max(3, ri(headH * 1.1));
   const overlap = headless ? 0 : S >= 18 ? 2 : 1;
   legL = clamp(legL, 0, Math.max(0, S - 5 - (headless ? 0 : 0)));
   let bodyH = S - legL - headH + overlap;
@@ -101,18 +116,21 @@ function makeModel(look: MonsterLook): Model {
   let bodyW = Math.max(3, ri(S * spec.bw * stout * bwScale));
   if (look.build === 'tall' || look.build === 'wedge' || look.build === 'serpent') bodyW = Math.max(3, ri(bodyW));
   bodyW = Math.min(bodyW, ri(S * 1.5));
-  let headW = headless ? 0 : Math.max(3, ri(S * spec.hw * HEADW[headKind] * (0.85 + 0.15 * stout)));
+  let headW = headless ? 0 : Math.max(3, ri(S * spec.hw * (HEADW[headKind] ?? 1) * (0.85 + 0.15 * stout) * kHead));
   headW = Math.min(headW, Math.max(3, bodyW + 4));
   if (headKind === 'maw') headW = Math.max(headW, Math.min(ri(headH * 1.5), bodyW + 4));
-  const armLen = Math.max(2, ri(S * 0.28));
-  const limbW = S < 10 ? 1 : S < 20 ? 2 : S < 36 ? 3 : 4;
+  const armLen = Math.max(2, ri(S * 0.28 * kArm));
+  const limbW = (S < 10 ? 1 : S < 20 ? 2 : S < 36 ? 3 : 4) + (quad && S >= 24 ? 1 : 0);
   const v = {
-    ear: ri(rnd() * 2), horn: ri(rnd() * 3), tip: ri(rnd() * 3), pat: ri(rnd() * 3), snout: ri(rnd() * 2), wing: ri(rnd() * 2), brow: ri(rnd() * 2), lean: rnd(),
+    ear: Math.floor(rnd() * 3), horn: Math.floor(rnd() * 5), tip: ri(rnd() * 3), pat: Math.floor(rnd() * 3), snout: ri(rnd() * 2), wing: Math.floor(rnd() * 3), brow: ri(rnd() * 2), lean: rnd(),
+    hat: Math.floor(rnd() * 3), eye: Math.floor(rnd() * 3),
   };
   const headOff = headless ? 0 : quad ? ri(bodyW * 0.3) : look.build === 'insect' ? ri(bodyW * 0.32) : look.build === 'serpent' ? 0 : ri(headW * 0.1);
   return {
     look, S, tier, P: makePal(pal), limbs, hover, wisp, quad, headKind, legL, bodyH, bodyW, headH, headW, overlap, armLen, limbW, headOff,
-    taper: spec.taper, exp: spec.e, v, motifs, seed: look.seed | 0,
+    taper: quad && S >= 24 ? 0 : spec.taper, exp: quad && S >= 24 ? 2.2 : spec.e, // (a big four-legged body seen from the side is a barrel, not a funnel)
+    v, kp, motifs, seed: look.seed | 0,
+    pattern: look.pattern ?? PATTERNS[v.pat], jaw: look.jaw ?? 'plain', worn: look.worn ?? 'none',
   };
 }
 
@@ -195,7 +213,10 @@ function drawMonster(cv: Cv, m: Model, p: Pose): void {
   drawCrown(ctx);
   drawMotifs(ctx);
   drawFace(ctx);
+  drawJaw(ctx);
+  drawWorn(ctx, false);
   drawArms(ctx);
+  drawWorn(ctx, true);
   if (!p.noHeld) drawHeld(ctx);
   drawFlourish(ctx);
   if (p.tint) tintFrame(cv, m, p.tint);
@@ -209,29 +230,72 @@ function drawBody(c: Ctx): void {
   const o = { e: m.exp, taper: m.taper };
   ell(cv, c.bx, c.bcy, c.brx, c.bry, P.base, T_BODY, o);
   if (m.hover && m.wisp) drawWisp(c);
-  // belly / stripes / spots from the accent colour, clipped to the body
-  const pat = m.v.pat;
-  if (c.bry >= 2.5 && c.brx >= 2.5) {
-    if (pat === 0) ell(cv, c.bx + 1, c.bcy + c.bry * 0.3, c.brx * 0.5, c.bry * 0.55, P.acc, T_BODY, { on: T_BODY, e: m.exp });
-    else if (pat === 1) {
-      const n = c.bry > 7 ? 3 : 2;
-      for (let i = 0; i < n; i++) {
-        const y = ri(c.bTop + c.bry * (0.7 + (i * 1.0) / n * 1.2));
-        for (let x = ri(c.bx - c.brx); x < c.bx + c.brx; x++) cv.put(x, y, P.acc.b, T_BODY, 0, T_BODY);
-      }
-    } else {
-      const n = c.bry > 6 ? 4 : 2;
-      for (let i = 0; i < n; i++) {
-        const sx = ri(c.bx + (hash2(i, 3, m.seed) - 0.5) * c.brx * 1.3), sy = ri(c.bcy + (hash2(i, 9, m.seed) - 0.45) * c.bry * 1.2);
-        rect(cv, sx, sy, sx + (c.bry > 6 ? 2 : 1), sy + (c.bry > 6 ? 2 : 1), P.acc, T_BODY, { on: T_BODY, bevel: false });
-      }
-    }
-  }
+  if (c.bry >= 2.5 && c.brx >= 2.5) drawPattern(c);
   if (m.tier === 3) {
     // a boss wears a belt and shoulder plates
     const by = ri(c.bTop + c.bry * 1.35);
     rect(cv, c.bx - c.brx + 1, by, c.bx + c.brx - 1, by + 2, P.met, T_BODY, { on: T_BODY });
     cv.put(ri(c.bx), by, P.acc.l, T_BODY, 0, T_BODY);
+  }
+}
+
+/** Markings on the body from the accent colour (or a darker shade of the hide), clipped to the body. */
+function drawPattern(c: Ctx): void {
+  const { cv, m } = c;
+  const P = m.P, seed = m.seed;
+  const x0 = ri(c.bx - c.brx) - 1, x1 = ri(c.bx + c.brx) + 1, y0 = ri(c.bTop), y1 = ri(c.bBot);
+  switch (m.pattern) {
+    case 'belly': ell(cv, c.bx + 1, c.bcy + c.bry * 0.3, c.brx * 0.5, c.bry * 0.55, P.acc, T_BODY, { on: T_BODY, e: m.exp }); break;
+    case 'stripes': {
+      const n = c.bry > 7 ? 3 : 2, th = c.bry > 9 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        const y = ri(c.bTop + c.bry * (0.7 + (i * 1.0) / n * 1.2));
+        for (let k = 0; k < th; k++) for (let x = x0; x < x1; x++) cv.put(x, y + k, k ? P.acc.s : P.acc.b, T_BODY, 0, T_BODY);
+      }
+      break;
+    }
+    case 'spots': {
+      const n = c.bry > 6 ? 4 + (m.tier >= 2 ? 2 : 0) : 2, sz = c.bry > 6 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        const sx = ri(c.bx + (hash2(i, 3, seed) - 0.5) * c.brx * 1.3), sy = ri(c.bcy + (hash2(i, 9, seed) - 0.45) * c.bry * 1.2);
+        rect(cv, sx, sy, sx + sz, sy + sz, P.acc, T_BODY, { on: T_BODY, bevel: false });
+      }
+      break;
+    }
+    case 'patches': {
+      const pm = matOf(mixc(P.base.b, P.acc.b, 0.55));
+      const n = c.brx > 6 ? 3 : 2;
+      for (let i = 0; i < n; i++) {
+        const px = c.bx + (hash2(i, 13, seed) - 0.5) * c.brx * 1.2, py = c.bcy + (hash2(i, 14, seed) - 0.5) * c.bry * 1.1;
+        ell(cv, px, py, Math.max(1.2, c.brx * (0.28 + 0.15 * hash2(i, 15, seed))), Math.max(1.2, c.bry * (0.22 + 0.15 * hash2(i, 16, seed))), pm, T_BODY, { on: T_BODY });
+      }
+      break;
+    }
+    case 'scales': {
+      // little V marks in staggered rows
+      for (let y = y0 + 1; y < y1 - 1; y += 3) for (let x = x0 + ((y - y0) / 3 % 2 ? 2 : 0); x < x1; x += 4) {
+        cv.put(x, y, P.base.s, T_BODY, 0, T_BODY); cv.put(x + 2, y, P.base.s, T_BODY, 0, T_BODY); cv.put(x + 1, y + 1, P.base.s, T_BODY, 0, T_BODY);
+      }
+      break;
+    }
+    case 'chevron': {
+      const n = c.bry > 7 ? 3 : 2, th = c.bry > 9 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        const yc = c.bTop + c.bry * (0.45 + (i * 1.3) / n);
+        for (let x = x0; x < x1; x++) for (let k = 0; k < th; k++) cv.put(x, ri(yc + Math.abs(x + 0.5 - c.bx) * 0.55) + k, k ? P.acc.s : P.acc.b, T_BODY, 0, T_BODY);
+      }
+      break;
+    }
+    case 'mottled': {
+      const am = mixc(P.base.b, P.acc.b, 0.5);
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        const h = hash2(x - ri(c.bx), y - y0, seed + 71);
+        if (h < 0.13) cv.put(x, y, P.base.s, T_BODY, 0, T_BODY);
+        else if (h < 0.2) cv.put(x, y, am, T_BODY, 0, T_BODY);
+      }
+      break;
+    }
+    default: break;
   }
 }
 
@@ -257,7 +321,7 @@ function drawSerpent(c: Ctx): void {
       let col = pos < 0.3 ? P.base.l : pos > 0.72 ? P.base.s : P.base.b;
       if (x1 - x0 <= 2) col = pos < 0.5 ? P.base.b : P.base.s;
       // belly scutes: accent bands on the lit front
-      if (m.v.pat !== 2 && (k >> 1) % 2 === 0 && pos > 0.35 && pos < 0.8 && x1 - x0 >= 4) col = P.acc.b;
+      if (m.pattern !== 'spots' && m.pattern !== 'none' && m.pattern !== 'mottled' && (k >> 1) % 2 === 0 && pos > 0.35 && pos < 0.8 && x1 - x0 >= 4) col = P.acc.b;
       cv.put(x, y, col, T_BODY);
     }
   }
@@ -445,6 +509,41 @@ function drawHead(c: Ctx): void {
       fy = sy; fw = m.headW - 3;
       break;
     }
+    case 'long': {
+      // the skull at the back, a long snout out front with a nostril at the tip
+      ell(cv, hx - hrx * 0.38, hy, hrx * 0.62, hry, P.base, T_HEAD);
+      const sh = Math.max(1.5, hry * 0.55);
+      poly(cv, [[hx - hrx * 0.3, hy - hry * 0.6], [hx + hrx * 0.95, hy - hry * 0.15], [hx + hrx, hy + sh * 0.9], [hx - hrx * 0.3, hy + hry * 0.95]], P.base, T_HEAD);
+      cv.put(ri(hx + hrx - 1), ri(hy - hry * 0.05), P.ink, T_EYE);
+      fx = hx - hrx * 0.35; fw = hrx * 0.9; fy = hy - hry * 0.38;
+      break;
+    }
+    case 'toad': {
+      // wide and flat, the eyes up on two bumps
+      const br = Math.max(1.4, hrx * 0.3);
+      for (const sx of [-1, 1]) ell(cv, hx + sx * hrx * 0.45 + 0.5, hy - hry * 0.65, br, br, P.base, T_HEAD);
+      ell(cv, hx, hy + hry * 0.08, hrx, hry * 0.9, P.base, T_HEAD, { e: 2.3 });
+      fx = hx + 0.5; fw = hrx * 1.5; fy = hy - hry * 0.68;
+      break;
+    }
+    case 'cone': {
+      const peak = Math.max(2, ri(hry * 0.75));
+      poly(cv, [[hx - hrx * 0.9, hy + hry * 0.1], [hx + hrx * (0.15 + 0.2 * m.v.hat), hy - hry - peak], [hx + hrx * 0.9, hy + hry * 0.1]], P.base, T_HEAD);
+      ell(cv, hx, hy + hry * 0.15, hrx, hry * 0.85, P.base, T_HEAD);
+      fy = hy + hry * 0.02;
+      break;
+    }
+    case 'mask': {
+      // a carved mask over the face (bone or wood), painted with the trim colour
+      ell(cv, hx, hy, hrx, hry, P.base, T_HEAD);
+      const mm = m.v.hat === 1 ? P.wood : P.bone;
+      const mx = hx + Math.min(1, hrx * 0.15);
+      ell(cv, mx, hy + hry * 0.05, hrx * 0.8, hry * 0.88, mm, T_HEAD, { e: m.v.hat === 2 ? 3 : 2.4 });
+      if (hry >= 3.5) for (let y = ri(hy - hry * 0.75); y < ri(hy - hry * 0.3); y++) cv.put(ri(mx), y, P.acc.b, T_HEAD);
+      if (hrx >= 3) { cv.put(ri(mx - hrx * 0.45), ri(hy + hry * 0.25), P.acc.b, T_HEAD); cv.put(ri(mx + hrx * 0.45), ri(hy + hry * 0.25), P.acc.b, T_HEAD); }
+      fx = mx; fy = hy - hry * 0.1; fw = hrx * 1.3;
+      break;
+    }
     default: break;
   }
   c.face = { x: fx, y: fy, w: fw };
@@ -486,9 +585,11 @@ function drawFace(c: Ctx): void {
         const x0 = ri(fx - tw / 2 + i * (es + gap));
         if (shut) { for (let k = 0; k < es; k++) cv.put(x0 + k, y0 + es - 1, P.ink, T_EYE); continue; }
         if (hk === 'skull') rect(cv, x0 - 1, y0 - 1, x0 + es + 1, y0 + es + 1, flat(P.ink), T_EYE, { bevel: false });
+        // eye style from the seed: plain, a squint, or a dark pupil
+        const sty = hk === 'skull' || hk === 'mask' ? 0 : m.v.eye;
         if (es === 1) cv.put(x0, y0, P.eyeHi, T_EYE, 1);
-        else if (es === 2) stamp(cv, ['HE', 'EE'], x0, y0, { H: P.eyeHi, E: P.eye }, T_EYE, { noRim: true });
-        else stamp(cv, ['HEE', 'EEE', 'oEE'], x0, y0, { H: P.eyeHi, E: P.eye, o: P.eyeLo }, T_EYE, { noRim: true });
+        else if (es === 2) stamp(cv, sty === 1 ? ['..', 'HE'] : sty === 2 ? ['HE', 'Ek'] : ['HE', 'EE'], x0, y0, { H: P.eyeHi, E: P.eye, k: P.ink }, T_EYE, { noRim: true });
+        else stamp(cv, sty === 1 ? ['...', 'HEE', 'oEE'] : sty === 2 ? ['HEE', 'EkE', 'oEE'] : ['HEE', 'EEE', 'oEE'], x0, y0, { H: P.eyeHi, E: P.eye, o: P.eyeLo, k: P.ink }, T_EYE, { noRim: true });
         if (brow) for (let k = 0; k < es; k++) cv.put(x0 + k, y0 - 1, P.ink, T_EYE);
       }
     });
@@ -509,11 +610,19 @@ function drawFace(c: Ctx): void {
     if (mh >= 3) rect(cv, mx + 1, my + mh - 2, mx + mw - 1, my + mh - 1, P.acc, T_EYE, { bevel: false });
     return;
   }
-  if (hk === 'cyclops' || hk === 'round' || hk === 'beast' || hk === 'horned' || hk === 'skull' || hk === 'none') {
-    const base = hk === 'none' ? c.bTop + c.bry * 1.0 : hk === 'beast' ? c.hy + c.hry * 0.55 : c.hy + c.hry * 0.5;
+  if (hk === 'long') {
+    // the jaw line runs along the snout
+    const y = ri(c.hy + c.hry * 0.42), xa = ri(c.hx - c.hrx * 0.15), xb = ri(c.hx + c.hrx) - 1;
+    for (let x = xa; x < xb; x++) cv.put(x, y + (mouth && x > xa + 1 ? 1 : 0), P.ink, T_EYE);
+    if (mouth >= 1) for (let x = xa + 1; x < xb; x++) cv.put(x, y, P.ink, T_EYE);
+    if (teeth) for (let x = xa + 2; x < xb; x += 2) cv.put(x, y - 1, P.white, T_EYE, 1);
+    return;
+  }
+  if (hk === 'cyclops' || hk === 'round' || hk === 'beast' || hk === 'horned' || hk === 'skull' || hk === 'toad' || hk === 'cone' || hk === 'mask' || hk === 'none') {
+    const base = hk === 'none' ? c.bTop + c.bry * 1.0 : hk === 'beast' ? c.hy + c.hry * 0.55 : hk === 'toad' ? c.hy + c.hry * 0.35 : c.hy + c.hry * 0.5;
     if (hw < 5 && !mouth) return;
     if (hk === 'none' && !teeth && !mouth) return;
-    const mw = Math.max(2, ri(hw * (hk === 'beast' ? 0.34 : 0.46)));
+    const mw = Math.max(2, ri(hw * (hk === 'beast' ? 0.34 : hk === 'toad' ? 0.72 : 0.46)));
     const mx = ri((hk === 'beast' ? c.hx + c.hrx * 0.35 : fx) - mw / 2);
     const my = ri(Math.min(base, hk === 'none' ? base : c.hy + c.hry - 1.5));
     if (mouth) {
@@ -528,6 +637,135 @@ function drawFace(c: Ctx): void {
   }
 }
 
+/** Where the mouth is: its left and right ends and its row. */
+function mouthAt(c: Ctx): { xa: number; xb: number; y: number; h: number } {
+  const { m } = c;
+  const hk = m.headKind;
+  if (hk === 'none') { const w = Math.max(2, m.bodyW * 0.46), x = c.bx + 1 + ri(c.lean * 0.4); return { xa: ri(x - w / 2), xb: ri(x + w / 2), y: ri(c.bTop + c.bry * 1.0), h: m.bodyH }; }
+  if (hk === 'long') return { xa: ri(c.hx - c.hrx * 0.15), xb: ri(c.hx + c.hrx) - 1, y: ri(c.hy + c.hry * 0.42), h: m.headH };
+  if (hk === 'maw') { const w = Math.max(4, ri(m.headW * 0.84)); return { xa: ri(c.hx - w / 2 + 0.5), xb: ri(c.hx + w / 2 + 0.5), y: ri(c.hy + c.hry * 0.4), h: m.headH }; }
+  const w = Math.max(2, m.headW * (hk === 'beast' ? 0.34 : hk === 'toad' ? 0.72 : 0.46));
+  const x = hk === 'beast' ? c.hx + c.hrx * 0.35 : c.face.x;
+  const y = hk === 'beast' ? c.hy + c.hry * 0.55 : hk === 'toad' ? c.hy + c.hry * 0.35 : Math.min(c.hy + c.hry * 0.5, c.hy + c.hry - 1.5);
+  return { xa: ri(x - w / 2), xb: ri(x + w / 2), y: ri(y), h: m.headH };
+}
+
+/** Fangs, tusks, a beak, mandibles, whiskers or a beard, around the mouth. */
+function drawJaw(c: Ctx): void {
+  const { cv, m, p } = c;
+  const P = m.P, S = m.S, jaw = m.jaw;
+  if (jaw === 'plain' || m.look.build === 'serpent' && m.headKind === 'none') return;
+  const { xa, xb, y, h } = mouthAt(c);
+  const open = p.mouth ?? 0;
+  const cx = (xa + xb) / 2;
+  switch (jaw) {
+    case 'fangs': {
+      const fl = S >= 16 ? 2 : 1;
+      for (const x of xb - xa >= 3 ? [xa, xb - 1] : [xa]) for (let k = 1; k <= fl + (open ? 1 : 0); k++) cv.put(x, y + k, P.white, T_EYE, 1);
+      break;
+    }
+    case 'tusks': {
+      const tl = S >= 20 ? 3 : 2;
+      for (const [x, s] of [[xa - 1, -1], [xb, 1]] as Vec[]) {
+        for (let k = 0; k < tl; k++) cv.put(x + (k === tl - 1 ? s : 0), y + 1 - k, k === tl - 1 ? P.bone.l : P.bone.b, T_EYE);
+      }
+      break;
+    }
+    case 'beak': {
+      const bm = matOf(mixc(0xe0a838, P.acc.b, 0.25));
+      const L = Math.max(2, ri((m.headKind === 'none' ? m.bodyW : m.headW) * 0.45)), bh = Math.max(1.5, h * 0.2);
+      const bx0 = m.headKind === 'none' ? xb - 1 : ri(c.hx + c.hrx * 0.55), by = y - 1;
+      poly(cv, [[bx0, by - bh], [bx0 + L, by + (open ? -0.5 : 0.5)], [bx0, by + 0.5]], bm, T_HEAD);
+      poly(cv, [[bx0, by + 0.5 + open], [bx0 + L * 0.75, by + 1 + open], [bx0, by + bh * 0.8 + 1 + open]], { l: bm.b, b: bm.s, s: bm.s }, T_HEAD);
+      break;
+    }
+    case 'mandibles': {
+      const L = Math.max(2, ri(h * 0.35)), spread = open ? 1 : 0;
+      for (const s of [-1, 1]) {
+        const x0 = cx + s * Math.max(1, (xb - xa) * 0.35);
+        const tip: Vec = [x0 + s * (1 + spread), y + L];
+        line(cv, x0, y, tip[0], tip[1], S >= 20 ? 2 : 1, P.dark, T_HEAD);
+        cv.put(ri(tip[0] - s), ri(tip[1]) + 1, P.dark.s, T_HEAD);
+      }
+      break;
+    }
+    case 'whiskers': {
+      if (S < 12) break;
+      const L = Math.max(2, ri(S * 0.15)), wc = mixc(P.bone.l, P.base.l, 0.3);
+      bres(cv, xb, y - 1, xb + L, y - 2, wc, T_EYE); bres(cv, xb, y, xb + L, y + 1, wc, T_EYE);
+      break;
+    }
+    case 'beard': {
+      const bm = matOf(mixc(P.acc.b, P.base.s, 0.45));
+      const w = Math.max(2, (xb - xa) * 0.75 + 1), bl = Math.max(2, ri(h * 0.5));
+      poly(cv, [[cx - w, y + 1], [cx + w, y + 1], [cx + w * 0.5, y + bl * 0.8], [cx - 0.5, y + bl + 1], [cx - w * 0.7, y + bl * 0.7]], bm, T_HEAD);
+      break;
+    }
+    default: break;
+  }
+}
+
+// ----------------------------------------------------------- worn gear
+function drawWorn(c: Ctx, late: boolean): void {
+  const { cv, m, p } = c;
+  const P = m.P, S = m.S, w = m.worn;
+  if (w === 'none' || m.look.build === 'serpent') return;
+  const hasHead = m.headKind !== 'none';
+  const leather = matOf(mixc(0x4a2c18, P.base.b, 0.2));
+  const neckY = ri(c.bTop + 1), nw = hasHead ? Math.max(1.5, Math.min(c.brx * 0.8, c.hrx * 0.9 + 1)) : Math.max(1.5, c.brx * 0.6);
+  const th = S >= 16 ? 2 : 1;
+  if (late) {
+    if (w === 'pauldron') {
+      const pr = Math.max(1.5, S * 0.11);
+      for (const [sh, s] of [[c.shL, -1], [c.shR, 1]] as [Vec, number][]) {
+        ell(cv, sh[0] + s * 0.3, sh[1] - 0.2, pr, pr * 0.75, P.met, T_BODY, { taper: 0.2 });
+        if (m.tier >= 1) cv.put(ri(sh[0] + s * 0.3), ri(sh[1] - pr * 0.75) - 1, P.met.l, T_BODY);
+      }
+    } else if (w === 'bracers' && m.look.arms > 0) {
+      const arms: [Vec, Vec][] = m.look.arms >= 2 ? [[c.shL, c.handL], [c.shR, c.handR]] : [[c.shR, c.handR]];
+      const r = Math.max(1, m.limbW * 0.6 + 0.3);
+      for (const [sh, hd] of arms) ell(cv, sh[0] + (hd[0] - sh[0]) * 0.7, sh[1] + (hd[1] - sh[1]) * 0.7, r, r, P.met, T_LIMB);
+    }
+    return;
+  }
+  switch (w) {
+    case 'belt': {
+      let y = ri(c.bTop + c.bry * 1.45);
+      if (y >= c.bBot - th) y = ri(c.bBot) - th - 1;
+      for (let k = 0; k < th; k++) for (let x = ri(c.bx - c.brx) - 1; x <= ri(c.bx + c.brx) + 1; x++) cv.put(x, y + k, k ? leather.s : leather.b, T_BODY, 0, T_BODY);
+      cv.put(ri(c.bx) + 1, y, P.met.l, T_BODY, 0, T_BODY);
+      if (S >= 16) { cv.put(ri(c.bx) + 1, y + 1, P.met.b, T_BODY, 0, T_BODY); cv.put(ri(c.bx - c.brx * 0.5), y + th, leather.b, T_BODY, 0, T_BODY); }
+      break;
+    }
+    case 'sash': line(cv, c.bx - c.brx * 0.75, c.bTop + 1, c.bx + c.brx * 0.75, c.bBot - 2, Math.max(1, ri(S / 9)), P.acc, T_BODY, { on: T_BODY }); break;
+    case 'necklace': {
+      if (!hasHead) break;
+      const drop = Math.max(1, c.bry * 0.35);
+      for (let x = ri(c.bx - nw); x <= ri(c.bx + nw); x++) {
+        const t = (x + 0.5 - c.bx) / nw;
+        cv.put(x, neckY + ri((1 - t * t) * drop), (x & 1) ? P.met.l : P.acc.l, T_BODY, 1, T_BODY);
+      }
+      const py = neckY + ri(drop) + 1;
+      cv.put(ri(c.bx), py, P.bone.l, T_BODY, 1); if (S >= 14) cv.put(ri(c.bx), py + 1, P.bone.b, T_BODY, 1);
+      break;
+    }
+    case 'collar': {
+      if (!hasHead) break;
+      for (let k = 0; k < th; k++) for (let x = ri(c.bx - nw); x <= ri(c.bx + nw); x++) cv.put(x, neckY + k, k ? leather.s : leather.b, T_BODY);
+      for (let x = ri(c.bx - nw) + 1; x < ri(c.bx + nw); x += 3) cv.put(x, neckY + th, P.met.l, T_BODY);
+      break;
+    }
+    case 'scarf': {
+      if (!hasHead) break;
+      for (let k = 0; k < th; k++) for (let x = ri(c.bx - nw); x <= ri(c.bx + nw); x++) cv.put(x, neckY + k, k ? P.acc.s : P.acc.b, T_BODY);
+      const L = Math.max(2, ri(S * 0.28)), sw = (p.tail ?? 0) * 1.2;
+      line(cv, c.bx - nw, neckY + 0.5, c.bx - nw - L * 0.55 + sw, neckY + L, th, P.acc, T_BODY);
+      break;
+    }
+    default: break;
+  }
+}
+
 // ----------------------------------------------------------- crowns
 function drawCrown(c: Ctx): void {
   const { cv, m, hx, hrx, hry, hTop } = c;
@@ -537,7 +775,7 @@ function drawCrown(c: Ctx): void {
   const hasHead = m.headKind !== 'none';
   // headless creatures wear the crown on top of the body
   const top = hasHead ? hTop : c.bTop, cx = hasHead ? hx : c.bx, rx = hasHead ? hrx : Math.min(c.brx, m.bodyW * 0.4), ry = hasHead ? hry : c.bry * 0.6;
-  const L = Math.max(2, ri(m.S * (m.tier === 3 ? 0.18 : 0.22)));
+  const L = Math.max(2, ri(m.S * (m.tier === 3 ? 0.18 : 0.22) * m.kp));
   const w1 = Math.max(1, ri(rx * 0.3));
   if (m.headKind === 'horned' && kind !== 'horns') {
     for (const s of [-1, 1]) line(cv, cx + s * rx * 0.6, top + ry * 0.4, cx + s * (rx + 1), top - Math.max(1, ry * 0.2), Math.max(1, w1 - 1), P.met, T_CROWN);
@@ -549,6 +787,14 @@ function drawCrown(c: Ctx): void {
         let p1: Vec, p2: Vec;
         if (m.v.horn === 0) { p1 = [bx0 + s * L * 0.45, by0 - L * 0.7]; p2 = [bx0 + s * L * 0.8, by0 - L * 1.2]; }
         else if (m.v.horn === 1) { p1 = [bx0 + s * L * 1.0, by0 - L * 0.15]; p2 = [bx0 + s * L * 1.25, by0 - L * 0.95]; }
+        else if (m.v.horn === 3) {
+          // a ram's curl: out, down and forward again
+          p1 = [bx0 + s * L * 0.7, by0 - L * 0.55];
+          line(cv, bx0, by0, p1[0], p1[1], w1 + (m.tier > 1 ? 1 : 0), P.met, T_CROWN);
+          line(cv, p1[0], p1[1], bx0 + s * L * 0.95, by0 + L * 0.1, Math.max(1, w1), P.met, T_CROWN);
+          line(cv, bx0 + s * L * 0.95, by0 + L * 0.1, bx0 + s * L * 0.6, by0 + L * 0.35, Math.max(1, w1 - 1), P.met, T_CROWN);
+          continue;
+        } else if (m.v.horn === 4) { p1 = [bx0 + s * L * 0.25, by0 - L * 0.4]; p2 = [bx0 + s * L * 0.35, by0 - L * 0.6]; }
         else { p1 = [bx0 + s * L * 0.1, by0 - L * 0.85]; p2 = [bx0 - s * L * 0.1, by0 - L * 1.3]; }
         line(cv, bx0, by0, p1[0], p1[1], w1 + (m.tier > 1 ? 1 : 0), P.met, T_CROWN);
         line(cv, p1[0], p1[1], p2[0], p2[1], Math.max(1, w1 - 1), P.met, T_CROWN);
@@ -576,6 +822,11 @@ function drawCrown(c: Ctx): void {
           const el = L * 1.1;
           poly(cv, [[cx + s * rx * 0.55, top + ry * 0.2], [cx + s * (rx + el), top - el * 0.35], [cx + s * rx * 0.95, top + ry * 0.9]], P.base, T_CROWN);
           if (el >= 4) bres(cv, cx + s * (rx * 0.9), top + ry * 0.5, cx + s * (rx + el * 0.6), top + ry * 0.05, P.acc.b, T_CROWN, T_CROWN);
+        } else if (m.v.ear === 2) {
+          // long ears laid back
+          const el = L * 1.3;
+          poly(cv, [[cx + s * rx * 0.2, top + ry * 0.3], [cx + s * rx * 0.2 - el * 0.55, top - el * 0.9], [cx + s * rx * 0.6, top + ry * 0.35]], P.base, T_CROWN);
+          if (el >= 4) bres(cv, cx + s * rx * 0.3, top + ry * 0.1, cx + s * rx * 0.3 - el * 0.4, top - el * 0.6, P.acc.b, T_CROWN, T_CROWN);
         } else {
           const er = Math.max(1.5, L * 0.6);
           ell(cv, cx + s * rx * 0.7, top + 0.5, er, er, P.base, T_CROWN);
@@ -617,6 +868,76 @@ function drawCrown(c: Ctx): void {
       if (cw >= 5) cv.put(ri(cx + 1), ri(top), P.acc.l, T_CROWN, 1);
       break;
     }
+    case 'mohawk': {
+      // a sawtooth ridge of hair front to back
+      const hm = matOf(mixc(P.acc.b, P.base.s, 0.25));
+      const n = Math.max(3, ri(rx * 1.1)), xa = cx - rx * 0.75, xb = cx + rx * 0.45;
+      const pts: number[][] = [[xa, top + 1.5]];
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
+        pts.push([xa + (xb - xa) * t - 0.5, top - L * (0.55 + 0.45 * Math.sin(t * Math.PI)) * (m.v.hat === 2 ? 1.3 : 1)]);
+        pts.push([xa + (xb - xa) * (i + 1) / n, top + 0.5 - L * 0.2]);
+      }
+      pts.push([xb, top + 1.5]);
+      poly(cv, pts, hm, T_CROWN);
+      break;
+    }
+    case 'hat': {
+      const hm = matOf(mixc(P.acc.b, 0x201830, 0.35));
+      const brimY = top + ry * 0.35, bw = rx * 1.35;
+      if (m.v.hat === 0) {
+        // a pointed, slightly bent wizard hat
+        poly(cv, [[cx - rx * 0.8, brimY], [cx - rx * 0.1, top - L * 1.2], [cx - rx * 0.6 - L * 0.3, top - L * 1.7], [cx + rx * 0.8, brimY]], hm, T_CROWN);
+      } else if (m.v.hat === 1) {
+        // a tall stovepipe
+        rect(cv, cx - rx * 0.7, top - L * 1.1, cx + rx * 0.7, brimY, hm, T_CROWN);
+        for (let x = ri(cx - rx * 0.7); x < ri(cx + rx * 0.7); x++) cv.put(x, ri(brimY) - 2, P.met.b, T_CROWN);
+      } else {
+        // a low round cap
+        ell(cv, cx, brimY - 0.5, rx * 0.85, Math.max(1.5, L * 0.6), hm, T_CROWN);
+      }
+      rect(cv, cx - bw, brimY - 0.5, cx + bw, brimY + (L >= 4 ? 1.5 : 0.5), hm, T_CROWN);
+      break;
+    }
+    case 'sprout': {
+      if (m.v.hat === 1) {
+        // a mushroom cap with pale spots
+        const cr = Math.max(2, rx * 0.75 + L * 0.2);
+        line(cv, cx, top + 1, cx, top - L * 0.4, Math.max(1, ri(cr * 0.4)), P.bone, T_CROWN);
+        ell(cv, cx, top - L * 0.45, cr, Math.max(1.5, cr * 0.6), P.acc, T_CROWN, { taper: 0.3 });
+        if (cr >= 3) { cv.put(ri(cx - cr * 0.4), ri(top - L * 0.45 - cr * 0.2), P.white, T_CROWN); cv.put(ri(cx + cr * 0.3), ri(top - L * 0.45), P.white, T_CROWN); }
+      } else {
+        // a stem with two leaves (and a bud)
+        const gm = matOf(mixc(0x58a83a, P.acc.b, 0.2));
+        const tx = cx + 0.5 + (m.v.hat === 2 ? 1 : 0), ty = top - L * 0.9;
+        bres(cv, cx, top + 1, tx, ty, gm.s, T_CROWN);
+        const lf = Math.max(1.5, L * 0.45);
+        poly(cv, [[tx, ty + lf * 0.6], [tx - lf * 1.4, ty - lf * 0.2], [tx - lf * 0.3, ty + lf * 0.1]], gm, T_CROWN);
+        poly(cv, [[tx, ty + lf * 0.3], [tx + lf * 1.3, ty - lf * 0.5], [tx + lf * 0.4, ty + lf * 0.5]], gm, T_CROWN);
+        if (m.v.hat === 2) ell(cv, tx, ty - 0.5, 1.2, 1.2, P.acc, T_CROWN);
+      }
+      break;
+    }
+    case 'horn': {
+      // one horn off the brow, ridged
+      const hm = m.v.hat === 1 ? P.met : P.bone;
+      const bx0 = cx + rx * 0.2, by0 = top + ry * 0.35, wb = Math.max(1, rx * 0.28);
+      const tip: Vec = [bx0 + rx * 0.3 + L * 0.35, top - L * 1.25];
+      poly(cv, [[bx0 - wb, by0], tip, [bx0 + wb, by0]], hm, T_CROWN);
+      for (let k = 1; k < 4 && L >= 5; k++) { const t = k / 4; cv.put(ri(bx0 + (tip[0] - bx0) * t), ri(by0 + (tip[1] - by0) * t), hm.s, T_CROWN); }
+      break;
+    }
+    case 'stalks': {
+      // eyes up on stalks
+      const er = Math.max(1.2, Math.min(L * 0.3, rx * 0.45));
+      for (const s of [-1, 1]) {
+        const tx = cx + s * (rx * 0.55 + L * 0.15), ty = top - L * 0.95 - (s > 0 ? 0 : 1);
+        line(cv, cx + s * rx * 0.35, top + 1, tx, ty, 1, P.base, T_CROWN);
+        ell(cv, tx, ty - er * 0.4, er, er, flat(P.white), T_CROWN, { hi: 9, lo: -9 });
+        cv.put(ri(tx + 0.3), ri(ty - er * 0.4), P.eye, T_EYE, 1);
+      }
+      break;
+    }
     case 'antenna': {
       for (const s of [-1, 1]) {
         const bx0 = cx + s * rx * 0.4, tx = cx + s * (rx * 0.9 + L * 0.2), ty = top - L * 1.1;
@@ -632,9 +953,10 @@ function drawCrown(c: Ctx): void {
 // ----------------------------------------------------------- things on the back
 function drawBack(c: Ctx): void {
   const { cv, m, p } = c;
-  const P = m.P, S = m.S;
+  const P = m.P, S = m.S * m.kp;
   const kind = m.look.back;
   const wing = p.wing ?? 1, ph = p.ph ?? 0, tail = p.tail ?? 0;
+  const top = m.headKind === 'none' ? c.bTop : c.hTop;
   switch (kind) {
     case 'wings': {
       const span = Math.max(4, ri(S * (m.tier === 3 ? 0.5 : 0.48)));
@@ -642,7 +964,15 @@ function drawBack(c: Ctx): void {
         const bxs = c.bx + s * c.brx * 0.45, bys = c.bTop + c.bry * 0.5;
         const tipDir: Vec = wing === 2 ? [0.7, -0.9] : wing === 1 ? [1, -0.35] : [0.8, 0.45];
         const tip: Vec = [bxs + s * span * tipDir[0], Math.min(GY - 2, bys + span * tipDir[1])];
-        if (m.v.wing === 0) {
+        const wv = m.v.wing === 2 && !(m.look.build === 'insect' || m.look.build === 'floater' || m.tier <= 1) ? 1 : m.v.wing;
+        if (wv === 2) {
+          // a rounded gauzy wing (bug, fairy)
+          const pts: number[][] = [];
+          const ax = tip[0] - bxs, ay = tip[1] - bys, len = Math.hypot(ax, ay) || 1, ux = ax / len, uy = ay / len, wr = span * 0.28;
+          for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2, u = (1 + Math.cos(a)) / 2 * len, v = Math.sin(a) * wr; pts.push([bxs + ux * u - uy * v, bys + uy * u + ux * v]); }
+          poly(cv, pts, matOf(mixc(P.acc.l, 0xffffff, 0.35)), T_BACK);
+          bres(cv, bxs, bys, tip[0] - ux, tip[1] - uy, P.acc.s, T_BACK, T_BACK);
+        } else if (wv === 0) {
           const drop: Vec = [tip[0] - s * span * 0.2, tip[1] + span * 0.62];
           const mid: Vec = [bxs + s * span * 0.62, (drop[1] + bys) / 2 + span * 0.3];
           poly(cv, [[bxs, bys - 1], tip, drop, [(drop[0] + mid[0]) / 2, drop[1] - span * 0.1], mid, [bxs + s * span * 0.2, bys + span * 0.55], [bxs, bys + span * 0.5]], P.acc, T_BACK);
@@ -734,6 +1064,68 @@ function drawBack(c: Ctx): void {
       }
       break;
     }
+    case 'quills': {
+      // a fan of thin spines over the back and shoulders
+      const n = m.tier >= 2 ? 9 : m.tier === 1 ? 7 : 5;
+      const ql = Math.max(2, S * 0.24);
+      for (let i = 0; i < n; i++) {
+        const a = -Math.PI * 0.97 + (Math.PI * 0.62 * i) / Math.max(1, n - 1);
+        const L = ql * (0.75 + 0.45 * hash2(i, 51, m.seed));
+        const px = c.bx + Math.cos(a) * c.brx * 0.85, py = c.bcy + Math.sin(a) * c.bry * 0.85;
+        const ex = px + Math.cos(a - 0.25) * L, ey = py + Math.sin(a - 0.25) * L;
+        line(cv, px, py, ex, ey, m.tier >= 2 ? 2 : 1, i % 2 ? P.bone : P.dark, T_BACK);
+        cv.put(ri(ex), ri(ey), P.bone.l, T_BACK);
+      }
+      break;
+    }
+    case 'mane': {
+      // a shaggy ruff around the head and shoulders
+      const mm = matOf(mixc(P.acc.b, P.base.s, 0.4));
+      const ox = m.headKind === 'none' ? c.bx : c.hx - c.hrx * 0.2, oy = m.headKind === 'none' ? c.bTop + c.bry * 0.3 : c.hy + c.hry * 0.25;
+      const R = (m.headKind === 'none' ? c.brx * 0.9 : Math.max(c.hrx, c.hry) * 1.35) + 1, n = R > 6 ? 14 : 10;
+      const pts: number[][] = [];
+      for (let i = 0; i < n * 2; i++) {
+        const a = (i / (n * 2)) * Math.PI * 2, r = i % 2 ? R * 0.72 : R * (1 + 0.15 * hash2(i, 61, m.seed));
+        pts.push([ox + Math.cos(a) * r, oy + Math.sin(a) * r * 1.05]);
+      }
+      poly(cv, pts, mm, T_BACK);
+      break;
+    }
+    case 'pack': {
+      // a pack on the back with a bedroll on top
+      const lm = matOf(mixc(0x8a5a30, P.acc.b, 0.25));
+      const pw = Math.max(2, Math.min(c.brx * 0.75, m.S * 0.2)), x1 = c.bx - c.brx * 0.6, x0 = x1 - pw;
+      const y0 = c.bTop + c.bry * 0.3, y1 = c.bTop + c.bry * 1.3;
+      rect(cv, x0, y0, x1 + 1, y1, lm, T_BACK);
+      rect(cv, x0, y0, x1 + 1, y0 + Math.max(1, (y1 - y0) * 0.3), matOf(mixc(lm.b, P.acc.b, 0.5)), T_BACK);
+      if (pw >= 3) ell(cv, (x0 + x1) / 2, y0 - 1, pw * 0.6, Math.max(1, pw * 0.3), matOf(mixc(0x6a8a5a, P.acc.b, 0.4)), T_BACK);
+      break;
+    }
+    case 'crystals': {
+      // crystal shards growing out of the back
+      const cm = matOf(mixc(P.acc.b, 0xb0e8ff, 0.4));
+      const n = m.tier >= 2 ? 5 : 3;
+      for (let i = 0; i < n; i++) {
+        const a = -Math.PI * 0.9 + (Math.PI * 0.6 * i) / Math.max(1, n - 1);
+        const h = Math.max(3, S * (0.2 + 0.14 * hash2(i, 71, m.seed)) * (i === n >> 1 ? 1.3 : 1));
+        const wd = Math.max(1, h * 0.28);
+        const px = c.bx + Math.cos(a) * c.brx * 0.8, py = c.bcy + Math.sin(a) * c.bry * 0.8;
+        const nx = Math.cos(a), ny = Math.sin(a), tx = -ny, ty = nx;
+        poly(cv, [[px - tx * wd, py - ty * wd], [px - tx * wd + nx * h * 0.75, py - ty * wd + ny * h * 0.75], [px + nx * h, py + ny * h], [px + tx * wd + nx * h * 0.75, py + ty * wd + ny * h * 0.75], [px + tx * wd, py + ty * wd]], cm, T_BACK);
+        bres(cv, px + nx * h * 0.2, py + ny * h * 0.2, px + nx * h * 0.85, py + ny * h * 0.85, cm.l, T_BACK, T_BACK);
+      }
+      break;
+    }
+    case 'banner': {
+      // a war banner on a pole strapped to the back
+      const px = ri(c.bx - c.brx * 0.45), y0 = ri(c.bBot - c.bry * 0.4), y1 = ri(top - Math.max(3, m.S * 0.22));
+      for (let y = y1; y < y0; y++) cv.put(px, y, y === y1 ? P.met.l : P.wood.b, T_BACK);
+      const fw = Math.max(3, ri(m.S * 0.32)), fh = Math.max(3, ri(m.S * 0.26)), wv = Math.round(Math.sin(ph * 1.5) * 0.8);
+      const fx0 = px - fw;
+      poly(cv, [[px, y1 + 1], [fx0 + wv, y1 + 1 + wv], [fx0 + 1 + wv, y1 + 1 + fh * 0.55], [fx0 + wv, y1 + 1 + fh], [px, y1 + 1 + fh]], P.acc, T_BACK);
+      if (fh >= 4) cv.put(ri(px - fw * 0.45), ri(y1 + 1 + fh * 0.45), P.met.l, T_BACK);
+      break;
+    }
     case 'flame': {
       const fh = Math.max(3, ri(S * 0.34));
       const t = p.t ?? 0;
@@ -764,7 +1156,7 @@ function drawHeld(c: Ctx): void {
   const at = (u: number, v: number): Vec => [hx + dx * u + nx * v, hy + dy * u + ny * v];
   const tw = Math.max(1, ri(S / 20));
   const T = T_HELD;
-  const WS = m.tier === 3 ? 0.62 : 1; // a boss's weapon is stubbier so its sheet stays small
+  const WS = (m.tier === 3 ? 0.62 : 1) * m.kp; // a boss's weapon is stubbier so its sheet stays small
   const mode = p.wmode ?? 0;
   const seg = (u0: number, v0: number, u1: number, v1: number, w: number, mat: Mat): void => {
     const a = at(u0, v0), b = at(u1, v1);
@@ -863,6 +1255,58 @@ function drawHeld(c: Ctx): void {
       drawOrb(c, hx + 1, hy - orR * 0.7, orR, mode);
       break;
     }
+    case 'mace': {
+      const L = ri(S * 0.42 * WS) + 2, r = Math.max(1.5, L * 0.2);
+      seg(-1, 0, L * 0.75, 0, tw, P.wood);
+      const hp = at(L * 0.84, 0);
+      ell(cv, hp[0], hp[1], r, r, P.met, T);
+      // flanges
+      for (const [u, v] of [[L * 0.84, -r - 0.8], [L * 0.84, r + 0.8], [L * 0.84 + r + 0.8, 0]]) { const q = at(u, v); cv.put(Math.floor(q[0]), Math.floor(q[1]), P.met.l, T); }
+      break;
+    }
+    case 'hammer': {
+      const L = ri(S * 0.5 * WS) + 2, hh = Math.max(1.5, L * 0.26), hw = Math.max(1, L * 0.14);
+      seg(-2, 0, L, 0, tw, P.wood);
+      pl([[L * 0.92 - hw, -hh], [L * 0.92 + hw, -hh], [L * 0.92 + hw, hh], [L * 0.92 - hw, hh]], P.met);
+      break;
+    }
+    case 'dagger': {
+      const L = ri(S * 0.28 * WS) + 2;
+      seg(-1, 0, 0.5, 0, tw, P.dark);
+      seg(1, -1, 1, 1, 1, P.acc);
+      seg(1.5, 0, L, 0, Math.max(1, ri(S / 16)), P.met);
+      const a = at(L + 0.5, 0); cv.put(Math.floor(a[0]), Math.floor(a[1]), P.met.l, T);
+      break;
+    }
+    case 'trident': {
+      const L = ri(S * 0.72 * WS) + 3, pw = Math.max(1.5, S / 10);
+      seg(-L * 0.25, 0, L * 0.82, 0, tw, P.wood);
+      seg(L * 0.82, -pw, L * 0.82, pw, 1, P.met);
+      for (const v of [-pw, 0, pw]) seg(L * 0.82, v, L * (v === 0 ? 1.06 : 1.0), v, 1, P.met);
+      break;
+    }
+    case 'scythe': {
+      const L = ri(S * 0.7 * WS) + 3, bl = Math.max(2, L * 0.42);
+      seg(-L * 0.3, 0, L * 0.92, 0, tw, P.wood);
+      pl([[L * 0.86, -0.5], [L * 0.97, bl * 0.45], [L * 0.86, bl * 0.95], [L * 0.68, bl * 1.15], [L * 0.8, bl * 0.55]], P.met);
+      break;
+    }
+    case 'torch': {
+      const L = ri(S * 0.36 * WS) + 2;
+      seg(-1, 0, L * 0.8, 0, tw, P.wood);
+      const tp = at(L * 0.85, 0);
+      const t = p.t ?? 0, fh = Math.max(2, ri(S * 0.14)) + (t % 2);
+      ell(cv, tp[0], tp[1], Math.max(1, tw), Math.max(1, tw), P.dark, T);
+      poly(cv, [[tp[0] - 1.5, tp[1]], [tp[0] + (t % 2 ? 0.8 : -0.4), tp[1] - fh - 1], [tp[0] + 2, tp[1]]], flat(0xe2461e), T, { hi: 9, lo: -9 });
+      poly(cv, [[tp[0] - 0.5, tp[1]], [tp[0] + 0.5, tp[1] - fh * 0.6 - 1], [tp[0] + 1.5, tp[1]]], flat(0xffc040), T, { hi: 9, lo: -9 });
+      break;
+    }
+    case 'pick': {
+      const L = ri(S * 0.48 * WS) + 2, ph = Math.max(2, L * 0.36);
+      seg(-2, 0, L, 0, tw, P.wood);
+      seg(L * 0.78, -ph, L, 0, Math.max(1, tw), P.met); seg(L, 0, L * 0.78, ph, Math.max(1, tw), P.met);
+      break;
+    }
     case 'sling': {
       const cl = ri(S * 0.45 * WS) + 2;
       seg(0, 0, cl, 0, 1, P.acc);
@@ -895,7 +1339,7 @@ function drawOrb(c: Ctx, x: number, y: number, r: number, mode: number): void {
 }
 
 function defaultAngle(kind: string): number {
-  return kind === 'bow' ? 0 : kind === 'sling' ? 70 : kind === 'spear' ? -78 : kind === 'staff' ? -85 : -55;
+  return kind === 'bow' ? 0 : kind === 'sling' ? 70 : kind === 'spear' || kind === 'trident' ? -78 : kind === 'staff' ? -85 : kind === 'torch' ? -75 : -55;
 }
 
 // ----------------------------------------------------------- motifs: tells of its powers painted onto the body
@@ -1286,7 +1730,8 @@ const SWING: Record<Stage, Hold> = {
 function holdFor(kind: string, st: Stage): Hold {
   const S = SWING;
   switch (kind) {
-    case 'spear': {
+    case 'spear':
+    case 'trident': {
       const t: Partial<Record<Stage, Hold>> = {
         rest: { ang: -78, arm: [0.25, 0.9] }, w0: { ang: -8, arm: [-0.3, 0.4] }, w1: { ang: -4, arm: [-0.6, 0.35] },
         s0: { ang: 0, arm: [0.9, 0.2] }, s1: { ang: 3, arm: [1.1, 0.25] }, chg: { ang: 0, arm: [0.9, 0.25] },

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { storySafe, storyWidth } from '../storyFont';
 import { CLASSES } from '../classes';
 import { Stream } from '../../engine/rng';
+import { BARK_PARTS, BARK_MAX_W } from './barkGen';
 import { BARK_TRIGGERS, pickBark, STREAK_MARKS, VOICES, VOICE_TIERS, voiceTier } from './barks';
 import { MobType } from '../mobs';
 import { BEATS, BEAT_BY_ID } from './beats';
@@ -117,4 +118,19 @@ test('barks are picked from the story stream: the same for a seed, quiet where a
   assert.ok(pickBark(1, 'idle', 'warrior', 1, 0, new Set(VOICES.warrior.idle[0])), 'and repeated rather than silent when nothing else is left');
   assert.equal(voiceTier(1), 0); assert.equal(voiceTier(2), 1); assert.equal(voiceTier(3), 1); assert.equal(voiceTier(4), 2); assert.equal(voiceTier(5), 2);
   assert.deepEqual([...STREAK_MARKS], [...STREAK_MARKS].sort((a, b) => a - b));
+});
+
+test('ambient chatter is partly composed on the spot: plenty of it, drawable, in the class\'s voice, never silent', () => {
+  for (const c of CLASSES) {
+    const made = new Set<string>();
+    for (let i = 0; i < 400; i++) for (const ch of [1, 3, 5]) {
+      const t = pickBark(i, 'idle', c.name, ch, i % 7)!;
+      assert.ok(t, `${c.name} chapter ${ch}`);
+      assert.equal(storySafe(t), t); assert.ok(storyWidth(t) <= BARK_MAX_W, t); assert.ok(!/[{},']/.test(t), t);
+      if (!VOICES[c.name].idle.flat().includes(t)) made.add(t);
+      assert.equal(t, pickBark(i, 'idle', c.name, ch, i % 7), 'pure');
+    }
+    assert.ok(made.size > 100, `${c.name} composed only ${made.size} idle lines`);
+    assert.ok(BARK_PARTS[c.name], c.name);
+  }
 });

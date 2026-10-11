@@ -5,7 +5,6 @@
 //   pilot.drive(state, inputs[slot]);          // before every step()
 import { MOBS, Behavior } from '../data/mobs';
 import { MAX_LEVEL, UPGRADES } from '../data/upgrades';
-import type { StockItem } from '../data/wares';
 import { WARES, wareSpot } from '../data/wares';
 import { cosTurns, sinTurns } from '../engine/math';
 import { createRng, rngFloat, rngInt, type Rng } from '../engine/rng';
@@ -22,10 +21,8 @@ import type { Skill } from './skill';
 import { TACTICS } from './tactics';
 import { collectThreats, Memory, Threats } from './threats';
 
-/** What the shop looks like to the pilots in a store: the stock on the ground and what has sold. */
+/** What the pilots need to know in a store beyond the sim (the goods on the ground and what has sold are `s.wares`). */
 export interface StoreCtx {
-  stock: readonly StockItem[];
-  sold: readonly boolean[];
   /** Every hero is finished shopping: the party can walk on. */
   allDone: boolean;
 }
@@ -646,10 +643,10 @@ export class Pilot {
     if (p.pending > 0) { plan.gx = v.x; plan.gy = v.y; return; }
     if (!store) this.storeDone = true;
     else if (!this.storeDone) {
-      if (this.shopWant < 0 || store.sold[this.shopWant] || this.shopTries > 3) this.shopWant = this.pickWare(s, p, store);
+      if (this.shopWant < 0 || s.wares[this.shopWant]?.sold !== false || this.shopTries > 3) this.shopWant = this.pickWare(s, p);
       if (this.shopWant < 0) this.storeDone = true;
       else {
-        const sp = wareSpot(this.shopWant, store.stock.length);
+        const sp = wareSpot(this.shopWant, s.wares.length);
         plan.gx = sp.x; plan.gy = sp.y;
         const nearX = Math.abs(v.x - sp.x) < WARE_REACH_X - 6, nearY = Math.abs(v.y - sp.y) < WARE_REACH_Y - 5;
         if (nearX && nearY && this.interactCool === 0) {
@@ -672,14 +669,14 @@ export class Pilot {
   private pressInteract = false;
 
   /** Which ware to buy next, or -1 when there is nothing worth the gold. */
-  private pickWare(s: GameState, p: GameState['players'][number], store: StoreCtx): number {
+  private pickWare(s: GameState, p: GameState['players'][number]): number {
     this.shopTries = 0;
     let best = -1, bestV = -1;
     const sk = this.skill;
-    for (let i = 0; i < store.stock.length; i++) {
-      if (store.sold[i]) continue;
-      const ware = WARES[store.stock[i].ware];
-      const price = store.stock[i].price;
+    for (let i = 0; i < s.wares.length; i++) {
+      if (s.wares[i].sold) continue;
+      const ware = WARES[s.wares[i].ware];
+      const price = s.wares[i].price;
       if (price > s.gold) continue;
       let value: number;
       if (ware.kind === 'level') { if (p.level >= MAX_LEVEL) continue; value = 9; }

@@ -3,22 +3,13 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "npm",
+      "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "run",
         "dev"
       ],
-      "port": 5188,
+      "port": 4000,
       "autoPort": true
-    },
-    {
-      "name": "art",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "art"
-      ],
-      "port": 5190
     }
   ]
 }

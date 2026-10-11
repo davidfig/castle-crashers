@@ -18,11 +18,11 @@ export const SCENE_H = 262;
 
 /**
  * Where figures stand in each set, at the game's own size (1x, so a hero is about 28 px tall against a town 262 px high): the left edge of the
- * party (they stand 22 px apart) and the Registrar's feet. Placed to suit what the set shows.
+ * party (they stand 22 px apart). Placed to suit what the set shows.
  */
-export const STAGE: Record<Backdrop, { party: number; registrar: number; /** The party walks in from this many px to the left when the scene opens, then stands. */ walkIn?: number }> = {
-  notice: { party: 196, registrar: 540, walkIn: 150 }, tavern: { party: 110, registrar: 520 }, gates: { party: 120, registrar: 520 }, rain: { party: 120, registrar: 520 },
-  campfire: { party: 230, registrar: 420 }, smoke: { party: 120, registrar: 520 }, office: { party: 170, registrar: 506, walkIn: 150 }, market: { party: 150, registrar: 520 }, graves: { party: 120, registrar: 520 },
+export const STAGE: Record<Backdrop, { party: number; /** The party walks in from this many px to the left when the scene opens, then stands. */ walkIn?: number }> = {
+  notice: { party: 196, walkIn: 150 }, tavern: { party: 110 }, gates: { party: 120 }, rain: { party: 120 },
+  campfire: { party: 230 }, smoke: { party: 120 }, office: { party: 170, walkIn: 150 }, market: { party: 150 }, graves: { party: 120 },
 };
 
 /** A cheap deterministic hash in [0, 1). */

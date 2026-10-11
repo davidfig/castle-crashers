@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CLASSES } from '../data/classes';
 import { BEATS } from '../data/story/beats';
-import { AFTERMATH, boardGreeting, cityMood, CLASS_ORDER, HUB_SCENES, INTRO, registrarRemark, type Scene } from '../data/story/hub';
+import { AFTERMATH, boardGreeting, registrarAside, cityMood, CLASS_ORDER, HUB_SCENES, INTRO, registrarRemark, type Scene } from '../data/story/hub';
 import { makeRunConfig, offerWrits } from './board';
 import { campaignComplete, createLedger, hasSeen, type Ledger } from './ledger';
 import { dueScenes, markSceneSeen, SCENES_PER_VISIT } from './scenes';
@@ -130,6 +130,17 @@ test('the Registrar remarks differently by chapter and result, and notices mercy
   assert.equal(registrarRemark(1, ctx(3, 'won', 0, 4)).length, 2);
   const lines = new Set(Array.from({ length: 60 }, (_, i) => registrarRemark(i, ctx(2, 'won'))[0]));
   assert.ok(lines.size >= 4, 'variety');
+});
+
+test('the board and the Registrar have composed remarks that stay drawable and vary', () => {
+  const asides = new Set<string>(), greets = new Set<string>();
+  for (let ch = 1; ch <= 5; ch++) for (let i = 0; i < 400; i++) {
+    const a = registrarAside(i, ch);
+    if (a) { asides.add(a); assert.match(fontSafe(a), FONT); assert.ok(!/[{}]/.test(a), a); assert.ok(a.length <= 60, a); }
+    const g = boardGreeting(i, ch);
+    greets.add(g); assert.match(fontSafe(g), FONT); assert.ok(!/[{}]/.test(g), g); assert.ok(g.length <= 44, g);
+  }
+  assert.ok(asides.size > 150 && greets.size > 150, `${asides.size} asides, ${greets.size} greetings`);
 });
 
 test('the board greets differently each visit and the city mood follows the mercy shown', () => {

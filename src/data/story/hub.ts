@@ -1,6 +1,7 @@
 // What the city says (docs/12-story.md, tier 1: hub beats). The Registrar, the tavern, the Writ board and the mood of the
 // square react to where the campaign is and to what the party has done. The bitmap font has no commas or apostrophes: write without.
 import { createRng, rngInt, Stream } from '../../engine/rng';
+import { fill, genRng } from './gen';
 
 export type ClassName = 'warrior' | 'mage' | 'cleric' | 'rogue' | 'archer';
 export const CLASS_ORDER: readonly ClassName[] = ['warrior', 'cleric', 'rogue', 'mage', 'archer'];
@@ -195,6 +196,39 @@ const REMARK_BETRAYED: readonly (readonly string[])[] = [
   ['Thank you for not hesitating.', 'Quick. Quiet. As it should be.', 'Good.'],
 ];
 
+/** A passing remark from the Registrar, by chapter, with the room's small details filled in: the board never says quite the same thing twice. */
+const REMARK_ASIDE: readonly (readonly string[])[] = [
+  ['The {food} in the Tally Office was excellent.', 'A {beast} wandered into the ledger room.', 'I have {num} pens and need one more.', 'Mind the {weather} on your way out.', 'The clerks bet on your count today.', 'Do tell {place} I said hello.'],
+  ['A hunter brought a {thing} instead of a head.', 'The {weather} has smudged the tally.', 'Some hunters ask about {place}. Odd.', 'The Crown asks fewer questions lately.', 'A {beast} sat on the doorstep all night.', 'The clerks have stopped betting.'],
+  ['The dates in the old files are tidy.', 'Someone moved the files from {place}.', 'I am told not to explain the {num}.', 'Do not read the sealed drawer.', 'The ink has begun to run.', 'Please do not feed the {beast}.'],
+  ['The quota for {place} has doubled.', 'Fewer hunters ask where the heads come from.', 'I sleep well. I sleep very well.', 'The {food} is paid for. By whom does not matter.', 'The numbers are very neat now.', 'The {weather} suits the season.'],
+  ['Almost over. I will miss the numbers.', 'The {weather} is the least of my worries.', 'Someone left a {thing} on my desk.', 'It is quiet in the office.', 'I have started to lock the door.', 'The {beast} no longer visits.'],
+];
+
+const BOARD_ASIDE: readonly (readonly string[])[] = [
+  ['A {beast} sleeps under the notice board.', 'The clerks share {food} at noon.', 'The {weather} rattles the notices.', 'Someone sings about {place}.'],
+  ['The {weather} curls the corners of the notices.', 'A hunter asks the way to {place}.', 'The {beast} by the door looks thin.', 'The clerks eat in silence.'],
+  ['The {weather} has faded the older notices.', 'A clerk is stamping {num} forms.', 'The notices smell of fresh ink.', 'Nobody mentions {place}.'],
+  ['The queue wraps past the {thing} stall.', 'The notices are numbered now.', 'A clerk counts {num} twice.', 'Someone has stopped selling {food}.'],
+  ['The board is quiet. Even the {beast} left.', 'A lone clerk guards the {thing}.', 'The {weather} drifts through the hall.', 'The queue has thinned to {num}.'],
+];
+
+/** Sometimes (half the time) a passing remark to go with `registrarRemark`; undefined the rest. */
+export function registrarAside(seed: number, chapter: number): string | undefined {
+  return rngInt(genRng(seed, 5), 2) === 0 ? aside(REMARK_ASIDE, seed, chapter, 1) : undefined;
+}
+
+/** One filled template, kept within `max` characters (a long word from the lists can push it over); undefined when six tries all run long. */
+function aside(pool: readonly (readonly string[])[], seed: number, chapter: number, salt: number, max = 60): string | undefined {
+  const r = genRng(seed, salt);
+  const lines = pool[Math.min(Math.max(chapter, 1), 5) - 1];
+  for (let i = 0; i < 6; i++) {
+    const text = fill(lines[rngInt(r, lines.length)], r, new Map());
+    if (text.length <= max) return text;
+  }
+  return undefined;
+}
+
 export interface RemarkContext { chapter: number; outcome: 'won' | 'lost' | 'retreat'; spared: number; betrayed: number }
 
 /** The Registrar's remark on a run, picked from the story stream so the same ledger state says the same thing. */
@@ -221,7 +255,9 @@ const GREETING: readonly (readonly string[])[] = [
 ];
 export function boardGreeting(seed: number, chapter: number): string {
   const lines = GREETING[Math.min(Math.max(chapter, 1), 5) - 1];
-  return lines[rngInt(createRng(seed >>> 0, Stream.story), lines.length)];
+  const r = createRng(seed >>> 0, Stream.story);
+  const pickFixed = lines[rngInt(r, lines.length)];
+  return rngInt(r, 3) === 0 ? pickFixed : aside(BOARD_ASIDE, seed, chapter, 2, 44) ?? pickFixed;
 }
 
 /** [low, mid, high] by how much of the campaign's toll was mercy. */

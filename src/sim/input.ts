@@ -11,6 +11,8 @@ export const Btn = {
   Level: 128,
   /** Menus only (a pad's A): confirms in the lobby and the shop. The sim ignores it. */
   Confirm: 256,
+  /** Held: the shaman's second bank of actions (docs/18). */
+  Alt: 512,
 } as const;
 
 export interface InputFrame {

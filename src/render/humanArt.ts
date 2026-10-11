@@ -1,5 +1,5 @@
 // Sprite composer for generated people: turns a HumanLook (src/data/humanLook.ts) into the sheet a story figure needs (an idle and a talk
-// loop, like the hand-made NPCs in art/chars). Pure code, deterministic: one look is always the same bytes. It shares its shapes, shading
+// loop). Pure code, deterministic: one look is always the same bytes. It shares its shapes, shading
 // and house post pass (rim light, ink outline) with the monster composer through pixelKit.ts. People are small (16-21 px), so a face is
 // a few pixels; the silhouette (hat, hem, cloak, what they hold) does most of the telling.
 import type { HumanLook, HumanSheet } from '../data/humanLook';
@@ -8,7 +8,7 @@ import { buildSheet, Cv, CX, GY, ell, line, matOf, mixc, poly, post, rect, crop,
 const T_CLOAK = 1, T_BODY = 2, T_LIMB = 3, T_HEAD = 4, T_HAIR = 5, T_HELD = 6, T_FACE = 7;
 const INK = 0x1a1420, STEEL = 0x9aa4b0, PAPER = 0xe8e0c8, WOOD = 0x7a4a28, MOUTH = 0x6a2a2a;
 
-interface Pose {
+export interface Pose {
   /** Upper body sinks this many px (breathing). */
   bob: number;
   /** 0 closed, 1 small, 2 open. */
@@ -20,7 +20,7 @@ interface Pose {
   nod: number;
 }
 
-interface Dim { sw: number; ww: number; flare: number; hw: number; hh: number; ll: number; th: number; arm: number; lw: number }
+export interface Dim { sw: number; ww: number; flare: number; hw: number; hh: number; ll: number; th: number; arm: number; lw: number }
 
 function dims(l: HumanLook): Dim {
   const H = l.height;
@@ -129,7 +129,7 @@ function drawFigure(cv: Cv, l: HumanLook, p: Pose): void {
   if (has('spectacles')) { const ox = [[-1, 1], [-1, 2], [-2, 2]][l.eyes], e = ri(yHead) + 3; for (const x of [ox[0] - 1, ox[0] + 1, ox[1] - 1, ox[1] + 1]) cv.put(ri(hcx) + x, e, trim.l, T_FACE); }
 }
 
-function drawFace(cv: Cv, l: HumanLook, p: Pose, d: Dim, hcx: number, hy: number, yHead: number, rnd: () => number): void {
+export function drawFace(cv: Cv, l: HumanLook, p: Pose, d: Dim, hcx: number, hy: number, yHead: number, rnd: () => number): void {
   void rnd;
   const ey = Math.round(yHead) + 3;
   const ox = [[-1, 1], [-1, 2], [-2, 2]][l.eyes];
@@ -145,7 +145,7 @@ function drawFace(cv: Cv, l: HumanLook, p: Pose, d: Dim, hcx: number, hy: number
   }
 }
 
-function drawHair(cv: Cv, l: HumanLook, d: Dim, hcx: number, hy: number, yHead: number, hair: Mat, long: boolean): void {
+export function drawHair(cv: Cv, l: HumanLook, d: Dim, hcx: number, hy: number, yHead: number, hair: Mat, long: boolean): void {
   void long; void hy;
   const hr = d.hw / 2, top = yHead;
   const x0 = Math.round(hcx - hr), x1 = Math.round(hcx + hr);
@@ -165,7 +165,7 @@ function drawHair(cv: Cv, l: HumanLook, d: Dim, hcx: number, hy: number, yHead: 
   }
 }
 
-function drawBeard(cv: Cv, l: HumanLook, d: Dim, hcx: number, hy: number, yHead: number, hair: Mat): void {
+export function drawBeard(cv: Cv, l: HumanLook, d: Dim, hcx: number, hy: number, yHead: number, hair: Mat): void {
   void hy;
   const cx = Math.round(hcx), ey = Math.round(yHead) + 3, bot = Math.round(yHead + d.hh) - 1;
   const hr = d.hw / 2, x0 = Math.round(hcx - hr), x1 = Math.round(hcx + hr);

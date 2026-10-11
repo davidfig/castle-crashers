@@ -26,7 +26,7 @@ If every piece of gameplay-affecting UI is an input action (see [06](06-ui.md#im
 ## Required properties (do now, even in local-only)
 
 1. **Deterministic sim** with seeded RNG and fixed timestep ([01](01-architecture.md)).
-2. **Serializable state:** `GameState` is plain data (no closures, no class instances with hidden state, no DOM refs) → `serialize()/deserialize()` and `hash()`.
+2. **Serializable state:** `GameState` is plain data (no closures, no class instances with hidden state, no DOM refs) → `serialize()/deserialize()` and `hash()`. Implemented as `snapshot` / `restore` in `src/sim/snapshot.ts` (see [21](21-the-road.md)); its tests fail if the state stops being plain data or a restored sim plays on differently.
 3. **Input quantization & compact encoding:** small integers, bitmasks.
 4. **Stable IDs:** entity and item IDs are assigned deterministically.
 5. **No wall-clock in sim.**

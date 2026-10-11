@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monster Roller</title>
+<style>
+  :root { --bg:#14121a; --panel:#1d1a25; --line:#322d3f; --fg:#e6e0d4; --dim:#8d8697; --acc:#e8873a; --good:#8cd03a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; position:sticky; top:0; background:var(--bg); z-index:2; }
+  header h1 { font-size:14px; margin:0 12px 0 0; letter-spacing:.08em; text-transform:uppercase; color:var(--acc); }
+  header a { color:var(--dim); }
+  select, button, input { background:var(--panel); color:var(--fg); border:1px solid var(--line); padding:4px 8px; font:inherit; border-radius:3px; cursor:pointer; }
+  input[type=number] { width:11ch; cursor:text; }
+  button.on { border-color:var(--acc); color:var(--acc); }
+  button.roll { border-color:var(--acc); color:var(--acc); font-weight:bold; }
+  label { color:var(--dim); display:flex; gap:6px; align-items:center; }
+  #err { color:#ff7b6b; white-space:pre-wrap; }
+  main { padding:16px; }
+  h2.biome { margin:20px 0 10px; font-size:12px; color:var(--acc); letter-spacing:.1em; text-transform:uppercase; font-weight:500; }
+  h2.biome:first-child { margin-top:0; }
+  .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:10px; display:flex; gap:12px; min-width:0; }
+  .card.boss { grid-column: span 2; border-color:#6b4a2a; }
+  @media (max-width: 800px) { .card.boss { grid-column: auto; } }
+  .pic { flex:none; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .pic canvas { image-rendering: pixelated; background:#2c4a30; border-radius:3px; display:block; }
+  .pic select { font-size:11px; padding:1px 4px; max-width:100%; }
+  .info { min-width:0; flex:1; }
+  .info h3 { margin:0 0 2px; font-size:14px; color:var(--fg); }
+  .role { color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em; }
+  .stats { display:grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap:2px 10px; margin:6px 0; }
+  .stats span b { color:var(--dim); font-weight:400; }
+  .tags { display:flex; gap:4px; flex-wrap:wrap; margin:4px 0; }
+  .tag { border:1px solid var(--line); border-radius:3px; padding:0 5px; font-size:11px; }
+  .tag.el { border-color:currentColor; }
+  .look { color:var(--dim); font-size:11px; }
+  .skill { margin-top:6px; padding-top:6px; border-top:1px dashed var(--line); font-size:12px; }
+  .skill b { color:var(--acc); }
+  .skill .num { color:var(--dim); }
+  .moves { margin:4px 0 0; padding:0; list-style:none; }
+  .moves li { padding:2px 0; }
+  .moves .enr { color:#ff7b6b; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Monster Roller</h1>
+  <a href="/art/screens.html">screens</a>
+  <a href="/art/heroes.html">heroes</a>
+  <label>seed <input type="number" id="seed" min="0" step="1"></label>
+  <button class="roll" id="roll" title="r">roll</button>
+  <button id="prev" title="←">&lt;</button>
+  <button id="next" title="→">&gt;</button>
+  <label>zoom <select id="zoom"><option>2</option><option>3</option><option selected>4</option><option>6</option></select></label>
+  <button id="pause">pause</button>
+  <span id="err"></span>
+</header>
+<main id="main"></main>
+<script type="module" src="/art/mobs.js"></script>
+<script src="/art/nav.js"></script>
+</body>
+</html>

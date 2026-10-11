@@ -24,6 +24,8 @@ export interface Made {
 export interface Ledger {
   used: Set<string>;
   names: Set<string>;
+  /** Species used so far in the whole run (see look.ts). */
+  kinds: Map<string, number>;
 }
 
 /** Does a slot change what it does? Casters and archers stay what they are most of the time; heavy melee almost always does. */
@@ -161,8 +163,8 @@ export function makeMob(p: SlotPlan, bp: BiomePlan, faction: Faction, led: Ledge
   else if (element) { elements.splice(elements.indexOf(element), 1); elements.unshift(element); }
   if (element && !motifs.includes(ELEMENTS[element].motif)) motifs.unshift(ELEMENTS[element].motif);
   const ids = picked.map((t) => t.id);
-  const look = lookFor(d, { def, traits: new Set(picked.flatMap((t) => [t.id, ...(t.kind ? [t.kind] : [])])), motifs, boss: false, faction, u: p.u, elements });
-  def.name = nameFor(look, d, led.names, elements);
+  const look = lookFor(d, { def, traits: new Set(picked.flatMap((t) => [t.id, ...(t.kind ? [t.kind] : [])])), motifs, boss: false, faction, biome: p.biome, seen: led.kinds, u: p.u, elements });
+  def.name = nameFor(look, d, led.names, elements, role);
   led.names.add(def.name);
   return { def, look, traits: ids, elements };
 }

@@ -4,6 +4,8 @@ import { STORY_CHARS, storyWidth } from '../storyFont';
 import { NPC_NAMES } from '../../render/npcArt';
 import { beatsOf, fieldCalm, lineTicks, wrapStory } from '../../render/roadCast';
 import { FINAL_CHAPTER } from './chapters';
+import { BEATS, CLOSERS, generateScript, generatedCount, OPENERS } from './roadGen';
+import { WORDS } from './gen';
 import { ROAD_REACTIONS, ROAD_SCENES, roadSceneFor, roadSceneT, scriptFor } from './road';
 import { CLASSES } from '../classes';
 import { LEVELS_PER_BIOME } from '../../campaign/route';
@@ -54,22 +56,66 @@ test('every scene has alternates, all different, and a scene with a king lets th
   }
 });
 
-test('the first meeting is the set script, then the alternates rotate without repeating back to back', () => {
+test('the first meeting is the set script, then generated and hand-written conversations alternate without repeating back to back', () => {
   for (const sc of ROAD_SCENES) {
     assert.equal(scriptFor(sc, 0), sc.lines);
     const n = sc.variants.length;
     const seen = new Set<unknown>();
-    let prev: unknown;
+    let prev = '';
     for (let h = 1; h <= n * 2; h++) {
       const s = scriptFor(sc, h);
+      const key = s.map((l) => l.text).join('|');
       assert.notEqual(s, sc.lines, 'the set script is only for the first meeting');
-      assert.notEqual(s, prev, `${sc.id} repeats at hearing ${h}`);
-      prev = s;
-      if (h <= n) seen.add(s);
+      assert.notEqual(key, prev, `${sc.id} repeats at hearing ${h}`);
+      prev = key;
+      if (h % 2 === 0) seen.add(s);
+      else assert.ok(!sc.variants.includes(s), 'odd hearings are generated');
     }
-    assert.equal(seen.size, n, `${sc.id} hears every alternate before any repeats`);
+    assert.equal(seen.size, n, `${sc.id} hears every hand-written alternate before any repeats`);
     assert.equal(scriptFor(sc, 5, 0), sc.lines, 'forced 0 is the first-time script');
     assert.equal(scriptFor(sc, 0, 2), sc.variants[1]);
+    assert.deepEqual(scriptFor(sc, 0, -3), scriptFor(sc, 9, -3), 'forced -k is the k-th generated one');
+  }
+});
+
+test('generated conversations are well formed, carry the scene\'s story exchange, and are plentiful and different', () => {
+  for (const sc of ROAD_SCENES) {
+    assert.ok(generatedCount(sc) >= 80, `${sc.id} can make only ${generatedCount(sc)} conversations`);
+    const esc = (t: string) => t.replace(/[.*+?^$()|[\]\\]/g, '\\$&');
+    const asRe = (t: string) => new RegExp('^' + t.slice(t.indexOf('|') + 1).split(/\{[a-z0-9+]+\}/).map(esc).join('.+') + '$');
+    const beatRes = BEATS[sc.id].map((e) => e.lines.map(asRe));
+    const keys = new Set<string>();
+    for (let salt = 1; salt <= 300; salt++) {
+      const script = generateScript(sc, salt);
+      assert.deepEqual(script, generateScript(sc, salt), 'pure');
+      assert.ok(script.length >= 4 && script.length <= 14, `${sc.id}: ${script.length} lines`);
+      const text = script.map((l) => l.text);
+      keys.add(text.join('|'));
+      for (const l of script) {
+        assert.ok(l.who >= 0 && l.who < sc.cast.length, `${sc.id} speaker`);
+        assert.ok(!/[{}]/.test(l.text), `unfilled slot in "${l.text}"`);
+        for (const ch of l.text) assert.ok(STORY_CHARS.includes(ch), `${sc.id}: "${ch}" in "${l.text}"`);
+        for (const row of wrapStory(l.text, 150)) assert.ok(storyWidth(row) <= 150 || !row.includes(' '), `${sc.id} wraps`);
+        assert.ok(wrapStory(l.text, 150).length <= 4, l.text);
+      }
+      assert.ok(new Set(script.map((l) => l.who)).size >= 2, `${sc.id}: someone talks to themselves`);
+      assert.ok(beatRes.some((res) => res.every((re) => text.some((t) => re.test(t)))), `${sc.id} lost its story exchange`);
+    }
+    assert.ok(keys.size >= 120, `${sc.id}: only ${keys.size} different conversations in 300 tries`);
+  }
+});
+
+test('every opener and closer can play in some scene, and every slot names a real word list', () => {
+  for (const e of [...OPENERS, ...CLOSERS, ...Object.values(BEATS).flat()]) {
+    assert.ok(e.ch[0] >= 1 && e.ch[1] <= FINAL_CHAPTER && e.ch[0] <= e.ch[1]);
+    for (const l of e.lines) {
+      const i = Number(l.slice(0, l.indexOf('|')));
+      assert.ok(i >= 0 && i < e.npcs.length, l);
+      for (const m of l.matchAll(/\{([a-z]+)\d?\+?\}/g)) assert.ok(WORDS[m[1]], `slot ${m[1]} in ${l}`);
+    }
+  }
+  for (const e of [...OPENERS, ...CLOSERS]) {
+    assert.ok(ROAD_SCENES.some((sc) => e.ch[0] <= sc.chapter && sc.chapter <= e.ch[1] && e.npcs.every((n) => sc.cast.some((f) => f.npc === n))), `never plays: ${e.lines[0]}`);
   }
 });
 

@@ -5,8 +5,8 @@ Locally co-op, pixel-art fantasy roguelike. Small heroes push left to right acro
 ## Run it
 
 ```bash
-npm install
-npm run dev        # http://localhost:5188 (override with PORT=...)
+pnpm install
+pnpm dev           # http://localhost:4000 (override with PORT=...)
 ```
 
 Optional URL params: `?seed=1234` for a reproducible battlefield, `?mute=1` for no sound or music (leaves the saved N / M toggles alone); dev builds also take `?boss=1` (start at the boss arena), `?bots=3` (bot-controlled extra players), `?tutorial=1` (play the first-time controls tutorial; `0` skips it) and `&auto=1` (a bot plays player 1 too).
@@ -27,12 +27,13 @@ Any device pressing a button claims the next free player slot (up to 4). `R` or 
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | esbuild watch + live reload dev server |
-| `npm run build` | minified bundle to `public/dist/` |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | unit and determinism tests (node's built-in runner) |
-| `npm run playtest` | scripted bot plays several seeds headlessly; prints win/lose, kills, min HP |
-| `npm run check` | lints `sim/`, `engine/`, `data/` for nondeterministic APIs and forbidden imports |
+| `pnpm dev` | esbuild watch + live reload dev server |
+| `pnpm kill` | stop every running dev server (all worktrees) |
+| `pnpm build` | minified bundle to `public/dist/` |
+| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm test` | unit and determinism tests (node's built-in runner) |
+| `pnpm playtest` | scripted bot plays several seeds headlessly; prints win/lose, kills, min HP |
+| `pnpm check` | lints `sim/`, `engine/`, `data/` for nondeterministic APIs and forbidden imports |
 
 ## Layout
 

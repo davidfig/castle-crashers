@@ -1,5 +1,5 @@
 // Contact sheet of randomly generated monsters, for looking at the sprite composer (src/render/monsterArt.ts).
-//   (--bestiary SEED [--from N] draws the real generated cast of that run seed instead of random looks.)
+//   (--bestiary SEED [--from N] draws the real generated cast of that run seed instead of random looks; --look JSON draws a look, or a list of them.)
 //   node tools/monster-sheet.mjs --seed 1 --count 40 --scale 4 --out sheet.png [--boss] [--poses [N]] [--cols N] [--size N]
 // Each monster is drawn standing (walk_0) on a rotating set of backdrops (green, sand, dark purple, white) so the outline is checked
 // against all of them. --poses adds, under the grid, one row per monster of every frame of every anim (the first N monsters, default 3).
@@ -75,7 +75,7 @@ for (let i = 0; i < total; i++) {
       look.palette = { ...look.palette, base: hsl(el.hue, 0.6, L), eye: el.glow, accent: el.core };
     }
     looks.push(look); sheets.push(composeMonster(look)); continue; }
-  const look = bestiary ? bestiary.looks[(i + Number(opt('from', 0))) % bestiary.looks.length] : lookJson ? JSON.parse(String(lookJson)) : randomLook(seed * 1000 + i, { boss, size: forcedSize });
+  const look = bestiary ? bestiary.looks[(i + Number(opt('from', 0))) % bestiary.looks.length] : lookJson ? [JSON.parse(String(lookJson))].flat().at(i % [JSON.parse(String(lookJson))].flat().length) : randomLook(seed * 1000 + i, { boss, size: forcedSize });
   looks.push(look); sheets.push(composeMonster(look));
 }
 const cells = sheets.map((s) => { const f = s.meta.frames.walk_0; return { w: f.w, h: f.h }; });

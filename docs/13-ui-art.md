@@ -8,7 +8,7 @@ The field draws everything at 1x on the 640x360 canvas (a hero is about 28 px ta
 
 ## The look: an illuminated ledger
 
-The game is about a bounty office and its books, and the repo's art direction already has a "Glass" palette (stained glass and illuminated manuscripts: jewel tones, flat fills, a dark lead outline, gold leaf for light; `art/palette.mjs`). The screens use it:
+The game is about a bounty office and its books, so the art direction is stained glass and illuminated manuscripts: jewel tones, flat fills, a dark lead outline, gold leaf for light (the colours live in `src/render/uiArt.ts`). The screens use it:
 
 - **Pages** of vellum for anything read (scenes, the summary, the Writ board): dark ink on warm paper, a crimson header, gold leaf rules and corner flourishes.
 - **Panels** of deep lead-violet for anything chosen (the camp's picks, the merchant, the doors): a gold inner line, corner ornaments, lapis and crimson accents in each player's colour.
@@ -21,8 +21,8 @@ The game is about a bounty office and its books, and the repo's art direction al
 |---|---|---|---|
 | Writ board | `render/menu.ts` (board) | Parchment notice per Writ, biome picture (done), milestone seal, the Registrar's desk | a vellum notice per Writ with its biome picture, a raised gold-edged selection, a wax seal on a milestone: **done**; the Registrar's desk planned |
 | Character select | menu (select) | Class portraits, ready stamp | framed player-coloured panels, hero on a pedestal, name, abilities, health: **done**; real portraits and a drawn ready stamp planned. **It comes first**: title, then party select, then the hub scenes and the Writ board, which speak to that party (stored in `ledger.party`); the party stays for every run until R at the board reopens the select. The old per-run select (with a picture of where the Writ leads) remains only for dev skips that reach the board without a party (`?hub=1`) |
-| Hub scenes (tavern, map, board) | menu (scene) | A backdrop per scene, a figure for the speaker | **done**: nine drawn places, the party and the Registrar standing in them, one beat of talk at a time |
-| Run summary | menu (text) | Same page; the Registrar beside his remark | vellum page + story font + the Registrar: **done** |
+| Hub scenes (tavern, map, board) | menu (scene) | A backdrop per scene, the party standing in it | **done**: nine drawn places, the party standing in them, one beat of talk at a time (the Registrar is a voice here, not a figure) |
+| Run summary | menu (text) | Same page; the Registrar's remark in gold | vellum page + story font: **done** (no figure; people live in the world) |
 | Camp: spoils | menu (text) | Campfire backdrop | vellum page + story font: **done**; backdrop planned |
 | Camp: level-up picks | menu (picks) | Card frames, upgrade icons | **done** (panels, cards, icons) |
 | Store: merchant | in-world (no menu) | Ware icons on the ground, price tags, SOLD | icons bobbing on a pool of light with the price beside them; over the one a hero stands by, a panel like the quest-givers' (name, price, what it does in a sentence or two, and per hero there their button and what it would do for them, "RANK 1 TO 2" / "LEVEL 3 TO 4", or MAXED): **done** |
@@ -45,13 +45,13 @@ All procedural for now (`src/render/uiArt.ts`, packed into the atlas with the re
 
 ## Story figures (built)
 
-The art workbench ([art/README.md](../art/README.md)) makes small full-body characters, not busts, so the Registrar and the peddler are **figures**: `art/chars/registrar.mjs` and `peddler.mjs`, built like the heroes (a robed paper-doll rig, the Glass palette, lead outline), each with an *idle* loop and a *talk* loop. The scenes draw them at 1x like the heroes; the summary page and the peddler's stall still draw them at 4x until the 1x rule reaches them (see above). They stand beside the text: the Registrar on the right of every scene and run-summary page (talking), the peddler beside the stall (talking after a sale or a refusal). Their sheets are packed into the atlas with the other art (`src/render/npcArt.ts`, `npcSheets.ts`). Adding another speaker is a new file in `art/chars/` and a line in those two files.
+The story cast (the Registrar, peddler, King, Herald, Captain and Elder) are **figures**, small full-body people, not busts: generated per run ([19 Generated Humans](19-generated-humans.md)), in the Glass palette with a lead outline, each with an *idle* loop and a *talk* loop. They live in the world, drawn at 1x like the heroes: road scenes in the field, quest givers, and the peddler at his stall (talking after a sale or a refusal). The menu screens (story scenes, run summary) do not draw them; the Registrar there is only a voice. Their sheets are composed at run start and packed into the atlas's folk band (`src/render/folkSprites.ts`, `npcArt.ts`).
 
 ## Hub scene backdrops (built)
 
-The Registrar stands in a scene only where he speaks (`registrar` on the scene screen), so the opening's first scene is just the party and the crowd.
+Scenes show the party only; the Registrar speaks from the text panel.
 
-A hub scene is now a place, not a page: a full-screen drawn set (`src/render/sceneArt.ts`), the party's first two heroes (idle sprites, 1x) and the Registrar (1x, in his talk loop while he speaks) standing where the set's `STAGE` entry puts them, and the talk in an ink panel below, **one beat at a time** (attack moves on; dots show how far). The page layout stays for the run summary and the camp's spoils.
+A hub scene is now a place, not a page: a full-screen drawn set (`src/render/sceneArt.ts`), the party's first two heroes (idle sprites, 1x) standing where the set's `STAGE` entry puts them, and the talk in an ink panel below, **one beat at a time** (attack moves on; dots show how far). The page layout stays for the run summary and the camp's spoils.
 
 | Set | Used by | What is in it |
 |---|---|---|
@@ -65,7 +65,7 @@ A hub scene is now a place, not a page: a full-screen drawn set (`src/render/sce
 | Market | R6 (the map) | stalls with striped awnings, rolled maps, tall houses |
 | Graves | after R9 (the Quiet Region) | a grey dawn, rows of mounds and crosses, mist, a bare tree, crows |
 
-Every set, the title, the party select and the board can be worked on live in the art server's **Screens page** (`npm run art`, then /screens.html; see [art/README.md](../art/README.md)), with the scene's words beside it. Each set is deterministic and animated from the clock (flames, rain, smoke, bunting, lamp flicker), and is clipped to its area. To look at one: `?scene=R1:after` (also `R6`, `R8`, `R10`, `warlord:after`, `R2:after` ... `R9:after`), with `&page=N` to start at a beat and `&party=archer,mage` for who stands in it. Nothing is saved.
+The title screen can be worked on live in the art server's **Screens page** (`npm run art`, then /screens.html; see [art/README.md](../art/README.md)). Each set is deterministic and animated from the clock (flames, rain, smoke, bunting, lamp flicker), and is clipped to its area. To look at one: `?scene=R1:after` (also `R6`, `R8`, `R10`, `warlord:after`, `R2:after` ... `R9:after`), with `&page=N` to start at a beat and `&party=archer,mage` for who stands in it. Nothing is saved.
 
 ## Still to make
 

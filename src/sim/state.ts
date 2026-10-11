@@ -10,6 +10,7 @@ import { biomeIndex } from '../data/roster';
 import { HEAT_MAX, heatHorde } from '../data/heat';
 import { placeSites } from './sites';
 import type { QuestDef } from '../data/quests';
+import type { StockItem } from '../data/wares';
 import { createQuestRun, placeQuest, type QuestRun } from './quests';
 import { planGates, planLevel, type ClumpPlan, type Gate, type SimBeat, type SimScene } from './gen/level';
 
@@ -122,6 +123,16 @@ export interface PlayerState {
   salt: number;
   banned: Uint8Array;
   stickPrevY: number;
+  /** The shaman's pending action (docs/18): a press remembered for a few ticks, as 1 + (4 if Alt was held) + the button (0 Attack, 1 Ability 1, 2 Ability 2, 3 Dodge); 0 = none; `plantT` is the ticks it is still remembered. */
+  bufPlant: number;
+  plantT: number;
+  /** The shaman's selected extra: an index into the class's `totems.extras`. */
+  pick: number;
+}
+
+/** A good lying on the store's ground (data/wares.ts), and whether someone has bought it (each is one of a kind). */
+export interface Ware extends StockItem {
+  sold: boolean;
 }
 
 export interface GameState {
@@ -174,6 +185,11 @@ export interface GameState {
   spared: Int32Array;
   /** The side quest the party took in the camp for this level (sim/quests.ts), or none. */
   quest: QuestRun | null;
+  /** The store's goods on the ground (empty outside a store); bought with the trade button (sim/shop.ts). */
+  wares: Ware[];
+  /** The quests offered by the givers standing in the store, and the one the party has taken (-1 = none) for the level that follows. */
+  offers: QuestDef[];
+  questTaken: number;
   /** Shared gold (docs/05: gold is shared). */
   gold: number;
   /** The difficulty the party chose (data/heat.ts, 0 = none), chests opened this run, and chests in a row that gave no boon (the pity timer). */
@@ -220,7 +236,7 @@ function createPlayer(): PlayerState {
     bufAbility1: 0, rainOn: false, rainX: 0, rainY: 0, bufDodge: 0, prevButtons: 0, faceX: 1, faceY: 0, kills: 0, coins: 0,
     fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, cursor: 0, stickPrev: 0, ranks: new Uint8Array(UPGRADES.length), boonCd: new Uint16Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
     rootT: 0, dashChain: 0, chainT: 0, echoLeft: 0, echoT: 0, echoBig: false, silenceT: 0, confuseT: 0, poisonT: 0, burning: false, hexT: 0, witherT: 0, pullT: 0, pullX: 0, pullY: 0,
-    rerolls: START_REROLLS, banishes: START_BANISHES, salt: 0, banned: new Uint8Array(UPGRADES.length), stickPrevY: 0,
+    rerolls: START_REROLLS, banishes: START_BANISHES, salt: 0, banned: new Uint8Array(UPGRADES.length), stickPrevY: 0, bufPlant: 0, plantT: 0, pick: 0,
   };
 }
 
@@ -260,6 +276,9 @@ export interface SimOptions {
   mix?: readonly [number, number];
   /** The first field of a run: it opens with small encounters (see `PlanOptions.opener`). */
   opener?: boolean;
+  /** A store's goods (data/wares.ts `stockFor`) and the quests its givers offer (data/quests.ts `questOffers`). */
+  stock?: readonly StockItem[];
+  offers?: readonly QuestDef[];
 }
 
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
@@ -299,6 +318,9 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     betrayed: 0,
     spared: new Int32Array(MOBS.length),
     quest: opts.quest && !store ? createQuestRun(opts.quest) : null,
+    wares: store ? (opts.stock ?? []).map((it) => ({ ware: it.ware, price: it.price, sold: false })) : [],
+    offers: store ? (opts.offers ?? []).map((q) => ({ ...q })) : [],
+    questTaken: -1,
     gold: 0,
     heat,
     damageMul: opts.damage ?? 1,

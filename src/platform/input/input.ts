@@ -6,11 +6,15 @@ import { EV_STRIDE, Ev, type EventBuf } from '../../sim/events';
 interface KeyScheme {
   up: string; down: string; left: string; right: string;
   attack: string; ability1: string; ability2: string; dodge: string; standDown: string; level: string;
+  /** Held: the shaman's second bank of actions. */
+  alt: string;
+  /** The shaman's selection back one extra (forward is Alt + Ability 1). */
+  cycleBack: string;
 }
 
 const SCHEMES: KeyScheme[] = [
-  { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', attack: 'KeyJ', ability1: 'KeyK', ability2: 'KeyI', dodge: 'KeyL', standDown: 'KeyU', level: 'KeyO' },
-  { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', attack: 'Comma', ability1: 'Period', ability2: 'Semicolon', dodge: 'Slash', standDown: 'Quote', level: 'BracketLeft' },
+  { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', attack: 'KeyJ', ability1: 'KeyK', ability2: 'KeyI', dodge: 'KeyL', standDown: 'KeyU', level: 'KeyO', alt: 'KeyE', cycleBack: 'KeyQ' },
+  { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', attack: 'Comma', ability1: 'Period', ability2: 'Semicolon', dodge: 'Slash', standDown: 'Quote', level: 'BracketLeft', alt: 'Equal', cycleBack: 'Minus' },
 ];
 
 const RUMBLE_KEY = 'cc.rumble';
@@ -21,6 +25,7 @@ const PAD_ABILITY2 = [5]; // right bumper
 const PAD_DODGE = [6]; // left trigger
 const PAD_STAND_DOWN = [1, 3]; // B, Y
 const PAD_LEVEL = [4]; // left bumper
+const PAD_ALT = [0]; // A, held: the shaman's second bank (it is under the thumb while the triggers and bumper are pressed)
 const PAD_CONFIRM = [0]; // A: menus only
 
 interface Source {
@@ -121,6 +126,8 @@ export class InputManager {
     if (code === sc.dodge) return Btn.Dodge;
     if (code === sc.standDown) return Btn.Interact;
     if (code === sc.level) return Btn.Level;
+    if (code === sc.alt) return Btn.Alt;
+    if (code === sc.cycleBack) return Btn.Swap;
     return 0;
   }
 
@@ -141,6 +148,8 @@ export class InputManager {
         if (on(sc.dodge)) b |= Btn.Dodge;
         if (on(sc.standDown)) b |= Btn.Interact;
         if (on(sc.level)) b |= Btn.Level;
+        if (on(sc.alt)) b |= Btn.Alt;
+        if (on(sc.cycleBack)) b |= Btn.Swap;
         b |= this.edges.get(id) ?? 0;
         this.edges.set(id, 0);
         out.buttons = b;
@@ -186,6 +195,7 @@ export class InputManager {
         if (PAD_DODGE.some(down)) b |= Btn.Dodge;
         if (PAD_STAND_DOWN.some(down)) b |= Btn.Interact;
         if (PAD_LEVEL.some(down)) b |= Btn.Level;
+        if (PAD_ALT.some(down)) b |= Btn.Alt;
         if (PAD_CONFIRM.some(down)) b |= Btn.Confirm;
         const any = p.buttons.some((bt, i) => bt.pressed && !held?.has(i));
         if (down(9) && !(prev & 0x100)) this.restartRequested = true;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { MonsterLook, MonsterSheet } from '../data/monsterLook';
 import { generateBestiary } from '../data/bestiary';
 import { composeMonster } from './monsterArt';
-import { BACKS, BUILDS, CROWNS, HEADS, HELDS, LIMBS, MOTIFS, randomLook } from './monsterLookRandom';
+import { BACKS, BUILDS, CROWNS, HEADS, HELDS, JAWS, LIMBS, MOTIFS, PATTERNS, WORNS, randomLook } from './monsterLookRandom';
 import { packSheets } from './monsterSprites';
 
 const alphaAt = (s: MonsterSheet, x: number, y: number): number => s.rgba[(y * s.width + x) * 4 + 3];
@@ -92,6 +92,10 @@ test('fuzz: hundreds of looks across every enum value (and odd numbers) never th
   for (const back of BACKS) run({ ...base, back });
   for (const crown of CROWNS) for (const head of HEADS) run({ ...base, crown, head });
   for (const held of HELDS) for (const arms of [0, 1, 2] as const) run({ ...base, held, arms });
+  for (const pattern of PATTERNS) for (const build of BUILDS) run({ ...base, pattern, build });
+  for (const jaw of JAWS) for (const head of HEADS) run({ ...base, jaw, head });
+  for (const worn of WORNS) for (const build of BUILDS) for (const arms of [0, 2] as const) run({ ...base, worn, build, arms });
+  for (const v of [...BACKS, ...CROWNS]) for (const size of [7, 26]) run({ ...base, back: BACKS.includes(v as never) ? v as never : base.back, crown: CROWNS.includes(v as never) ? v as never : base.crown, size });
   for (const mo of MOTIFS) for (const b of BUILDS) for (const size of [7, 9, 16, 25]) run({ ...base, motifs: [mo], build: b, size, boss: false });
   for (const mo of MOTIFS) run({ ...base, motifs: [mo], size: 48, boss: true });
   run({ ...base, motifs: [...MOTIFS] });

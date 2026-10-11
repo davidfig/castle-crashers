@@ -50,7 +50,7 @@ export interface HumanLook {
   palette: HumanPalette;
 }
 
-/** One sheet as the game's own NPC sheet data (the shape tools/art.mjs writes to art/out/<name>.json), plus its pixels. */
+/** One sheet as the game's own NPC sheet data (frames, anims, pivot), plus its pixels. */
 export interface HumanSheet {
   width: number;
   height: number;

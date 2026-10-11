@@ -48,5 +48,8 @@ test('a run\'s six figures fit the atlas band and make usable story sets', () =>
     const a = set.anims.talk;
     assert.equal(npcFrame(a, 0), a.frames[0]);
     assert.equal(npcFrame(a, a.ms[0] + 1), a.frames[1]);
+    const total = a.ms.reduce((x, y) => x + y, 0);
+    assert.equal(npcFrame(a, total), a.frames[0], 'a loop wraps');
+    assert.equal(npcFrame(a, -1), a.frames[a.frames.length - 1], 'and so does a negative time');
   }
 });

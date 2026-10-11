@@ -15,7 +15,7 @@
   select, button, input { background:var(--panel); color:var(--fg); border:1px solid var(--line); padding:4px 8px; font:inherit; border-radius:3px; cursor:pointer; }
   button.on { border-color:var(--acc); color:var(--acc); }
   label { color:var(--dim); display:flex; gap:6px; align-items:center; }
-  main { padding:16px; display:grid; gap:16px; grid-template-columns: auto minmax(280px, 1fr); align-items:start; }
+  main { padding:16px; display:grid; gap:16px; grid-template-columns: auto; align-items:start; }
   @media (max-width: 1100px) { main { grid-template-columns: 1fr; } }
   section { background:var(--panel); border:1px solid var(--line); border-radius:4px; padding:12px; min-width:0; overflow:auto; }
   section h2 { margin:0 0 10px; font-size:11px; color:var(--dim); letter-spacing:.1em; text-transform:uppercase; font-weight:500; }
@@ -31,28 +31,20 @@
 <body>
 <header>
   <h1>Screens Workbench</h1>
-  <a href="/">sprites</a>
-  <label>screen <select id="screen"></select></label>
+  <a href="/art/mobs.html">monsters</a>
+  <a href="/art/heroes.html">heroes</a>
   <label>zoom <select id="zoom"><option>1</option><option selected>2</option><option>3</option></select></label>
   <button id="pause">pause</button>
   <span id="err"></span>
 </header>
 <main>
   <section>
-    <h2 id="title">&nbsp;</h2>
+    <h2>Title</h2>
     <canvas id="game" width="1280" height="720" style="width:1280px;height:720px"></canvas>
-    <div class="row" id="pager" style="margin-top:10px">
-      <button id="prev">&larr; beat</button><span id="pageNo"></span><button id="next">beat &rarr;</button>
-    </div>
-    <div class="row" id="partyRow"><span style="color:var(--dim)">party</span></div>
-    <div class="row" id="chapterRow"><label>chapter <select id="chapter"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label></div>
-    <p class="note">Drawn by the game's own renderer (src/render/*), so what you see is what ships. Save any file in src/ or art/ and this page reloads. Deep link: <code>?screen=scene:intro:bounty&amp;page=2&amp;party=archer,mage</code></p>
-  </section>
-  <section>
-    <h2>The words</h2>
-    <div id="words"></div>
+    <p class="note">Drawn by the game's own renderer (src/render/*), so what you see is what ships. Save any file in src/ or art/ and this page reloads. <code>?seed=N</code> picks the monsters and people on it.</p>
   </section>
 </main>
-<script type="module" src="/screens.js"></script>
+<script type="module" src="/art/screens.js"></script>
+<script src="/art/nav.js"></script>
 </body>
 </html>

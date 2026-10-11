@@ -25,7 +25,7 @@ export function pick<T>(r: Rng, a: readonly T[]): T {
   return a[rngInt(r, a.length)];
 }
 
-const PLACES = [
+export const PLACES = [
   'Ashfen', 'Brackwater', 'Cinderhollow', 'Dunmarrow', 'Thornbeck', 'Hollowmere', 'Greywick', 'Stonefold',
   'Mossgate', 'Emberdell', 'Saltmarch', 'Larkspur', 'Windrow', 'Coldharbor', 'Fenwick', 'Redmoor',
 ];

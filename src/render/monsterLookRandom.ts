@@ -1,13 +1,16 @@
 // Dev/test helper: a random MonsterLook from a seed. Used by the monster-sheet tool and the fuzz tests; the real bestiary
 // generator picks looks to match each enemy's stats instead.
-import type { BackKind, Build, CrownKind, HeadKind, HeldKind, LimbKind, MonsterLook, Motif } from '../data/monsterLook';
+import type { BackKind, Build, CrownKind, HeadKind, HeldKind, JawKind, LimbKind, MonsterLook, Motif, PatternKind, WornKind } from '../data/monsterLook';
 
 export const BUILDS: readonly Build[] = ['blob', 'tall', 'squat', 'wedge', 'round', 'serpent', 'insect', 'floater'];
-export const HEADS: readonly HeadKind[] = ['round', 'skull', 'beast', 'horned', 'cyclops', 'maw', 'hood', 'helm', 'none'];
+export const HEADS: readonly HeadKind[] = ['round', 'skull', 'beast', 'horned', 'cyclops', 'maw', 'hood', 'helm', 'long', 'toad', 'cone', 'mask', 'none'];
 export const LIMBS: readonly LimbKind[] = ['biped', 'quad', 'many', 'tentacles', 'none'];
-export const BACKS: readonly BackKind[] = ['wings', 'tail', 'shell', 'spikes', 'cape', 'tentacles', 'fins', 'flame', 'none'];
-export const CROWNS: readonly CrownKind[] = ['horns', 'antlers', 'ears', 'crest', 'halo', 'crown', 'antenna', 'none'];
-export const HELDS: readonly HeldKind[] = ['club', 'sword', 'axe', 'spear', 'bow', 'staff', 'shield', 'bomb', 'orb', 'sling', 'none'];
+export const BACKS: readonly BackKind[] = ['wings', 'tail', 'shell', 'spikes', 'cape', 'tentacles', 'fins', 'flame', 'quills', 'mane', 'pack', 'crystals', 'banner', 'none'];
+export const CROWNS: readonly CrownKind[] = ['horns', 'antlers', 'ears', 'crest', 'halo', 'crown', 'antenna', 'mohawk', 'hat', 'sprout', 'horn', 'stalks', 'none'];
+export const HELDS: readonly HeldKind[] = ['club', 'sword', 'axe', 'spear', 'bow', 'staff', 'shield', 'bomb', 'orb', 'sling', 'mace', 'hammer', 'dagger', 'trident', 'scythe', 'torch', 'pick', 'none'];
+export const PATTERNS: readonly PatternKind[] = ['none', 'belly', 'stripes', 'spots', 'patches', 'scales', 'chevron', 'mottled'];
+export const JAWS: readonly JawKind[] = ['plain', 'fangs', 'tusks', 'beak', 'mandibles', 'whiskers', 'beard'];
+export const WORNS: readonly WornKind[] = ['none', 'belt', 'pauldron', 'necklace', 'scarf', 'sash', 'collar', 'bracers'];
 export const MOTIFS: readonly Motif[] = ['fire', 'frost', 'poison', 'ghost', 'armor', 'bones', 'fur', 'slime', 'glow', 'stone', 'bandage', 'thorns', 'lightning', 'holy', 'wind', 'arcane', 'blood', 'shadow'];
 
 function mulberry(seed: number): () => number {
@@ -56,6 +59,9 @@ export function randomLook(seed: number, opts: RandomLookOpts = {}): MonsterLook
     back: r() < 0.45 ? 'none' : pick(BACKS),
     crown: r() < 0.4 ? 'none' : pick(CROWNS),
     held: opts.held ?? (r() < 0.25 ? 'none' : pick(HELDS)),
+    pattern: pick(PATTERNS),
+    jaw: r() < 0.4 ? 'plain' : pick(JAWS),
+    worn: r() < 0.5 ? 'none' : pick(WORNS),
     eyes: 1 + Math.floor(r() * 4),
     teeth: r() < 0.5,
     motifs,

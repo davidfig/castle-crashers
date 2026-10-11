@@ -45,6 +45,9 @@ export const Ev = {
   Quest: 42,      // a quest did something: a = what (QuestEv), b = detail (see sim/quests.ts)
   Arc: 43,        // a lightning arc: x,y = from, a,b = to, c = element
   Cone: 44,       // a breath: a,b = direction * length, c = half-arc in turns, d = element
+  TotemPulse: 45, // a totem's beat; a = radius, b = totem kind, c = owner slot
+  TotemPlant: 46, // a totem is set down; a = radius, b = totem kind, c = owner slot
+  Trade: 47,      // the trade button in a store: a = what (TradeEv, sim/shop.ts), b = ware or offer index, c = slot
   Site: 41,       // a shrine or chest did something: a = what (SiteEv), b = site sub-kind or value
 } as const;
 

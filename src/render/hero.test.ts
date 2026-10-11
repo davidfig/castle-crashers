@@ -7,9 +7,12 @@ import { step } from '../sim/step';
 import { Kind } from '../sim/entities';
 import { Fx, SLASH_TICKS } from './fx';
 import { buildHeroSets, heroFrame, HERO_CLASSES, HERO_SLOTS, type HeroSet } from './hero';
+import { generateParty } from '../data/heroes';
+import { heroSheets } from './heroSprites';
 
 // Fake atlas placement: four sheets stacked 320px apart. Frames only need to be distinguishable by identity.
-const sets: HeroSet[] = buildHeroSets(Array.from({ length: HERO_CLASSES.length * HERO_SLOTS }, (_, k) => ({ x: 0, y: k * 321 })), 2048, 8192);
+const sheets = heroSheets(generateParty(1));
+const sets: HeroSet[] = buildHeroSets(sheets, sheets.map((_, k) => ({ x: 0, y: k * 321 })), 2048, 8192);
 const set: HeroSet = sets[0]; // the warrior, the class the game's player 1 uses
 const idle = () => [0, 1, 2, 3].map(createInputFrame);
 const press = (buttons: number): InputFrame[] => { const f = idle(); f[0].buttons = buttons; return f; };

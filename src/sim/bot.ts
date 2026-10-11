@@ -86,6 +86,9 @@ export function botInput(s: GameState, slot: number, out: InputFrame): void {
     // nearly dry (a single threshold flickers: stamina does not regenerate while the aura drains it, then waits out the regen delay).
     const want = near >= 1 && !p.winded && p.stamina > (p.auraOn ? 4 : 45);
     if (want !== p.auraOn && (p.prevButtons & Btn.Attack) === 0) out.buttons |= Btn.Attack;
+  } else if (cls.totems) {
+    // Plants on a fresh press whenever something is close, cycling through the three plain buttons (a held button plants once).
+    if (near >= 1 && (p.prevButtons & (Btn.Attack | Btn.Ability1 | Btn.Ability2)) === 0) out.buttons |= [Btn.Attack, Btn.Ability1, Btn.Ability2][(s.tick >> 4) % 3];
   } else out.buttons |= Btn.Attack;
   // The big sweep when a crowd is close and there is stamina to spare.
   if (near >= 8 && p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost * costMul(p.ranks, 1) + 10) out.buttons |= Btn.Ability2;

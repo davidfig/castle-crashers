@@ -98,7 +98,7 @@ export function drawShadow(b: Batcher, S: Sprites, x: number, y: number, scale =
   b.drawScaled(sh, x - (sh.w * scale) / 2, y - (sh.h / 2 + 1) * scale, sh.w * scale, sh.h * scale, tint);
 }
 
-/** A story figure (the Registrar, the peddler) standing with their feet at (x, y), pixel-scaled by a whole number. */
+/** A story figure (the peddler at his stall) standing with their feet at (x, y), pixel-scaled by a whole number. */
 export function drawNpc(b: Batcher, S: Sprites, name: NpcName, x: number, y: number, scale: number, talking: boolean, tick: number): void {
   const set = S.npcs[name];
   const a = set.anims[talking ? 'talk' : 'idle'] ?? set.anims.idle;

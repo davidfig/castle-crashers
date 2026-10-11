@@ -1,9 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_LEVEL, UPGRADES, UPGRADE_INDEX } from '../data/upgrades';
-import { WARES, priceOf, stockFor } from '../data/wares';
-import { createSim } from './state';
-import { buy } from './shop';
+import { WARES, priceOf, stockFor, wareSpot } from '../data/wares';
+import { questOffers, questSpot } from '../data/quests';
+import { createSim, type GameState } from './state';
+import { buy, nearWare, TradeEv } from './shop';
+import { step } from './step';
+import { Btn, createInputFrame } from './input';
+import { Ev, EV_STRIDE } from './events';
 
 const scroll = (id: string) => WARES.find((w) => w.id === `scroll-${id}`)!;
 const lesson = WARES.find((w) => w.kind === 'level')!;
@@ -65,4 +69,70 @@ test('two heroes who want the same scroll: the purse is shared, so it can run ou
   s.gold = 100;
   assert.equal(buy(s, 0, scroll('thick'), 70), 'ok');
   assert.equal(buy(s, 1, scroll('thick'), 70), 'broke');
+});
+
+function storeSim(seed: number): GameState {
+  const s = createSim(seed, undefined, { store: true, stock: stockFor(seed, 1), offers: questOffers(seed, { level: 2, boss: false, biome: 0 }) });
+  s.tick = 200;
+  return s;
+}
+function standAt(s: GameState, x: number, y: number): void {
+  const e = s.players[0].ent;
+  s.ents.x[e] = s.ents.px[e] = x; s.ents.y[e] = s.ents.py[e] = y;
+}
+/** One tick with the trade button down (`down`) or up, nothing else pressed. */
+function press(s: GameState, down: boolean): void {
+  const f = [0, 1, 2, 3].map(createInputFrame);
+  f[0].buttons = down ? Btn.Interact : 0;
+  step(s, f);
+}
+function trades(s: GameState): number[][] {
+  const out: number[][] = [];
+  for (let n = 0; n < s.events.n; n++) { const o = n * EV_STRIDE; if (s.events.data[o] === Ev.Trade) out.push([s.events.data[o + 3], s.events.data[o + 4], s.events.data[o + 5]]); }
+  return out;
+}
+
+test('in the store the sim trades: the trade button beside a ware buys it once, from the shared purse', () => {
+  const s = storeSim(9);
+  s.gold = 1000;
+  const sp = wareSpot(0, s.wares.length);
+  standAt(s, sp.x, sp.y);
+  assert.equal(nearWare(s, 0), 0);
+  press(s, true);
+  assert.equal(s.wares[0].sold, true);
+  assert.equal(s.gold, 1000 - s.wares[0].price);
+  assert.deepEqual(trades(s), [[TradeEv.Bought, 0, 0]]);
+  press(s, true); press(s, false); press(s, true); // holding is not a second press, and a sold ware cannot be bought again
+  assert.equal(s.gold, 1000 - s.wares[0].price);
+});
+
+test('a ware the purse cannot cover is not bought, and says so', () => {
+  const s = storeSim(9);
+  s.gold = 0;
+  const sp = wareSpot(1, s.wares.length);
+  standAt(s, sp.x, sp.y);
+  press(s, true);
+  assert.equal(s.wares[1].sold, false);
+  assert.deepEqual(trades(s), [[TradeEv.Broke, 1, 0]]);
+});
+
+test('the trade button beside a giver takes their quest, and pressed again gives it back', () => {
+  const s = storeSim(4);
+  const sp = questSpot(1);
+  standAt(s, sp.x, sp.y);
+  press(s, true); press(s, false);
+  assert.equal(s.questTaken, 1);
+  press(s, true);
+  assert.equal(s.questTaken, -1);
+});
+
+test('the button that chose a level-up card is not also a trade', () => {
+  const s = storeSim(9);
+  s.gold = 1000;
+  const sp = wareSpot(0, s.wares.length);
+  standAt(s, sp.x, sp.y);
+  s.players[0].pending = 1; s.players[0].panel = true;
+  press(s, true);
+  assert.equal(s.wares[0].sold, false);
+  assert.equal(s.players[0].pending, 0, 'the press chose the card');
 });

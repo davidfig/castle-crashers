@@ -9,7 +9,7 @@ import { MOBS } from './mobs';
 import { ROSTERS } from './roster';
 import { UPGRADE_INDEX, UPGRADES } from './upgrades';
 
-/** The art of a giver: a sheet from the art workbench (render/npcArt.ts). */
+/** The art of a giver: a story figure's sheet (render/npcArt.ts). */
 export type QuestArt = 'king' | 'captain' | 'elder' | 'herald' | 'registrar';
 
 export interface QuestNpc {
@@ -214,4 +214,27 @@ export function questOffers(runSeed: number, ctx: QuestCtx): QuestDef[] {
     out.push(makeQuest(npc, mission, reward, ctx, Math.floor(rngFloat(r) * 4)));
   }
   return out;
+}
+
+/** Where the givers stand in the store (sim coordinates): in a row between where the party arrives and the peddler's stall. */
+export const QUEST_X0 = 430;
+export const QUEST_GAP = 100;
+export const QUEST_Y = 62;
+/** A hero this close (px along the field and across it) to a giver can talk to them. */
+export const QUEST_REACH_X = 26;
+export const QUEST_REACH_Y = 24;
+
+export function questSpot(i: number): { x: number; y: number } {
+  return { x: QUEST_X0 + i * QUEST_GAP, y: QUEST_Y + (i % 2) * 16 };
+}
+
+/** The offer a hero at (x, y) can talk to (the nearest along the field), or -1. */
+export function offerNear(offers: readonly QuestDef[], x: number, y: number): number {
+  let best = -1, bestD = Infinity;
+  offers.forEach((_, i) => {
+    const sp = questSpot(i);
+    const dx = Math.abs(x - sp.x), dy = Math.abs(y - sp.y);
+    if (dx < QUEST_REACH_X && dy < QUEST_REACH_Y && dx < bestD) { best = i; bestD = dx; }
+  });
+  return best;
 }

@@ -3,7 +3,9 @@ import { MOBS } from '../data/mobs';
 import { MAX_ENTS } from './constants';
 
 /** A Zone is a patch of ground that something is about to happen to (a lobbed rock) or that stays dangerous (a poison pool). */
-export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5, Potion: 6, Shrine: 7, Chest: 8, Npc: 9 } as const;
+export const Kind = { None: 0, Player: 1, Mob: 2, Proj: 3, Coin: 4, Zone: 5, Potion: 6, Shrine: 7, Chest: 8, Npc: 9,
+  /** A shaman's totem (sim/totems.ts): `sub` = the totem kind, `by` = the owner's slot, `rem` = ticks left, `cool` = ticks to the next beat, `atk` = bite cooldown. */
+  Totem: 10 } as const;
 
 /** Zone looks (the `sub` of a Kind.Zone entity). */
 export const ZoneKind = {
