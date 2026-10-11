@@ -5,7 +5,7 @@ import { lerp } from '../engine/math';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import { RAIN_FLIGHT, RAIN_HEIGHT, RAIN_SPREAD, rainLaunchTick, rainOffset } from '../sim/rain';
-import { LEVEL_CAM_END, TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H, WORLD_W } from '../sim/constants';
+import { LEVEL_CAM_END, TOP_ENTRY_DEPTH, VIEW_H, VIEW_W, WORLD_H } from '../sim/constants';
 import { ELEM_MASK, Kind, ShrineKind, ZoneKind } from '../sim/entities';
 import { drawElemAura, drawElemProj, drawHeroElemCues, drawElemZone, elemTelegraph, Glyph, glyphColor } from './elementDraw';
 import { elemId } from './elementFx';
@@ -197,7 +197,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   const ft = s.tick + alpha; // fractional tick: the drifting scenery moves every frame, not once per sim tick
 
   // --- sky + parallax layers (the light changes with how far the party has advanced)
-  const progress = s.store ? 1 : Math.min(1, Math.max(0, camXf / (WORLD_W - VIEW_W)));
+  const progress = s.store ? 1 : Math.min(1, Math.max(0, camXf / (s.worldW - VIEW_W)));
   const road = setUpScenery(s, progress, camXf);
   const mood = scenery.mood[scenery.n === 2 && scenery.share(camXf + road + VIEW_W / 2) > 0.5 ? 1 : 0]; // the air takes the light of whichever biome has most of the view
   drawSky(b, S, scenery, camXf + road, ft, -shx, oy, stormCover(getWorld()!.sky, camXf + road + VIEW_W / 2));
@@ -923,11 +923,9 @@ function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, 
   }
   if (def.charge !== undefined && e.mode[i] === 1 && boss) {
     // the charge lane: a dotted red path along the locked direction, with an arrowhead
-    // shortened to where the charge would hit the edge of the world
+    // shortened to where the charge would hit the top or bottom of the field (the road has no ends worth drawing it to)
     let len = def.charge.distance;
     const ax = e.ax[i], ay = e.ay[i];
-    if (ax > 1e-6) len = Math.min(len, (WORLD_W - e.x[i]) / ax);
-    else if (ax < -1e-6) len = Math.min(len, -e.x[i] / ax);
     if (ay > 1e-6) len = Math.min(len, (WORLD_H - e.y[i]) / ay);
     else if (ay < -1e-6) len = Math.min(len, -e.y[i] / ay);
     len = Math.max(0, len);

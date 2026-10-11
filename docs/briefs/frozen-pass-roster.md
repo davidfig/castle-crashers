@@ -39,11 +39,11 @@ The Pass floor is **near-white snow** (and a pale blue at night). The Meadow and
 
 - No white or pale-grey enemies. A yeti must be a **dark grey-blue or dirty brown**, not white. Snow Sprites and spirits should be **saturated blue or teal with a dark core**, not pale.
 - The workbench's 1 px ink edge helps, but the fill must still sit well below the snow's brightness. Aim for body values around the Meadow goblin's green or darker.
-- Test it: with a full horde on screen (`npm run playtest`, or `?scenery=frozen&auto=1&bots=3` and set `window.__ts = 6`), units and corpses should pop against the snow. They already do for the greenskins and skeletons.
+- Test it: with a full horde on screen (`pnpm playtest`, or `?scenery=frozen&auto=1&bots=3` and set `window.__ts = 6`), units and corpses should pop against the snow. They already do for the greenskins and skeletons.
 
 ## The proposed cast (11)
 
-In arrival order. Stats are **first drafts** modelled on the existing enemies of the same role (see the `MOBS` entries named in the last column); tune with `npm run playtest`. Times are ticks, speeds px/tick.
+In arrival order. Stats are **first drafts** modelled on the existing enemies of the same role (see the `MOBS` entries named in the last column); tune with `pnpm playtest`. Times are ticks, speeds px/tick.
 
 | # | Enemy | Role / the question it asks | Behavior and abilities (draft) | Modelled on |
 |---|---|---|---|---|
@@ -95,7 +95,7 @@ In arrival order. Stats are **first drafts** modelled on the existing enemies of
 - [ ] Eleven rigs in `art/chars/`, imported in `mobSheets.ts` and `mobArt.ts` in `MobType` order.
 - [ ] `ROSTERS` entry (11 enemies, support, enragedExtra).
 - [ ] `FROZEN_PASS` moved into `BIOMES` at the same index; `?biome=2` previews it with enemies.
-- [ ] `npm test`, `npm run check`, `npm run playtest` pass; check readability with a full horde on the snow.
+- [ ] `pnpm test`, `pnpm check`, `pnpm playtest` pass; check readability with a full horde on the snow.
 - [ ] `docs/03-gameplay-combat.md` table and `docs/11-backgrounds.md` updated.
 
 ## Open questions
@@ -108,5 +108,5 @@ In arrival order. Stats are **first drafts** modelled on the existing enemies of
 
 - **Ice-themed visuals (done, render side).** A shared `ICE` palette in `draw.ts` (mid-saturated blues, white only as 1 px highlights) is used by every Pass effect: the harpoon dart (`drawHarpoon`: shaft, barbed head, frost streak, `ProjStyle.Harpoon`), the frost pool and the storm that settles into it (`ZoneKind.Frost`, `ZoneKind.Storm`), traps, ice shards, the permafrost aura and the ward ring, plus an optional frost nova look (`NovaStyle.Frost`: icicles rising along the ring) that no enemy uses right now. **Why mid blues:** pale cyan and white vanish on the Pass's near-white snow (the first version of these effects was invisible there). `src/render/frost.test.ts` checks the drawing and that no ice effect uses a snow-white color.
 - **A Pass boss (done):** the Rime King, see [03](../03-gameplay-combat.md#boss-repertoires). Bosses are now per biome (`Roster.boss`) and each has its own repertoire of moves.
-- **Balance:** the stats are first drafts. The headless bot loses at about 31 to 37% progress in the Pass (36 to 43% in the Meadow, 35 to 38% in the Keep), so it is a little harder than the Meadow; tune with `npm run playtest`.
+- **Balance:** the stats are first drafts. The headless bot loses at about 31 to 37% progress in the Pass (36 to 43% in the Meadow, 35 to 38% in the Keep), so it is a little harder than the Meadow; tune with `pnpm playtest`.
 - **Art polish:** several rigs started from an existing rig and keep its pose set (Frost Wolf from the Wolf, Ice Husk from the Plague Zombie, Yeti from the Troll, Frost Shaman from the Necromancer, Blizzard Witch from the Banshee, Whiteout Spirit from the Wraith, Tundra Guard from the Dread Knight, Snow Sprite from the Skull); each has its own palette and silhouette changes, but a second pass on silhouettes would help.

@@ -93,7 +93,7 @@ export function activePlayers(s: GameState): number {
 }
 
 /** Plan options. A level that is not the last of a route has no boss: it is won by reaching the far end. */
-export interface PlanOptions { boss?: boolean; scene?: SimScene; /** Enemy count multiplier (default 1). */ scale?: number; /** The party's chosen heat: higher heat plans more mini-bosses. */ heat?: number; /** The first field of a run: its first few encounters are small, to find the controls on. */ opener?: boolean }
+export interface PlanOptions { boss?: boolean; scene?: SimScene; /** Enemy count multiplier (default 1). */ scale?: number; /** The party's chosen heat: higher heat plans more mini-bosses. */ heat?: number; /** The first field of a run: its first few encounters are small, to find the controls on. */ opener?: boolean; /** The field's length (default `WORLD_W`): a longer field has as many encounters per px. */ length?: number }
 
 /** On the opening field, the first encounters are this fraction of their planned size (then the horde as usual). */
 const OPENER_RAMP: readonly number[] = [0.3, 0.55, 0.8];
@@ -101,10 +101,12 @@ const OPENER_RAMP: readonly number[] = [0.3, 0.55, 0.8];
 export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}): ClumpPlan[] {
   const r = createRng(seed, Stream.level);
   const plan: ClumpPlan[] = [];
-  const clumps = 24;
+  const len = opts.length ?? WORLD_W;
+  const span = len - 1100;
+  const clumps = Math.max(2, Math.round((24 * span) / (WORLD_W - 1100)));
   for (let c = 0; c < clumps; c++) {
     const t = c / (clumps - 1);
-    const x = 760 + t * (WORLD_W - 1100) + rngRange(r, -40, 40);
+    const x = 760 + t * span + rngRange(r, -40, 40);
     const ramp = opts.opener ? OPENER_RAMP[c] ?? 1 : 1;
     const size = Math.floor((16 + t * 26 + rngRange(r, 0, 10)) * (opts.scale ?? 1) * ramp);
     const line = c % 4 === 3;
@@ -112,11 +114,11 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
     plan.push({ x, y, size, line, t, gate: line, rid: c });
   }
   // Final stand: a wall across the field, then the boss with its retinue at the very end.
-  plan.push({ x: WORLD_W - 440, y: WORLD_H / 2, size: Math.floor(38 * (opts.scale ?? 1)), line: true, t: 1, rid: clumps });
-  if (opts.boss !== false) plan.push({ x: WORLD_W - 250, y: WORLD_H / 2, size: 0, line: false, t: 1, boss: true, rid: clumps + 1 });
+  plan.push({ x: len - 440, y: WORLD_H / 2, size: Math.floor(38 * (opts.scale ?? 1)), line: true, t: 1, rid: clumps });
+  if (opts.boss !== false) plan.push({ x: len - 250, y: WORLD_H / 2, size: 0, line: false, t: 1, boss: true, rid: clumps + 1 });
   if (opts.scene) {
     // A clearing in the road: no crowd within earshot of the scene. Later encounters keep their own streams (`rid`), so nothing else changes.
-    const x = 760 + opts.scene.t * (WORLD_W - 1100);
+    const x = 760 + opts.scene.t * span;
     for (let k = plan.length - 1; k >= 0; k--) if (!plan[k].boss && plan[k].rid! < clumps && plan[k].x > x - SCENE_CLEARING && plan[k].x < x + SCENE_AHEAD) plan.splice(k, 1);
     let at = 0;
     while (at < plan.length && plan[at].x <= x) at++;
@@ -125,7 +127,7 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
   if (beat && STAGED_BEATS.includes(beat.id)) {
     // Placed at a fixed point of the field (there is one route), never rolled; the other encounters keep their own streams.
     const t = beat.early ? BEAT_T_EARLY : BEAT_T;
-    const x = 760 + t * (WORLD_W - 1100);
+    const x = 760 + t * span;
     let at = 0;
     while (at < plan.length && plan[at].x <= x) at++;
     plan.splice(at, 0, { x, y: WORLD_H / 2 + 10, size: 0, line: false, t, beat: beat.id, rid: BEAT_STREAM });
@@ -134,7 +136,7 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
   const minis: number[] = [0.5];
   if (rngFloat(createRng(seed, ELITE_STREAM)) < heatElites(opts.heat ?? 0)) minis.push(0.78);
   for (const t of minis) {
-    const x = 760 + t * (WORLD_W - 1100);
+    const x = 760 + t * span;
     if (plan.some((c) => (c.scene ? Math.abs(c.x - x) < SCENE_AHEAD : c.beat && Math.abs(c.x - x) < 320))) continue;
     let at = 0;
     while (at < plan.length && plan[at].x <= x) at++;

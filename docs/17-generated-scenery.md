@@ -2,6 +2,12 @@
 
 Every run draws its own scenery, and the biomes no longer change at the edge of a level: the road turns from one into the next over a long stretch, passing through every mix on the way (90% one, 10% the other, then 60/40, then the other way round). All of it is render-only (the sim never sees it) and a pure function of the run's seed, so a replay, a second client and a screenshot all agree. Background doc for the look itself: [11 Backgrounds](11-backgrounds.md).
 
+## Rules of thumb
+
+- `BIOMES` (`src/data/biomes.ts`) are archetypes; a run's biomes come from `generateWorld` (`src/data/scenery`) and are painted into the atlas by `render/sceneryArt.ts`.
+- Never draw or key sprites by an archetype's bare name: keys are `slot:name`. A new strip, floor or decal needs a maker (the tests say which).
+- Where one biome gives way to the next is the `Road`'s business, not the level's. Look at any stretch with `?seed=1&levels=15&roadx=N`, and at a biome's art with `node tools/scenery-sheet.mjs`.
+
 ## One place for every biome
 
 - **`BIOMES` (`src/data/biomes.ts`)** are the five *archetypes* (Meadow, Haunted Keep, Frozen Pass, Sunken Marsh, Scorched Dunes). Nothing draws them directly; each run varies them. A stage of the road is the few levels one enemy biome lasts (`LEVELS_PER_BIOME`), and stage *k* uses archetype `levelPlan(seed, k * LEVELS_PER_BIOME).biome`, so the enemies, music and story of a stage still suit its place.

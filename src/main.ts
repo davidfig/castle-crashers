@@ -19,7 +19,7 @@ import { Fx } from './render/fx';
 import { Audio } from './platform/audio/audio';
 import { dangerOf } from './platform/audio/music';
 import { CLASSES, classForBotSlot } from './data/classes';
-import { LEVEL_CAM_END, MAX_PLAYERS, STORE_CAM_END, STORE_X, TICK_RATE, VIEW_H, VIEW_W, WORLD_W } from './sim/constants';
+import { LEVEL_CAM_END, MAX_PLAYERS, STORE_CAM_END, STORE_X, TICK_RATE, VIEW_H, VIEW_W } from './sim/constants';
 import { HEAT_MAX } from './data/heat';
 import { createSim } from './sim/state';
 import { step } from './sim/step';
@@ -325,7 +325,7 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
     stock: store ? stockFor(cfg.seed, route.index) : undefined,
     offers: store ? offersAfter(cfg.seed, route.index, route.total) : undefined,
   });
-  s.camX = s.prevCamX = s.trigCamX = cam0;
+  s.camX = s.prevCamX = s.trigCamX = s.camMax = cam0;
   if (route.carry) { applyCarry(s, route.carry); arriveAt(s, route.carry); }
   for (let k = 0; k < picks.length && !route.carry; k++) {
     if (!picks[k].joined) continue;
@@ -356,9 +356,9 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
   if (__DEV__ && params.get('boss') === '1' && plan.boss && !store) {
     s.tick = 130;                            // past the opening delay, so encounters stream in
     s.nextClump = s.plan.length - 2;         // skip to the last wall and the boss
-    s.camX = s.prevCamX = WORLD_W - 900;       // (the last screens of the field, whatever its length)
+    s.camX = s.prevCamX = s.worldW - 900;       // (the last screens of the field, whatever its length)
     const pe = s.players[0].ent;
-    s.ents.x[pe] = s.ents.px[pe] = WORLD_W - 760;
+    s.ents.x[pe] = s.ents.px[pe] = s.worldW - 760;
     s.ents.y[pe] = s.ents.py[pe] = 100;
   }
   // Dev aid: ?goto=scene walks the party up to the level's road scene.
@@ -385,7 +385,7 @@ function newSim(plan: LevelPlan, store = false, cam0 = 0): ReturnType<typeof cre
   // Dev aid: ?goto=end walks the party to a screen and a half before the end of the field (with ?calm=1, nothing is in the way): the biome turn and the store.
   if (__DEV__ && params.get('goto') === 'end' && !store) {
     const pe = s.players[0].ent;
-    s.camX = s.prevCamX = WORLD_W - VIEW_W - 700;
+    s.camX = s.prevCamX = s.worldW - VIEW_W - 700;
     s.ents.x[pe] = s.ents.px[pe] = s.camX + 300; s.ents.y[pe] = s.ents.py[pe] = 100;
     s.nextClump = s.plan.length; s.gateIdx = s.gates.length;
   }

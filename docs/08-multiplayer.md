@@ -5,7 +5,7 @@
 
 ## The key idea: players are input sources
 
-The sim never knows what a "keyboard" or "gamepad" is. It receives, every tick, an array of **`InputFrame`s — one per player slot**:
+The sim never knows what a "keyboard" or "gamepad" is. It receives, every tick, an array of **`InputFrame`s — one per player slot**. The real type is in `src/sim/input.ts` (`moveX`, `moveY`, `aimX`, `aimY` as -127..127 and a `buttons` bitmask `Btn`; UI actions such as the level-up panel are buttons, there is no `uiAction` field). The sketch below is the original design:
 
 ```ts
 interface InputFrame {
@@ -26,12 +26,12 @@ If every piece of gameplay-affecting UI is an input action (see [06](06-ui.md#im
 ## Required properties (do now, even in local-only)
 
 1. **Deterministic sim** with seeded RNG and fixed timestep ([01](01-architecture.md)).
-2. **Serializable state:** `GameState` is plain data (no closures, no class instances with hidden state, no DOM refs) → `serialize()/deserialize()` and `hash()`. Implemented as `snapshot` / `restore` in `src/sim/snapshot.ts` (see [21](21-the-road.md)); its tests fail if the state stops being plain data or a restored sim plays on differently.
+2. **Serializable state:** `GameState` is plain data (no closures, no class instances with hidden state, no DOM refs) → `serialize()/deserialize()` and `hash()` (`hashState` in `src/sim/hash.ts`). Implemented as `snapshot` / `restore` in `src/sim/snapshot.ts` (see [21](21-the-road.md)); its tests fail if the state stops being plain data or a restored sim plays on differently.
 3. **Input quantization & compact encoding:** small integers, bitmasks.
 4. **Stable IDs:** entity and item IDs are assigned deterministically.
 5. **No wall-clock in sim.**
 6. **Presentation separated from sim:** a rollback/resim can replay ticks without replaying sound/particles (events are tagged with tick and deduped by the presentation layer).
-7. **Transport abstraction:** `platform/net/Transport` interface with a `LocalTransport` no-op implementation used today.
+7. **Transport abstraction:** `platform/net/Transport` interface with a `LocalTransport` no-op implementation used today. *(Not built yet: there is no `platform/net/`.)*
 
 ```ts
 interface Transport {

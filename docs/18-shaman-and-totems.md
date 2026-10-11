@@ -36,7 +36,7 @@ A totem is an entity (`Kind.Totem`) with hit points, an owner, a lifetime and a 
 
 Enemy arrows that reach a totem are spent on it (any totem), so ranged enemies can break one that stands in their line.
 
-Later totems (the tree): Storm (chain lightning), Frost (slow), War Drum (ally damage), Mirror (reflects), Gravity, Ward, and so on, each a new `TotemKind`, not new code. Overlap bonuses (a rooted and burning mob takes more; two kinds with overlapping rings help each other) need mob statuses ([16](16-skills-and-elements.md)).
+Later totems (the tree): Frost (slow), War Drum (ally damage), Mirror (reflects), Gravity, Ward, and so on, each a new `TotemKind`, not new code. Overlap bonuses (a rooted and burning mob takes more; two kinds with overlapping rings help each other) need mob statuses ([16](16-skills-and-elements.md)).
 
 ### The shaman's own moves (non-damaging)
 
@@ -114,17 +114,17 @@ This is where "scale all characters via skill trees" lands, and the loadout is t
 ## What it needs from the code
 
 1. **Mob statuses.** [16](16-skills-and-elements.md) notes mobs have no slow, root or burn (`elementHit` is written against heroes). Ember, Stone and Storm need the monster-victim half. This is the largest piece and is shared with hero skills generally.
-2. **A hero-owned totem entity** (owner, HP, beat timer, kind), targetable by mobs, with damage credited to the owner (`sim/entities.ts`, `sim/step.ts`).
-3. **A `totems?` branch on `ClassDef`** beside `quake` and `rain`, replacing the combo as `shot` does for ranged classes (`data/classes.ts`). The class order is shared with `data/heroLook.ts` and `render/hero.ts`.
-4. **Input and UI:** the camp loadout screen (assign kinds to slots) and the action row over the hero ([06](06-ui.md)).
-5. **Art:** a shaman sprite and set, totem sprites and ring draw ([13](13-ui-art.md)).
+2. **A hero-owned totem entity** (owner, HP, beat timer, kind), targetable by mobs, with damage credited to the owner (`sim/entities.ts`, `sim/totems.ts`). Built in the prototype.
+3. **A `totems?` branch on `ClassDef`** beside `quake` and `rain`, replacing the combo as `shot` does for ranged classes (`data/classes.ts`). Built in the prototype. The class order is shared with `data/heroLook.ts` and `render/hero.ts`.
+4. **Input and UI:** the camp loadout screen (assign kinds to slots; not built) and the action row over the hero ([06](06-ui.md); built).
+5. **Art:** the shaman is generated like every hero and totems are drawn in code (`render/totems.ts`); real totem sprites ([13](13-ui-art.md)) are not made.
 6. **Balance:** sim tests against `CLASSIC_MOBS`. The scripted bot plays head-on and barely moves, which suits a plant-and-hold class badly (as with the rogue and archer), so trust the skill-graded players of [14](14-ai-playtesting.md) over it.
 
 Balance target: worse than the warrior's damage when played badly, better when played well. A pure-Ember shaman that never moves out-damages the warrior on a stationary crowd and falls behind against fast mobs and bosses that walk through the rings.
 
 ## Build order
 
-1. Done: the playable prototype (four totems with real effects, Gale and Gather, one button per action).
+1. Done: the playable prototype (five totems with real effects, Gale and Gather, the Alt bank).
 2. Mob statuses (burn, slow, root), in parallel.
 3. The four starting totems and the four buttons.
 4. The generic slot data shape, so the tree is not shaman-only.

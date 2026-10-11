@@ -17,7 +17,7 @@ import { ARROW_DAMAGE, Behavior, MOBS } from '../data/mobs';
 import { heatDamage } from '../data/heat';
 import { createRng, rngFloat, rngInt, rngRange } from '../engine/rng';
 import { UPGRADES } from '../data/upgrades';
-import { VIEW_W, WORLD_H, WORLD_W } from './constants';
+import { VIEW_W, WORLD_H } from './constants';
 import { allocEntity, BYSTANDER, freeEntity, Kind, NpcMode, SURRENDERED } from './entities';
 import { Ev, emit } from './events';
 import { activePlayers, eliteTypes, spawnElite } from './gen/level';
@@ -89,7 +89,7 @@ export function placeQuest(s: GameState): void {
   // somewhere down the road, off the staged scenes and the chests and shrines
   let x = 0, y = 0;
   for (let tries = 0; tries < 10; tries++) {
-    x = 1000 + rngFloat(r) * (WORLD_W - 1700);
+    x = 1000 + rngFloat(r) * (s.worldW - 1700);
     y = rngRange(r, 52, WORLD_H - 52);
     if (s.plan.some((c) => (c.scene || c.beat) && Math.abs(c.x - x) < 330)) continue;
     let clear = true;

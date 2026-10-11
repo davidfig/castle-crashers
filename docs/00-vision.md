@@ -22,7 +22,7 @@ Friends and families who play together on a couch with controllers; people who l
 
 **In scope (v1)**
 - 1–4 local players, keyboard and gamepads.
-- 5–6 classes with a class tree each.
+- 5–6 classes with a class tree each (six exist: warrior, mage, cleric, rogue, archer, shaman).
 - A run of ~25–40 minutes: several biomes, mini-bosses, final boss.
 - Meta progression with persistent save in the browser.
 - Item pickups, equipment, consumables, trading.

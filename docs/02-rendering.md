@@ -12,7 +12,7 @@
 ## Camera
 
 - Side-scrolling with depth lanes (Castle Crashers style): entities have `x`, `y` (depth lane on ground plane), and `z` (height above ground). Screen y = `groundY + y*laneScale - z`.
-- Camera follows the **centroid of living players** but **only scrolls forward** (left to right), so cleared ground stays behind you; zooms *never*, since pixel scale is fixed. If players spread beyond screen width, the camera clamps and tethers (see [03](03-gameplay-combat.md), co-op rules).
+- Camera follows the **centroid of living players** but **only scrolls forward** (left to right), backing up at most `CAM_SLACK` (160 px) behind the furthest it has been while a hero presses against the left edge, so cleared ground stays behind you; zooms *never*, since pixel scale is fixed. If players spread beyond screen width, the camera clamps and tethers (see [03](03-gameplay-combat.md), co-op rules).
 - Camera shake is additive offset applied on integer pixels.
 
 ## Draw order
@@ -32,15 +32,15 @@ Y-sorted by ground-plane `y` (depth) for entities, with layers:
 
 The core of the renderer. One dynamic vertex buffer, one draw call per (texture, blend mode) batch.
 
-- Instanced quads: per-instance `[x, y, w, h, u0, v0, u1, v1, rotation?, tint rgba, flags]`.
-- Texture atlas(es) built by `tools/pack-atlas` at build time → `atlas.png` + `atlas.json`. Aim for a single 2048² or 4096² atlas for the whole game so most frames are one draw call.
-- Flags: flip X/Y, additive blend, palette-swap row, flash-white (hit flash), outline.
+- Instanced quads: per-instance `[x, y, w, h, u0, v0, u1, v1, tint rgba, flash, rotation]` (flip is done by swapping u0/u1).
+- Today the atlas is built **at startup from procedural art** (text bitmaps and generators in `render/art.ts`, `heroArt.ts`, `monsterArt.ts`, `sceneryArt.ts`...), not by a build-time packer; `tools/pack-atlas` does not exist and would come with real PNG art. Aim for a single atlas for the whole game so most frames are one draw call.
+- Per-instance: tint, flash (mix to white; -1 draws a flat silhouette in the tint colour) and rotation. Planned, not built: additive blend, palette-swap row, outline.
 - Sorting happens on CPU before upload; batches break only when texture or blend changes.
 
 ## Palette & color
 
 - Define a master palette (~32–48 colors) in `docs`/data and keep art to it for cohesion.
-- **Palette swapping** via an indexed-color texture + palette lookup row: used for player colors (P1–P4 tints), enemy variants, elite recolors, and status effects. This is cheap and very "classic".
+- **Palette swapping** (planned; today player colours and variants are tints and generated looks) via an indexed-color texture + palette lookup row: used for player colors (P1–P4 tints), enemy variants, elite recolors, and status effects. This is cheap and very "classic".
 - Hit flash: shader uniform/flag that mixes to white.
 
 ## Lighting (optional, post-v1.0 prototype)
@@ -50,7 +50,7 @@ The core of the renderer. One dynamic vertex buffer, one draw call per (texture,
 
 ## Text
 
-- Bitmap font in the atlas (our own glyph table; 5×7 or 6×8 px). No browser font rendering inside the game view.
+- Bitmap font in the atlas (our own glyph table; a 3×5 caps-only HUD font in `render/art.ts`, plus the larger story font in `data/storyFont.ts`). No browser font rendering inside the game view.
 - Damage numbers, item names, and prompts are all drawn through the sprite batcher.
 
 ## Animation

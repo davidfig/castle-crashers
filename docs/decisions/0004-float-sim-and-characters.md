@@ -10,7 +10,7 @@ Two decisions made together.
 **Progression ownership.** Renown could be account-wide, per class, or per character.
 
 ## Decision
-- Sim uses **plain doubles**. Allowed in `sim/`: `+ - * /`, `Math.sqrt`, `Math.abs/min/max/floor/ceil/round/trunc`. Disallowed: `Math.sin/cos/tan/atan2/pow/exp/log/hypot` and `Math.random` (use `engine/math` lookup-table trig and the seeded PRNG). Enforce with a lint rule/grep check in CI.
+- Sim uses **plain doubles**. Allowed in `sim/`: `+ - * /`, `Math.sqrt`, `Math.abs/min/max/floor/ceil/round/trunc`. Disallowed: `Math.sin/cos/tan/atan2/pow/exp/log/hypot` and `Math.random` (use `engine/math` lookup-table trig and the seeded PRNG). Enforced by `pnpm check` (`tools/check-sim.mjs`).
 - No reliance on object key order; iterate arrays in stable order.
 - Keep a **golden state-hash test** (seed + scripted inputs → hash after N ticks) and run it in Chromium, Firefox and WebKit before online work. If any engine diverges, revisit fixed-point at that point, scoped to the sim only.
 - **Renown is per character.** A character is a saved instance of a class with its own renown and class-tree progress. A player may have multiple characters of the same class to explore different builds. Account-level data (codex, settings, global cosmetics) is shared.

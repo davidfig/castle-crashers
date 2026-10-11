@@ -2,7 +2,7 @@
 
 A **skill** is a *delivery* (how it reaches you) made of an *element* (what it is made of, which decides what it does when it lands), tuned by a handful of
 *modifiers* (how many, laid out how, what shape, whether it pierces, bursts, homes or leaves a pool). Every monster's special moves, shots, hits, auras and
-death effects are built this way, so the same ten elements and twenty-odd deliveries make hundreds of different moves, and a run's monsters (docs/15) read
+death effects are built this way, so the same eleven elements and twenty-odd deliveries make hundreds of different moves, and a run's monsters (docs/15) read
 as sets: an ice monster chills in melee, fires frost and freezes the ground, and the odd flaming one with a lightning bolt is the surprise.
 
 The skill is **plain data** (`Special`, `ShotDef`, `onHit`, `elemAura`, `DeathDef` in `data/mobs.ts`) and what it *does* is resolved in the sim from the element

@@ -31,3 +31,17 @@
 | **Tone** | A biome's colour shift from its archetype: hue of its foliage band, sky hue, saturation, lightness. |
 | **Totem** | A planted, hero-owned entity that pulses an area effect on a beat for a while (the shaman's only damage). See [18](18-shaman-and-totems.md). |
 | **Totem bag** | The shaman's ordered loadout of totems; Attack plants the ready one and the bag advances. |
+| **Bestiary** | A run's generated cast of monsters and bosses (`MOBS[type]`), the same for the whole run. The hand-made roster is `CLASSIC_MOBS`. See [15](15-random-bestiary.md). |
+| **Skill** | A delivery made of an element, tuned by modifiers. See [16](16-skills-and-elements.md). |
+| **Element** | What a skill or attack is made of (fire, ice, lightning...); decides what it does on a hit and in a pulse. `data/elements.ts`. |
+| **Delivery** | How a skill reaches its target (`Special.kind`: projectile, pool, aura...). |
+| **Writ** | A bounty contract taken from the board; the campaign's unit of story. See [12](12-story.md). |
+| **Ledger** | The running tally of what the party has done (kills, mercy) that colours the story and ending. See [12](12-story.md). |
+| **Surrendered** | A mob that has laid down its arms (mercy); safe until anything damages it. |
+| **Over the hill** | The shared way mobs enter from the top (climbing the crest) and leave; see [03](03-gameplay-combat.md). |
+| **Camp** | The one place between levels where the action stops and menus are allowed. See [07](07-procgen.md). |
+| **Site** | A chest or shrine standing on the field, opened by standing near it (`sim/sites.ts`). |
+| **Road** | The continuous stretch of scenery (and, proposed, the run itself) over which biomes turn into one another; `Road` in [17](17-generated-scenery.md), whole-run design in [21](21-the-road.md). |
+| **Region** | Proposed: one generated place on the road graph; a run passes about five. See [21](21-the-road.md). |
+| **Snapshot** | A complete, exact save of the sim's `GameState` that restores to an identical run (`sim/snapshot.ts`). |
+| **Folk** | The per-run generated people of the story (`generateFolk`) and the player heroes (`generateParty`); see [19](19-generated-humans.md), [20](20-generated-heroes.md). |

@@ -3,19 +3,19 @@
 A playtest that costs a second instead of an evening. Simulated players (`src/ai/`) play every class the way a person would, at a chosen level of skill, and a headless runner plays whole campaign routes with no renderer, so a balance question ("is the Frozen Pass boss too hard for a middling cleric?") becomes a table.
 
 ```
-npm run sim                                        every class at novice / average / expert, 6 seeds, the whole 15-level route
-npm run sim -- --class=mage,archer --skill=casual,expert --runs=20
-npm run sim -- --party=warrior:expert,cleric:average --runs=10     one explicit party ("class:skill" per hero, up to four)
-npm run sim -- --players=3 --skill=skilled                         each class leads a party of three (the next classes fill out)
-npm run sim -- --levels=6 --heat=3 --curve --killers               a shorter road at heat 3: difficulty by level, and what ends runs
-npm run sim -- --start=6 --upto=3 --boost=6                        only levels 7-9, from a hero who was given six level-ups first
+pnpm sim                                        every class at novice / average / expert, 6 seeds, the whole 15-level route
+pnpm sim --class=mage,archer --skill=casual,expert --runs=20
+pnpm sim --party=warrior:expert,cleric:average --runs=10     one explicit party ("class:skill" per hero, up to four)
+pnpm sim --players=3 --skill=skilled                         each class leads a party of three (the next classes fill out)
+pnpm sim --levels=6 --heat=3 --curve --killers               a shorter road at heat 3: difficulty by level, and what ends runs
+pnpm sim --start=6 --upto=3 --boost=6                        only levels 7-9, from a hero who was given six level-ups first
 node tools/sim-trace.mjs rogue expert 3 15 600                     one run as text, a line every 600 ticks (find out why it got stuck)
 node tools/sim-peek.mjs rogue expert 3 --level=5 --at=3000 --n=3   what a pilot decided on a few ticks (plan, buttons, target)
 ```
 
 Other flags: `--seed0=N`, `--workers=N` (default: every core but one), `--json=file` (raw reports), `--levels-table` (per-level detail for every scenario; a single scenario always prints it), `--boons` (what the heroes ended holding), `--quiet`. The sim plus its players run at about 17k ticks a second a core (a full route is 100-250k ticks): 150 full routes, 70 hours of play, take about 100 s on a ten-core laptop, and the header line of every run says what it managed.
 
-**Watch one in the real game.** `/?seed=5&levels=3&auto=1&skill=expert&bclass=archer` (dev build) lets a pilot drive slot 1; `&bots=3` adds pilots in slots 2-4; `&skill=0.35` is any point on the ladder; `window.__ts = 4` fast-forwards. Without `skill`, the bots are the old scripted `sim/bot.ts` (`npm run playtest`, kept for the boon sweep).
+**Watch one in the real game.** `/?seed=5&levels=3&auto=1&skill=expert&bclass=archer` (dev build) lets a pilot drive slot 1; `&bots=3` adds pilots in slots 2-4; `&skill=0.35` is any point on the ladder; `window.__ts = 4` fast-forwards. Without `skill`, the bots are the old scripted `sim/bot.ts` (`pnpm playtest`, kept for the boon sweep).
 
 ## How a pilot plays
 

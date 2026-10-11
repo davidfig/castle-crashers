@@ -22,15 +22,15 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 | [11 Backgrounds](11-backgrounds.md) | Sky, parallax, ground, biomes, time of day |
 | [12 Story](12-story.md) | Premise, chapters, the Ledger, how procgen carries the story |
 | [13 UI & Screen Art](13-ui-art.md) | The illuminated-ledger look, what every screen needs, the kit and its status |
-| [14 Simulated Players](14-ai-playtesting.md) | Skill-graded AI players for every class, and headless full-route balance runs (`npm run sim`) |
+| [14 Simulated Players](14-ai-playtesting.md) | Skill-graded AI players for every class, and headless full-route balance runs (`pnpm sim`) |
 | [15 The Random Bestiary](15-random-bestiary.md) | Per-run generated monsters and bosses: slots, powers, looks, determinism, tools |
 | [16 Skills and Elements](16-skills-and-elements.md) | Skills = delivery x element x modifiers: the ten elements and what they do, deliveries, patterns, how monsters and (later) heroes use them |
 | [17 Generated Scenery](17-generated-scenery.md) | Per-run generated biomes, the road that turns one into the next over a long stretch, the painter and the atlas band |
-| [18 Shaman and Totems](18-shaman-and-totems.md) | Design for the shaman (no damage of its own, fights through planted totems): the totem bag controls, scaling through the class tree, solo and co-op |
+| [18 Shaman and Totems](18-shaman-and-totems.md) | The shaman (no damage of its own, fights through planted totems): the totem bag controls, scaling through the class tree, solo and co-op; a playable prototype is built |
 | [19 Generated Humans](19-generated-humans.md) | Per-run people for the story figures: offices, wardrobes, the court's livery, the sprite composer |
 | [20 Generated Heroes](20-generated-heroes.md) | Per-run player characters: a person per slot, always wearing their class's defining kit |
-| [21 The Road](21-the-road.md) | Proposed: a run as one long level: the starting town, a finite road of regions with forks and choices, save and continue at any moment (any party), joining mid-run, then generated places per region |
-| [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster) |
+| [21 The Road](21-the-road.md) | Proposed (partly built: sim save and restore, `sim/snapshot.ts`): a run as one long level: the starting town, a finite road of regions with forks and choices, save and continue at any moment (any party), joining mid-run, then generated places per region |
+| [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster; superseded for art by the generated bestiary, kept as history) |
 | [Open Questions](open-questions.md) | Things we haven't decided |
 | [Decisions (ADRs)](decisions/README.md) | Log of decisions and why |
 | [Glossary](glossary.md) | Shared vocabulary |
@@ -39,5 +39,6 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 
 - Docs are the source of truth for **intent**; code is the source of truth for **behavior**. When they diverge, fix one of them.
 - Anything marked **Proposed** is a default we'll build against until challenged. Anything marked **Decided** has an ADR.
+- Commands use **pnpm** (`pnpm dev`, `pnpm test`, `pnpm typecheck`, `pnpm sim`); `npm run X` in older text means `pnpm X`.
 - Numbers (damage, cooldowns, drop rates) in docs are starting points, not balance. Real values live in data files under `src/data/`.
 - Keep docs short. If a section grows past a screen or two, split it.

@@ -4,8 +4,12 @@ export const TICK_RATE = 60;
 export const VIEW_W = 640;
 export const VIEW_H = 360;
 
-/** Battlefield: x runs left->right, y is depth across the field. */
+/** Battlefield: x runs left->right, y is depth across the field. `WORLD_W` is an ordinary level's length (a field can be any length, `GameState.worldW`). */
 export const WORLD_W = 2800;
+/** The camera may back up this far behind the furthest it has been, and no further (docs/21-the-road.md: forward only, with slack). */
+export const CAM_SLACK = 160;
+/** Whatever is this far behind the furthest-back the screen can show is gone for good (closer things can still rejoin): see `backLine`. */
+export const LEFT_BEHIND = 360;
 export const WORLD_H = 244;
 
 /** Enemies coming over the top edge count as still entering until this far into the field (their descent of the near slope). */

@@ -1,6 +1,6 @@
 # 13 — UI & Screen Art
 
-Status: **in progress** (roadmap M6.5). Every screen below works and is playable; this doc is about how it should *look*, and what is built so far.
+Status: **in progress** (roadmap M6.5). Every screen below is built and tested; this doc is about how it should *look*, and what is built so far. Note: `main.ts` currently reaches only the title, party select and the run summary; the board, hub scenes, camp picks and doors are built (`campaign/view.ts`, `render/menu.ts`) but not wired into the run flow, which is now a straight road with an in-world store ([07](07-procgen.md), [21](21-the-road.md)).
 
 ## One pixel grid (the 1x rule, being tried)
 
@@ -65,7 +65,7 @@ A hub scene is now a place, not a page: a full-screen drawn set (`src/render/sce
 | Market | R6 (the map) | stalls with striped awnings, rolled maps, tall houses |
 | Graves | after R9 (the Quiet Region) | a grey dawn, rows of mounds and crosses, mist, a bare tree, crows |
 
-The title screen can be worked on live in the art server's **Screens page** (`npm run art`, then /screens.html; see [art/README.md](../art/README.md)). Each set is deterministic and animated from the clock (flames, rain, smoke, bunting, lamp flicker), and is clipped to its area. To look at one: `?scene=R1:after` (also `R6`, `R8`, `R10`, `warlord:after`, `R2:after` ... `R9:after`), with `&page=N` to start at a beat and `&party=archer,mage` for who stands in it. Nothing is saved.
+The title screen can be worked on live in the art server's **Screens page** (`pnpm dev`, then `/art/screens.html`; see [art/README.md](../art/README.md)). Each set is deterministic and animated from the clock (flames, rain, smoke, bunting, lamp flicker), and is clipped to its area. The `?scene=` parameter now stages a *road* scene in a level (`main.ts`), not these hub sets; no dev shortcut shows a hub set at the moment.
 
 ## Still to make
 
@@ -73,4 +73,4 @@ More NPCs as the story needs them (the Elder, the mapmaker), a backdrop for the 
 
 ## How to work on it
 
-`?camp=picks&players=4&pending=2`, `?camp=doors` and `?camp=spoils` open the camp screens directly ([07](07-procgen.md)); the board and hub scenes show on a fresh load, and `?reset=1` starts a new campaign.
+The screens page (`/art/screens.html`, run by `pnpm dev`) draws the title with the real renderer. `?store=1&players=4&pending=2` opens the in-game store directly ([07](07-procgen.md)). The other screens are exercised by `src/campaign/*.test.ts`.

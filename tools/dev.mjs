@@ -160,6 +160,13 @@ async function handle(req, res) {
     return res.end(stubGame(game.error() || 'first build in progress, reload in a moment'));
   }
   if (path.endsWith('/')) path += 'index.html';
+  if (path === '/index.html') { // dev only: a floating Art button to jump to the workbench (production never gets it)
+    try {
+      const html = (await readFile(join(PUBLIC, 'index.html'), 'utf8')).replace('</body>', '<script src="/art/switch.js"></script></body>');
+      res.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' });
+      return res.end(html);
+    } catch { /* fall through to the plain file */ }
+  }
   if (await serveFile(res, PUBLIC, path)) return;
   res.writeHead(404); res.end('not found');
 }

@@ -9,7 +9,7 @@ import { Ev, EV_STRIDE } from './events';
 import { Btn, createInputFrame, type InputFrame } from './input';
 import { createSim, type GameState } from './state';
 import { step } from './step';
-import { WORLD_H, WORLD_W } from './constants';
+import { CAM_SLACK, LEFT_BEHIND, WORLD_H, WORLD_W } from './constants';
 import { activePlayers, partyScale, planLevel, spawnAllClumps, STREAM_DELAY_TICKS } from './gen/level';
 
 const idle = () => [0, 1, 2, 3].map(createInputFrame);
@@ -275,7 +275,7 @@ test('reinforcements never appear behind the camera', () => {
   assert.ok(n > 0);
 });
 
-test('the camera never scrolls back, and mobs left far behind are gone', () => {
+test('the camera backs up at most CAM_SLACK, and mobs left far behind are gone', () => {
   const s = arena();
   const pe = s.players[0].ent;
   const f = idle();
@@ -283,16 +283,23 @@ test('the camera never scrolls back, and mobs left far behind are gone', () => {
   for (let t = 0; t < 400; t++) step(s, f);
   const cam = s.camX;
   assert.ok(cam > 100, 'camera advanced');
-  const behind = mob(s, MobType.Goblin, cam - 500, 100); // hopelessly far behind
+  const behind = mob(s, MobType.Goblin, cam - CAM_SLACK - LEFT_BEHIND - 20, 100); // hopelessly far behind
   const returning = mob(s, MobType.Goblin, cam - 200, 100); // close enough to rejoin
   const stragglerNear = mob(s, MobType.Goblin, cam + 50, 100);
   f[0].moveX = -127; // try to retreat
-  for (let t = 0; t < 200; t++) step(s, f);
-  assert.ok(s.camX >= cam, 'camera does not scroll backwards');
+  for (let t = 0; t < 600; t++) step(s, f);
+  assert.ok(s.camX < cam - CAM_SLACK / 2, 'walking back, the camera gives a little ground');
+  assert.ok(s.camX >= cam - CAM_SLACK - 1e-9, 'but never more than the slack');
   assert.ok(s.ents.x[pe] >= s.camX + 9, 'hero cannot leave the screen to the left');
   assert.ok(!alive(s, behind), 'a mob hopelessly far behind was removed');
   assert.ok(alive(s, returning), 'an engaged mob just off the left edge is allowed to come back');
   assert.ok(alive(s, stragglerNear));
+});
+
+test('a hero standing left of centre, as a field opens, does not drag the camera back', () => {
+  const s = arena();
+  for (let t = 0; t < 300; t++) step(s, idle());
+  assert.equal(s.camX, 0);
 });
 
 test('an engaged mob that was knocked just offscreen comes back and attacks', () => {

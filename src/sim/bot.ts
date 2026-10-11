@@ -2,7 +2,6 @@
 // Behaviour: advance right, hold attack, nova when a crowd is close, dash when hurt and surrounded.
 import { CLASSES } from '../data/classes';
 import { Btn, createInputFrame, type InputFrame } from './input';
-import { WORLD_W } from './constants';
 import { Kind } from './entities';
 import { costMul, novaCost } from './abilityMods';
 import { Ev, EV_STRIDE } from './events';
@@ -130,7 +129,7 @@ export function runBot(seed: number, maxTicks: number, build: BotBuild = {}): Bo
     outcome: s.phase === Phase.Won ? 'won' : s.phase === Phase.Lost ? 'lost' : 'timeout',
     ticks: s.tick,
     kills: s.kills,
-    progress: Math.round((s.ents.x[p.ent] / WORLD_W) * 100),
+    progress: Math.round((s.ents.x[p.ent] / s.worldW) * 100),
     novas,
     minHp: Math.round(minHp),
     procs,

@@ -7,6 +7,11 @@ The monsters need not make sense (a flaming serpent with a bow, a hooded blob th
 
 The hand-made roster (59 enemies) is still in the code as `CLASSIC_MOBS` and is what the sim's tests run against; `?mobs=classic` plays those stats. The hand-made enemy *pictures* are gone: the classic roster wears the generated look of each slot (from the run seed).
 
+## Rules of thumb
+
+- `MOBS[type]` is a run's random cast, not the hand-made roster (that is `CLASSIC_MOBS`; the sim tests run against it, `?mobs=classic` plays it).
+- Tune a *kind* of monster through `data/bestiary/traits.ts` / `plan.ts` and check it with `BESTIARY=<seed> node tools/balance.mjs`. Never index monsters by name.
+
 ## How it works
 
 ```
@@ -30,8 +35,8 @@ run seed ──► generateBestiary(seed) ──► Bestiary { defs[], looks[], 
 - **Powers** (`data/bestiary/traits.ts`). A monster wears 0-3 powers from one kit: a melee hit that slows/launches/poisons/roots/withers/drains,
   a movement quirk (weave, hop, retreat, evade, burrow), a bull charge, a body trait (armour, shield, thorns, regen, berserk, pack, revive, mud trail),
   an aura (flame, chill), a death effect (burst into swarm, poison pool, ice shards, spore cloud), a way of shooting (volley, fan, harpoon, glob, firebolt,
-  falcon) and a telegraphed **special** (the 19 in `Special`: lob, summon, heal, rally, blink, nova, beam, trap, cling, ward, storm, whiteout, wail, lure,
-  leap, gust, pit, hex, dazzle). They are all mechanics the sim already has, so the generator only sets fields on a `MobDef`.
+  falcon) and a telegraphed **special** (the 24 in `Special`: lob, summon, heal, rally, blink, nova, beam, trap, cling, ward, storm, whiteout, wail, lure,
+  leap, pounce, gust, pit, hex, dazzle, bolt, ring, cone, totem). They are all mechanics the sim already has, so the generator only sets fields on a `MobDef`.
   Traits belong to groups that cannot stack on one monster (one hit effect, one movement quirk, one body trait...), a melee mob has a special **or** a charge,
   and a caster always has a special.
 - **Uniqueness.** Inside a biome, no two enemies share a power (so a name means one thing to learn). Plain arrows are the baseline and may repeat.
@@ -70,7 +75,7 @@ Tests (and tools) install explicitly; with nothing installed `MOBS` is the hand-
 | `node tools/bestiary.mjs <seed>` | print a seed's whole cast: role, numbers, powers, look, each boss's moves |
 | `node tools/monster-sheet.mjs --seed N --count 40 --out sheet.png` | contact sheet of generated sprites (`--boss`, `--poses`) |
 | `BESTIARY=<seed> node tools/balance.mjs` | per-monster duel probe against the bot (compare with the hand-made roster's) |
-| `npm run playtest -- --bestiary 1 2 3` | bot runs against each seed's generated cast |
+| `pnpm playtest -- --bestiary 1 2 3` | bot runs against each seed's generated cast |
 | `?mobs=classic` (dev) | play the hand-made roster's stats (with generated pictures) |
 
 ## Adding to the kit

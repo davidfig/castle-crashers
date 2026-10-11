@@ -233,7 +233,8 @@ export function buildSprites(): Sprites {
   const canvas = document.createElement('canvas');
   canvas.width = ATLAS_W;
   canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
+  // The atlas is re-read row-strip by row-strip (getImageData) whenever generated art is drawn into it.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   for (const p of placed) {
     ctx.putImageData(new ImageData(new Uint8ClampedArray(p.it.rgba), p.it.w, p.it.h), p.x, p.y);
     const f = p.it.frame;

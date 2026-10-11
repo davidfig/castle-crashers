@@ -19,5 +19,8 @@
     nav.append(a);
   }
   document.body.prepend(nav);
+  const sw = document.createElement('script');
+  sw.src = '/art/switch.js';
+  document.body.append(sw);
   document.querySelectorAll('header a[href^="/art/"]').forEach((a) => a.remove());
 })();

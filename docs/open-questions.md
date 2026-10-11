@@ -20,7 +20,7 @@ Track undecided items here. When resolved, move to an ADR in [decisions](decisio
 - [x] ECS storage: struct-of-arrays typed arrays (hordes).
 - [ ] Atlas: single vs. multiple; max texture size target.
 - [ ] Audio formats/tooling (ogg vs mp3 vs wav).
-- [ ] Save storage: `localStorage` vs. IndexedDB from the start.
+- [ ] Save storage: `localStorage` vs. IndexedDB from the start. (The run save is proposed as IndexedDB with a localStorage fallback in [21](21-the-road.md); the sim snapshot exists, but no IndexedDB code does yet. Small flags such as the tutorial and road memory already use `localStorage`.)
 
 ## Gameplay
 - [ ] **Friendly fire policy.** Off, on, or modifier?
@@ -37,7 +37,7 @@ Track undecided items here. When resolved, move to an ADR in [decisions](decisio
 
 ## Content
 - [ ] Biome list and theming (Forest, Keep, Crypt, Frozen Pass, Volcano, Sky Citadel?).
-- [ ] Final roster of v1 classes: 5 or 6? Which one is the 6th?
+- [ ] Final roster of v1 classes: 5 or 6? Six are built now (warrior, mage, cleric, rogue, archer, shaman); confirm the shaman is the sixth.
 - [ ] Palette: master palette selection (e.g. start from an existing open palette or craft our own).
 
 ## Networking (deferred)

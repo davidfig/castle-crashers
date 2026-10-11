@@ -14,7 +14,7 @@ import { createRng, rngFloat, rngInt, rngRange } from '../engine/rng';
 import { MOBS } from '../data/mobs';
 import { CLASSES } from '../data/classes';
 import { MAX_LEVEL, xpToNext } from '../data/upgrades';
-import { VIEW_W, WORLD_H, WORLD_W } from './constants';
+import { VIEW_W, WORLD_H } from './constants';
 import { allocEntity, BYSTANDER, Kind, ShrineKind, SURRENDERED } from './entities';
 import { Ev, emit } from './events';
 import { activePlayers, eliteTypes, spawnElite } from './gen/level';
@@ -55,7 +55,7 @@ export function placeSites(s: GameState, boss: boolean): void {
   const span = boss ? 0.78 : 0.86;
   order.forEach((what, k) => {
     const t = 0.1 + span * ((k + 0.25 + rngFloat(r) * 0.5) / order.length);
-    const x = 760 + t * (WORLD_W - 1100);
+    const x = 760 + t * (s.worldW - 1100);
     const y = rngRange(r, 52, WORLD_H - 52);
     if (s.plan.some((c) => (c.scene || c.beat) && Math.abs(c.x - x) < 330)) return;
     const i = allocEntity(s.ents, what === 'chest' ? Kind.Chest : Kind.Shrine, what === 'chest' ? 0 : what, x, y, 1);
@@ -65,7 +65,7 @@ export function placeSites(s: GameState, boss: boolean): void {
 
 /** A chest left where a mini-boss fell: free to open. */
 function dropChest(s: GameState, x: number, y: number): void {
-  const i = allocEntity(s.ents, Kind.Chest, 0, Math.max(20, Math.min(WORLD_W - 20, x)), Math.max(10, Math.min(WORLD_H - 10, y)), 1);
+  const i = allocEntity(s.ents, Kind.Chest, 0, Math.max(20, Math.min(s.worldW - 20, x)), Math.max(10, Math.min(WORLD_H - 10, y)), 1);
   if (i < 0) return;
   s.ents.elite[i] = SiteState.Free;
   s.ents.z[i] = 10;

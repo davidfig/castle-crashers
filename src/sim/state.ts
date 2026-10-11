@@ -1,5 +1,5 @@
 import { createRng, Stream, type Rng } from '../engine/rng';
-import { MAX_ENTS, MAX_PLAYERS, STORE_EXIT_X, STORE_W, WORLD_W } from './constants';
+import { CAM_SLACK, LEFT_BEHIND, MAX_ENTS, MAX_PLAYERS, STORE_EXIT_X, STORE_W, WORLD_W } from './constants';
 import { allocEntity, createEntities, Kind, type Entities } from './entities';
 import { createEvents, type EventBuf } from './events';
 import { createGrid, type Grid } from './grid';
@@ -146,6 +146,8 @@ export interface GameState {
   slain: Int32Array;
   camX: number;
   prevCamX: number;
+  /** The furthest the camera has been: it may back up only `CAM_SLACK` from here, and what lies behind `backLine` is gone. */
+  camMax: number;
   rngCombat: Rng;
   rngSpawn: Rng;
   rngLoot: Rng;
@@ -276,6 +278,8 @@ export interface SimOptions {
   mix?: readonly [number, number];
   /** The first field of a run: it opens with small encounters (see `PlanOptions.opener`). */
   opener?: boolean;
+  /** How long the field is (default `WORLD_W`, a store `STORE_W`): its encounters, sites and quest are laid out along it. */
+  length?: number;
   /** A store's goods (data/wares.ts `stockFor`) and the quests its givers offer (data/quests.ts `questOffers`). */
   stock?: readonly StockItem[];
   offers?: readonly QuestDef[];
@@ -284,7 +288,8 @@ export interface SimOptions {
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
   const store = opts.store === true;
   const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
-  const plan = store ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener });
+  const length = store ? STORE_W : (opts.length ?? WORLD_W);
+  const plan = store ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
   const s: GameState = {
     seed,
     biome: biomeIndex(seed),
@@ -294,6 +299,7 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     slain: new Int32Array(MOBS.length),
     camX: 0,
     prevCamX: 0,
+    camMax: 0,
     rngCombat: createRng(seed, Stream.combat),
     rngSpawn: createRng(seed, Stream.spawn),
     rngLoot: createRng(seed, Stream.loot),
@@ -311,8 +317,8 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     store,
     onward: opts.onward === true,
     nextBiome: store ? (opts.nextBiome ?? biomeIndex(seed)) : -1,
-    worldW: store ? STORE_W : WORLD_W,
-    exitX: store ? STORE_EXIT_X : WORLD_W - 70,
+    worldW: length,
+    exitX: store ? STORE_EXIT_X : length - 70,
     offerSeed: opts.offerSeed ?? seed,
     surrenders: 0,
     betrayed: 0,
@@ -350,4 +356,13 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
   if (!store) placeSites(s, opts.boss !== false);
   if (s.quest) placeQuest(s);
   return s;
+}
+
+/**
+ * The line behind which nothing lives any more: `LEFT_BEHIND` past the furthest-back the camera can still go (`CAM_SLACK` behind the
+ * furthest it has been). Entities are kept in front of it, and whatever falls behind it is removed, so a road of any length keeps only
+ * what is near the party (docs/21-the-road.md).
+ */
+export function backLine(s: GameState): number {
+  return s.camMax - CAM_SLACK - LEFT_BEHIND;
 }

@@ -3,16 +3,16 @@
 Milestones are ordered to prove risk early: **feel first, then structure, then content, then meta.**
 
 ## M0 — Foundations ✅ done
-Built: esbuild/TypeScript toolchain, deterministic sim with seeded RNG streams and state hash, determinism lint (`npm run check`), unit tests (`npm test`), WebGL2 pipeline (640×360 FBO, integer-scaled blit, instanced sprite batcher, procedural atlas, bitmap font), keyboard and gamepad input with multi-player slot claiming.
+Built: esbuild/TypeScript toolchain, deterministic sim with seeded RNG streams and state hash, determinism lint (`pnpm check`), unit tests (`pnpm test`), WebGL2 pipeline (640×360 FBO, integer-scaled blit, instanced sprite batcher, procedural atlas, bitmap font), keyboard and gamepad input with multi-player slot claiming.
 
-- Repo, TypeScript, bundler, dev server, lint/format, test runner.
+- Repo, TypeScript, bundler, dev server, determinism lint, test runner (no formatter or linter beyond `tsc` and `pnpm check`).
 - Fixed-step loop, seeded PRNG, math helpers, state hash.
 - WebGL2 context, low-res framebuffer, integer-scaled blit, sprite batcher, bitmap font.
 - Keyboard + gamepad input → `InputFrame`.
 - **Exit:** colored sprites move on screen at a stable 60 Hz, pixel-perfect at any window size.
 
 ## M1 — The Horde Feel (in progress)
-Done so far: Warrior with a sweeping 3-hit combo (wide arcs, finisher wave, lunge, bowling knockback, launched bodies), fury-powered AoE nova and plowing dash; sim-level hit-stop; five enemy types (goblin, orc, archer, shield bearer, bomber) with telegraphs that hits interrupt; arrows, chain-explosions, reinforcement director; level of ~1,400 mobs in clumps along a 4,800 px field; corpses, particles, screen shake, kill-streak counter, 1–4 player join, tethered camera, down/revive, win/lose; headless bot playtest (`npm run playtest`). Coins drop from kills, scatter, and are magnet-collected into shared gold. **Boss (first pass):** the Orc Warlord ends the battlefield: huge, super-armored, with a retinue and war-cry summons, a club smash, ground slam, bull charge, and an enrage phase; killing it wins the run. **Still to do:** more bosses and mini-bosses, summoner/elite enemies, damage numbers or aggregated hit feedback, balance with real playtesters, sound, XP.
+Done so far: Warrior with a sweeping 3-hit combo (wide arcs, finisher wave, lunge, bowling knockback, launched bodies), fury-powered AoE nova and plowing dash; sim-level hit-stop; five enemy types (goblin, orc, archer, shield bearer, bomber; this hand-made roster lives on as `CLASSIC_MOBS`, and a run now plays a generated cast, see [15](15-random-bestiary.md)) with telegraphs that hits interrupt; arrows, chain-explosions, reinforcement director; level of ~1,400 mobs in clumps along a 4,800 px field; corpses, particles, screen shake, kill-streak counter, 1–4 player join, tethered camera, down/revive, win/lose; headless bot playtest (`pnpm playtest`). Coins drop from kills, scatter, and are magnet-collected into shared gold. **Boss (first pass):** the Orc Warlord ends the battlefield: huge, super-armored, with a retinue and war-cry summons, a club smash, ground slam, bull charge, and an enrage phase; killing it wins the run. **Still to do:** more bosses and mini-bosses, summoner/elite enemies, damage numbers or aggregated hit feedback, balance with real playtesters. (Since built: XP and levels, see M4; sound and music, see [09](09-input-audio-assets.md).)
 
 Original M1 goals:
 - Depth-lane movement, jump, attacks, hitboxes/hurtboxes, hit-stop, knockback.
@@ -32,7 +32,7 @@ Original M1 goals:
 - **Exit:** pass an item between players without a menu.
 
 ## M4 — Progression In-Run
-Status: **built, in tuning.** XP and levels with non-blocking picks; 5 classes; ~34 boons (stat, trigger, class mutation, party, legendary) with tiers, tag-weighted offers, pictures, HUD row and trigger pops; see [04](04-classes-progression.md). Not yet: the ability bench and slots, companions, rerolls, sound, tuning with real playtesters.
+Status: **built, in tuning.** XP and levels with non-blocking picks; 6 classes (warrior, mage, cleric, rogue, archer, shaman); ~34 boons (stat, trigger, class mutation, party, legendary) with tiers, tag-weighted offers, pictures, HUD row and trigger pops; see [04](04-classes-progression.md). Not yet: the ability bench and slots, companions, rerolls, tuning with real playtesters.
 - XP, levels, level-up strip with offers, ability bench & slots, perk/mutation system.
 - 3 more classes (Mage, Cleric, Rogue) to stress the system; Archer after.
 - **Exit:** two runs with the same class produce noticeably different builds.
@@ -56,7 +56,7 @@ The menus, the camp, the board and the story screens work but are placeholder: f
 - **Exit:** every screen in a full run, from the Writ board to the summary, is drawn from the kit with no flat-rectangle placeholders left.
 
 ## M7 — Content & Polish
-Done so far: five biomes in all (Meadow, Haunted Keep, Frozen Pass, **Sunken Marsh**, **Scorched Dunes**), each with an 11-enemy cast, no ability shared between any two enemies, and a boss with its own repertoire. The Marsh and the Dunes added poison and burning, hex, wither, mud, spore clouds, sand pits, leaps, false lights and a homing falcon (see [03](03-gameplay-combat.md)). Still to do: more mini-bosses, music and SFX, settings, accessibility, balance with real playtesters.
+Done so far: five biome archetypes in all (Meadow, Haunted Keep, Frozen Pass, **Sunken Marsh**, **Scorched Dunes**; a run now varies them and turns between them along the road, see [17](17-generated-scenery.md)), each with an 11-enemy cast (the classic roster; runs now generate their own, see [15](15-random-bestiary.md)), no ability shared between any two enemies, and a boss with its own repertoire. The Marsh and the Dunes added poison and burning, hex, wither, mud, spore clouds, sand pits, leaps, false lights and a homing falcon (see [03](03-gameplay-combat.md)). Still to do: more mini-bosses, music and SFX, settings, accessibility, balance with real playtesters.
 - Biomes 2–3, more enemies/items/bosses, music & SFX pass, settings, accessibility.
 - Balance tooling (headless simulation of many seeded runs).
 - **Exit:** a shippable vertical slice.

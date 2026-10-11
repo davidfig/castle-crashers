@@ -6,7 +6,7 @@ import { ARROW_DAMAGE, ARROW_SPEED, ARROW_TTL, BLAST_RADIUS, Behavior, LEGACY_BO
 import { clamp, cosTurns, sinTurns } from '../engine/math';
 import { rngFloat, rngInt, rngRange } from '../engine/rng';
 import { Btn, type InputFrame } from './input';
-import { TOP_ENTRY_DEPTH, VIEW_W, WORLD_H, WORLD_W } from './constants';
+import { CAM_SLACK, TOP_ENTRY_DEPTH, VIEW_W, WORLD_H } from './constants';
 import { allocEntity, BERSERK, BYSTANDER, ELEM_MASK, freeEntity, Kind, PROJ_HOMING, PROJ_PIERCE, SURRENDERED, ZoneKind } from './entities';
 import { elementHit, powerOf, pulseHero, storePower, strikeHero } from './elements';
 import { rainLandTick, rainOffset } from './rain';
@@ -17,7 +17,7 @@ import { Ev, emit } from './events';
 import { pickMobType, pickSupport } from './gen/mix';
 import { BOSS_SPECIAL, BurstStyle, clingStep, dropMud, leapStep, SP_LEAP, fireSpecial, fireSpecialOf, hasSpecial, isWarded, onMobDeath, RALLY_SPEED, shovePlayer, SP_CLING, SP_INIT, SP_WIND, onScreen, startSpecial, startSpecialOf, updateZones } from './abilities';
 import { cellX, cellY, gatherCircle, rebuildGrid } from './grid';
-import { activatePlayer, BLAST_CAP, Phase, type GameState, type PlayerState } from './state';
+import { activatePlayer, backLine, BLAST_CAP, Phase, type GameState, type PlayerState } from './state';
 import { bannerMul, burstAt, executeMul, flushProcs, frenzyTick, onAura, onDodge, onDown, onExplode, onHit, onHurt, onKill, onSpecial, pop, rebirth, tickBoons, vigilBonus, wardMul } from './boons';
 import { activePlayers, hasBoss, partyScale, sceneHold, streamLevel } from './gen/level';
 import { heatDamage, heatReward, heatSpeed } from '../data/heat';
@@ -50,8 +50,6 @@ const FLANK_INTERVAL_DEEP = 220;
 const FLANK_SIZE = 28;
 const FLANK_SIZE_DEEP = 32;
 const LUNGE_SPEED = 1.3;
-/** Mobs left this far behind the left edge of the screen are gone for good (closer ones can still rejoin). */
-const LEFT_BEHIND = 360;
 const COIN_CAP = 500;
 /** Gold is scarce so the merchant's and the chests' prices mean something: a mob's coin drops less often and is worth about half (never under 1). */
 const COIN_CHANCE_MUL = 0.55;
@@ -114,7 +112,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
 
   tickBoons(s);
   passGates(s);
-  rebuildGrid(s.grid, e);
+  rebuildGrid(s.grid, e, s.camX);
   for (let slot = 0; slot < s.players.length; slot++) updatePlayer(s, slot, inputs[slot]);
   flushBlasts(s);
   updateProjectiles(s);
@@ -136,6 +134,7 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   s.trigCamX = Math.max(s.trigCamX, s.camX);
   if (!s.store) { runDirector(s, advance); runFlanks(s, advance); }
   updateCamera(s);
+  cullBehind(s);
   streamLevel(s);
   checkGate(s);
   checkBeat(s);
@@ -143,9 +142,23 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   settleQuest(s);
 }
 
+/**
+ * What lies behind the back line (`backLine`) is gone: passed shrines and chests, lingering zones. Mobs (updateMobs), coins and potions
+ * (lost once behind the screen) and shots (out of the field) see to themselves; the quest's people are kept, the quest decides about them.
+ * So a road of any length only ever holds what is near the party.
+ */
+function cullBehind(s: GameState): void {
+  const e = s.ents, line = backLine(s);
+  for (let i = 0; i < e.highWater; i++) {
+    if (!e.alive[i] || e.x[i] >= line) continue;
+    const k = e.kind[i];
+    if (k === Kind.Shrine || k === Kind.Chest || k === Kind.Zone || k === Kind.Totem) freeEntity(e, i);
+  }
+}
+
 /** A won field the road goes on from is not a stop: the party stays in control (to loot, to keep walking) while what is left of the horde leaves. */
 function walkOn(s: GameState, inputs: InputFrame[]): void {
-  rebuildGrid(s.grid, s.ents);
+  rebuildGrid(s.grid, s.ents, s.camX);
   for (let slot = 0; slot < s.players.length; slot++) updatePlayer(s, slot, inputs[slot]);
   flushBlasts(s);
   updateProjectiles(s);
@@ -1130,8 +1143,8 @@ function updateProjectiles(s: GameState): void {
       }
       continue;
     }
-    if (e.hp[i] <= 0 || e.x[i] < 0 || e.x[i] > WORLD_W || e.y[i] < -4 || e.y[i] > WORLD_H + 4) {
-      if (e.sub[i] === 0 && e.wind[i] > 0 && e.x[i] >= 0 && e.x[i] <= WORLD_W) burstShot(s, i, e.wind[i], -1); // a splash shot that runs out of range still bursts
+    if (e.hp[i] <= 0 || e.x[i] < backLine(s) || e.x[i] > s.worldW || e.y[i] < -4 || e.y[i] > WORLD_H + 4) {
+      if (e.sub[i] === 0 && e.wind[i] > 0 && e.x[i] >= backLine(s) && e.x[i] <= s.worldW) burstShot(s, i, e.wind[i], -1); // a splash shot that runs out of range still bursts
       freeEntity(e, i);
       continue;
     }
@@ -1425,14 +1438,14 @@ function bossStep(s: GameState, i: number, def: MobDef, target: number, dist: nu
     e.wind[i] = def.windup;
   } else if (edge > def.reach * 0.7) {
     const speed = def.speed * (enraged ? b.enrageSpeed : 1);
-    e.x[i] = clamp(e.x[i] + dirX * speed, 0, WORLD_W);
+    e.x[i] = clamp(e.x[i] + dirX * speed, backLine(s), s.worldW);
     e.y[i] = clamp(e.y[i] + dirY * speed, 14, WORLD_H - 14);
   }
 }
 
 /** How far along the level the camera is (0 at the start, 1 once the last screen before the boss is reached): drives the enemy mix. */
 export function levelProgress(s: GameState): number {
-  return clamp(s.camX / (WORLD_W - VIEW_W), 0, 1);
+  return clamp(s.camX / (s.worldW - VIEW_W), 0, 1);
 }
 
 function onScreenX(s: GameState, x: number): boolean {
@@ -1451,7 +1464,7 @@ function chargeStep(s: GameState, i: number, c: ChargeDef, def: MobDef): void {
   const e = s.ents;
   const step = Math.min(e.rem[i], c.speed);
   const x0 = e.x[i], y0 = e.y[i];
-  e.x[i] = clamp(x0 + e.ax[i] * step, 0, WORLD_W);
+  e.x[i] = clamp(x0 + e.ax[i] * step, backLine(s), s.worldW);
   e.y[i] = clamp(y0 + e.ay[i] * step, 0, WORLD_H);
   const mx = e.x[i] - x0, my = e.y[i] - y0;
   e.rem[i] -= step;
@@ -1567,7 +1580,7 @@ function surrenderedStep(s: GameState, i: number, def: MobDef): void {
   }
   if (e.rem[i] > 0) {
     e.rem[i]--;
-    e.x[i] = clamp(e.x[i] + e.vx[i], 0, WORLD_W);
+    e.x[i] = clamp(e.x[i] + e.vx[i], backLine(s), s.worldW);
     e.y[i] = clamp(e.y[i] + e.vy[i], 0, WORLD_H);
     e.vx[i] *= 0.8;
     e.vy[i] *= 0.8;
@@ -1607,7 +1620,7 @@ function confusedStep(s: GameState, i: number, def: MobDef): void {
     if (mvX > 0.05) e.face[i] = 1;
     else if (mvX < -0.05) e.face[i] = -1;
   }
-  e.x[i] = clamp(e.x[i] + mvX + e.vx[i], s.camX - LEFT_BEHIND + 2, WORLD_W);
+  e.x[i] = clamp(e.x[i] + mvX + e.vx[i], backLine(s) + 2, s.worldW);
   e.y[i] = clamp(e.y[i] + mvY * 0.6 + e.vy[i], 0, WORLD_H);
   e.vx[i] *= 0.8;
   e.vy[i] *= 0.8;
@@ -1635,7 +1648,7 @@ function updateMobs(s: GameState): void {
 
   for (let i = 0; i < e.highWater; i++) {
     if (e.kind[i] !== Kind.Mob) continue;
-    if (e.x[i] < s.camX - LEFT_BEHIND) {
+    if (e.x[i] < backLine(s)) {
       // Cleared ground stays cleared: whatever is left far behind the screen is gone.
       if (e.flags[i] & SURRENDERED) s.spared[e.sub[i]]++;
       freeEntity(e, i);
@@ -1676,7 +1689,7 @@ function updateMobs(s: GameState): void {
     if (e.flags[i] & BYSTANDER) {
       // Stands by its fire: never targets, chases or attacks. Only being hit moves it (knockback decays as usual).
       if (e.stun[i] > 0) e.stun[i]--;
-      e.x[i] = clamp(x + e.vx[i], 0, WORLD_W);
+      e.x[i] = clamp(x + e.vx[i], backLine(s), s.worldW);
       e.y[i] = clamp(y + e.vy[i], 0, WORLD_H);
       e.vx[i] *= 0.8;
       e.vy[i] *= 0.8;
@@ -1732,7 +1745,7 @@ function updateMobs(s: GameState): void {
       // count as "on the field" (and subject to its limits) once fully inside it.
       const inward = y < WORLD_H / 2 ? 1 : -1;
       e.y[i] = y + inward * def.speed * 1.7;
-      e.x[i] = clamp(x + dirX * def.speed * 0.6, 0, WORLD_W);
+      e.x[i] = clamp(x + dirX * def.speed * 0.6, backLine(s), s.worldW);
       turnToward(s, i, tx);
       // top entrants finish the descent of the near slope first; bottom entrants just need to be inside
       if (inward > 0 ? e.y[i] >= TOP_ENTRY_DEPTH : e.y[i] <= WORLD_H - 3) e.flags[i] &= ~2;
@@ -1780,7 +1793,7 @@ function updateMobs(s: GameState): void {
         e.stun[i] = 16;
         emit(s.events, Ev.Burst, x, y, 12, BurstStyle.Sand);
       } else {
-        e.x[i] = clamp(x + dirX * def.speed * 1.25, 0, WORLD_W);
+        e.x[i] = clamp(x + dirX * def.speed * 1.25, backLine(s), s.worldW);
         e.y[i] = clamp(y + dirY * def.speed * 1.25, 6, WORLD_H - 6);
       }
       turnToward(s, i, tx);
@@ -2012,7 +2025,7 @@ function updateMobs(s: GameState): void {
     if (def.trail && (mvX !== 0 || mvY !== 0) && (s.tick + i) % def.trail.every === 0) dropMud(s, e.x[i], e.y[i], def.trail);
 
     // (from the slot, not the tick's starting `x`/`y`: a blink has moved it since)
-    e.x[i] = clamp(e.x[i] + mvX + sepX + e.vx[i], 0, WORLD_W);
+    e.x[i] = clamp(e.x[i] + mvX + sepX + e.vx[i], backLine(s), s.worldW);
     e.y[i] = clamp(e.y[i] + mvY + sepY + e.vy[i], 0, WORLD_H);
     e.vx[i] *= 0.8;
     e.vy[i] *= 0.8;
@@ -2094,7 +2107,7 @@ function updatePotions(s: GameState): void {
     if (e.kind[i] !== Kind.Potion) continue;
     if (e.x[i] < s.camX - 40) { freePotion(s, i); continue; } // lost once it falls behind the screen, like coins
     if (e.atk[i] < 255) e.atk[i]++; // age
-    e.x[i] = clamp(e.x[i] + e.vx[i], 0, WORLD_W);
+    e.x[i] = clamp(e.x[i] + e.vx[i], backLine(s), s.worldW);
     e.y[i] = clamp(e.y[i] + e.vy[i], 0, WORLD_H);
     e.z[i] += e.vz[i];
     e.vz[i] -= 0.14;
@@ -2137,7 +2150,7 @@ function updateCoins(s: GameState): void {
     if (e.atk[i] < 255) e.atk[i]++; // age
 
     // arc + bounce
-    e.x[i] = clamp(e.x[i] + e.vx[i], 0, WORLD_W);
+    e.x[i] = clamp(e.x[i] + e.vx[i], backLine(s), s.worldW);
     e.y[i] = clamp(e.y[i] + e.vy[i], 0, WORLD_H);
     e.z[i] += e.vz[i];
     e.vz[i] -= 0.14;
@@ -2187,7 +2200,7 @@ function runDirector(s: GameState, advance: number): void {
   for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Mob && (e.flags[i] & 1)) awake++;
   const scale = partyScale(activePlayers(s));
   if (awake >= REINFORCE_FLOOR * scale || e.capacity - e.count < 300) return;
-  if (s.camX > WORLD_W - VIEW_W - 100) return;
+  if (s.camX > s.worldW - VIEW_W - 100) return;
 
   // Top-up packs arrive from ahead, past the right edge of the screen.
   const r = s.rngSpawn;
@@ -2239,7 +2252,7 @@ function runFlanks(s: GameState, advance: number): void {
   const t = levelProgress(s);
   // Waves come faster deeper into the battlefield.
   s.flankTimer = FLANK_INTERVAL - FLANK_INTERVAL_DEEP * t;
-  if (e.capacity - e.count < 300 || s.camX > WORLD_W - VIEW_W - 100) return;
+  if (e.capacity - e.count < 300 || s.camX > s.worldW - VIEW_W - 100) return;
   const front = frontOfParty(s);
   if (front < 0) return;
 
@@ -2264,22 +2277,35 @@ function runFlanks(s: GameState, advance: number): void {
 
 function updateCamera(s: GameState): void {
   const e = s.ents;
-  let sum = 0, n = 0;
+  let sum = 0, n = 0, rear = Infinity;
   for (const p of s.players) {
     if (!p.active || p.downed) continue;
     sum += e.x[p.ent];
     n++;
+    rear = Math.min(rear, e.x[p.ent]);
   }
+  s.camMax = Math.max(s.camMax, s.camX); // (a camera moved from outside, a dev aid or a carried field, counts as reached)
   if (n === 0) return;
   // A closed gate is the end of the world until the screen is clear.
   const gate = s.gates[s.gateIdx];
+  // The camera goes forward, and back only by CAM_SLACK behind the furthest it has been, so cleared ground stays behind you.
   // (a field carried on from the one before can start its camera a little short of 0, see newSim in main.ts: it is not pulled up to 0)
-  const target = clamp(sum / n - VIEW_W / 2 + 24, Math.min(0, s.camX), gate ? gate.x - VIEW_W + GATE_INSET : s.worldW - VIEW_W);
-  // The camera only ever scrolls forward, so ground you have cleared stays behind you.
+  const want = sum / n - VIEW_W / 2 + 24;
+  const target = Math.min(want, gate ? gate.x - VIEW_W + GATE_INSET : s.worldW - VIEW_W);
   // ...and never faster than CAM_MAX_SPEED, so a hero who starts well off centre (walking in from the last level or the store) walks
   // across the screen on their own feet while the world scrolls gently, instead of being dragged across it by a camera catching up.
+  // Backing up is slower still, and only while a hero is pressed against the left edge and the party is well behind centre: it has
+  // to mean it (a hero who simply stands left of centre, as everyone does when a field opens, does not drag the view back).
   if (target > s.camX) s.camX += Math.min((target - s.camX) * 0.1, CAM_MAX_SPEED);
+  else if (rear < s.camX + CAM_BACK_EDGE && want < s.camX - CAM_BACK_DEAD) s.camX = Math.max(s.camMax - CAM_SLACK, s.camX - Math.min((s.camX - CAM_BACK_DEAD - want) * 0.05, CAM_BACK_SPEED));
+  s.camMax = Math.max(s.camMax, s.camX);
 }
+
+/** The camera backs up only when a hero is within `CAM_BACK_EDGE` of the left edge of the screen and the party's centre is
+ * `CAM_BACK_DEAD` behind where the camera would sit, and at most `CAM_BACK_SPEED` px/tick. */
+const CAM_BACK_EDGE = 24;
+const CAM_BACK_DEAD = 120;
+const CAM_BACK_SPEED = 1.2;
 
 /** The fastest the camera pans (px/tick): a little over a hero's walking pace (1.4 to 1.9), so it keeps up with a walker and only a dash outruns it. */
 const CAM_MAX_SPEED = 2.2;
@@ -2301,13 +2327,18 @@ function passGates(s: GameState): void {
 /** How far past the right edge of the screen an enemy still counts as "on screen" for a gate: it is about to walk in. */
 const GATE_SIGHT = 120;
 
-/** Hostile enemies that are on the screen or about to be (stragglers far away, and those who have given up or are leaving, do not count). */
-function visibleHostiles(s: GameState): number {
+/**
+ * Hostile enemies on the party's side of the gate at `gateX` that are on the screen or about to be (stragglers far away, those who
+ * have given up or are leaving, and those beyond the gate do not count: a shooter standing past a shut gate cannot be reached, and
+ * would otherwise hold it shut for good).
+ */
+function visibleHostiles(s: GameState, gateX: number): number {
   const e = s.ents;
+  const x1 = Math.min(s.camX + VIEW_W + GATE_SIGHT, gateX);
   let n = 0;
   for (let i = 0; i < e.highWater; i++) {
     if (!e.alive[i] || e.kind[i] !== Kind.Mob || (e.flags[i] & (8 | BYSTANDER | SURRENDERED))) continue;
-    if (e.x[i] > s.camX - 6 && e.x[i] < s.camX + VIEW_W + GATE_SIGHT) n++;
+    if (e.x[i] > s.camX - 6 && e.x[i] < x1) n++;
   }
   return n;
 }
@@ -2316,7 +2347,7 @@ function visibleHostiles(s: GameState): number {
 function checkGate(s: GameState): void {
   const gate = s.gates[s.gateIdx];
   if (!gate || s.nextClump <= gate.clump || s.camX + VIEW_W - GATE_INSET < gate.x - 4) return;
-  if (visibleHostiles(s) > 0) return;
+  if (visibleHostiles(s, gate.x) > 0) return;
   s.gateIdx++;
   s.gateOpenTick = s.tick;
 }

@@ -4,14 +4,14 @@
 import { ARROW_TTL, Behavior, MOBS, MobType, NovaStyle, Pattern, isBossType, ProjStyle, type ClingSpecial, type DeathDef, type LeapSpecial, type MobDef, type PounceSpecial, type Special } from '../data/mobs';
 import { clamp, cosTurns, sinTurns } from '../engine/math';
 import { rngFloat, rngRange } from '../engine/rng';
-import { VIEW_W, WORLD_H, WORLD_W } from './constants';
+import { VIEW_W, WORLD_H } from './constants';
 import { allocEntity, ELEM_MASK, freeEntity, Kind, PROJ_HOMING, PROJ_PIERCE, ZoneKind } from './entities';
 import { elementHit, elementPulse, powerOf, pulseHero, storePower, strikeHero } from './elements';
 import type { Entities } from './entities';
 import { Ev, emit } from './events';
 import { activePlayers, partyScale } from './gen/level';
 import { gatherCircle } from './grid';
-import type { GameState } from './state';
+import { backLine, type GameState } from './state';
 import { hurtPlayer, HURT_DOT, stop } from './step';
 
 /** `mode` of a mob in the middle of a special's telegraph (modes 1-2 are the bull charge, 3-5 the boss's moves). */
@@ -255,7 +255,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
       const lay = sp.pattern ? layout(s, sp.pattern, n, sp.spread ?? 0, x, y, e.ax[i], e.ay[i]) : null;
       for (let k = 0; k < n; k++) {
         const [ox, oy] = lay ? [lay[k * 3], lay[k * 3 + 1]] : k === 0 ? [0, 0] : scatter(s, sp.spread ?? 0);
-        const z = allocEntity(e, Kind.Zone, ZoneKind.Rock, clamp(e.ax[i] + ox, 0, WORLD_W), clamp(e.ay[i] + oy, 0, WORLD_H), 1);
+        const z = allocEntity(e, Kind.Zone, ZoneKind.Rock, clamp(e.ax[i] + ox, backLine(s), s.worldW), clamp(e.ay[i] + oy, 0, WORLD_H), 1);
         if (z < 0) break;
         e.wind[z] = Math.min(255, sp.delay + (lay ? lay[k * 3 + 2] : k * 3)); // a volley lands in a ripple, not all at once
         e.stun[z] = e.wind[z]; // (the whole fall time, for the renderer's progress ring)
@@ -272,7 +272,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
       const lay = sp.pattern ? layout(s, sp.pattern, n, sp.spread ?? 0, x, y, e.ax[i], e.ay[i]) : null;
       for (let k = 0; k < n; k++) {
         const [ox, oy] = lay ? [lay[k * 3], lay[k * 3 + 1]] : k === 0 && n > 1 ? [0, 0] : scatter(s, sp.spread ?? 0); // a lone trap is off-centre too: it only catches a hero who stays put
-        const z = allocEntity(e, Kind.Zone, ZoneKind.Trap, clamp(e.ax[i] + ox, 0, WORLD_W), clamp(e.ay[i] + oy, 6, WORLD_H - 6), 1);
+        const z = allocEntity(e, Kind.Zone, ZoneKind.Trap, clamp(e.ax[i] + ox, backLine(s), s.worldW), clamp(e.ay[i] + oy, 6, WORLD_H - 6), 1);
         if (z < 0) break;
         e.flags[z] = sp.element ?? 0;
         e.elite[z] = storePower(sp.power);
@@ -325,7 +325,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
     case 'totem': {
       const tp = s.players[target].ent;
       const dx = e.x[tp] - x, dy = e.y[tp] - y, d = Math.sqrt(dx * dx + dy * dy) || 1;
-      const z = allocEntity(e, Kind.Zone, ZoneKind.Totem, clamp(x + (dx / d) * 22, 0, WORLD_W), clamp(y + (dy / d) * 16, 6, WORLD_H - 6), 1);
+      const z = allocEntity(e, Kind.Zone, ZoneKind.Totem, clamp(x + (dx / d) * 22, backLine(s), s.worldW), clamp(y + (dy / d) * 16, 6, WORLD_H - 6), 1);
       if (z < 0) break;
       e.flags[z] = sp.element ?? 0;
       e.elite[z] = storePower(sp.power);
@@ -355,7 +355,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
       const lay = sp.pattern ? layout(s, sp.pattern, n, sp.spread ?? 0, x, y, e.ax[i], e.ay[i]) : null;
       for (let k = 0; k < n; k++) {
         const [ox, oy] = lay ? [lay[k * 3], lay[k * 3 + 1]] : k === 0 ? [0, 0] : scatter(s, sp.spread ?? 0);
-        const z = allocEntity(e, Kind.Zone, ZoneKind.Storm, clamp(e.ax[i] + ox, 0, WORLD_W), clamp(e.ay[i] + oy, 0, WORLD_H), 1);
+        const z = allocEntity(e, Kind.Zone, ZoneKind.Storm, clamp(e.ax[i] + ox, backLine(s), s.worldW), clamp(e.ay[i] + oy, 0, WORLD_H), 1);
         if (z < 0) break;
         e.flags[z] = sp.element ?? 0;
         e.elite[z] = storePower(sp.power);
@@ -373,7 +373,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
       const lay = sp.pattern ? layout(s, sp.pattern, n, sp.spread ?? 0, x, y, e.ax[i], e.ay[i]) : null;
       for (let k = 0; k < n; k++) {
         const [ox, oy] = lay ? [lay[k * 3], lay[k * 3 + 1]] : k === 0 ? [0, 0] : scatter(s, sp.spread ?? 0);
-        const z = allocEntity(e, Kind.Zone, ZoneKind.Pit, clamp(e.ax[i] + ox, 0, WORLD_W), clamp(e.ay[i] + oy, 6, WORLD_H - 6), 1);
+        const z = allocEntity(e, Kind.Zone, ZoneKind.Pit, clamp(e.ax[i] + ox, backLine(s), s.worldW), clamp(e.ay[i] + oy, 6, WORLD_H - 6), 1);
         if (z < 0) break;
         e.flags[z] = sp.element ?? 0;
         e.elite[z] = storePower(sp.power);
@@ -477,7 +477,7 @@ export function fireSpecialOf(s: GameState, i: number, sp: Special, target: numb
       for (let k = 0; k < sp.count; k++) {
         if (e.capacity - e.count < 120) break;
         const ang = rngFloat(r);
-        const mx = clamp(x + cosTurns(ang) * 14, 0, WORLD_W), my = clamp(y + sinTurns(ang) * 10, 6, WORLD_H - 6);
+        const mx = clamp(x + cosTurns(ang) * 14, backLine(s), s.worldW), my = clamp(y + sinTurns(ang) * 10, 6, WORLD_H - 6);
         const m = allocEntity(e, Kind.Mob, sp.type, mx, my, MOBS[sp.type].hp);
         if (m < 0) break;
         e.flags[m] = 1;
