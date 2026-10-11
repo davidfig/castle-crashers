@@ -8,6 +8,7 @@ import { MOBS, MobType } from '../data/mobs';
 import { allocEntity, BYSTANDER, Kind, SURRENDERED } from './entities';
 import { activatePlayer } from './state';
 import { planLevel } from './gen/level';
+import { roadSceneFor, roadSceneT } from '../data/story/road';
 import { CLEAR_AFTER, CLEAR_BEFORE, commitFork, forkChoice, forkOptions, layoutRoad, levelToRoad, roadBiomes, roadJump, roadLevel, roadPart, stageBounds, stageOf, type Calm } from './gen/road';
 import { createInputFrame } from './input';
 import { restore, snapshot } from './snapshot';
@@ -70,7 +71,9 @@ test('each level on the road is the level it would have been on its own, cut at 
   const s = plannedRoad(12, 6);
   for (let k = 0; k < 6; k++) {
     const lp = levelPlan(12, k, 6, s.road!.biomes[stageOf(k)]);
-    const own = planLevel(lp.seed, undefined, { boss: lp.boss, scale: lp.scale, heat: 0, opener: k === 0, length: WORLD_W });
+    // its own field, the encounters its road scene's clearing left (the road grows for the scene, the horde is as tuned)
+    const sc = roadSceneFor(lp.chapter, k % 3, lp.boss);
+    const own = planLevel(lp.seed, undefined, { boss: lp.boss, scale: lp.scale, heat: 0, opener: k === 0, length: WORLD_W, scene: sc ? { id: sc.id, t: roadSceneT(lp.seed) } : undefined }).filter((c) => !c.scene);
     const mine = s.plan.filter((c) => c.seed === lp.seed && !c.scene);
     const lay = s.road!.layout.levels[k];
     assert.deepEqual(mine.map((c) => [Math.round(c.x), c.size, !!c.boss]), own.map((c) => [Math.round(levelToRoad(lay, c.x)), c.size, !!c.boss]));
@@ -118,8 +121,9 @@ function walkRoad(seed: number, total: number, cap: number): { s: GameState; won
   return { s, won: s.phase === Phase.Won, parts, bought: s.wares.filter((w) => w.sold).length, scenesLeft };
 }
 
-// one run shared by the tests below: four levels (the third ends in a boss that is not the last), with camps and a road scene
-const run = walkRoad(3, 4, 120_000);
+// one run shared by the tests below: four levels (the third ends in a boss that is not the last), with camps, a crossroads and a road
+// scene; a seed the expert gets all the way through (on some the last boss wins, which is the game, but this run is here to see the whole road)
+const run = walkRoad(4, 4, 120_000);
 
 test('a simulated player walks the whole road in one sim, through every level, scene and camp, and wins at the last boss', () => {
   assert.ok(run.won, `the run was won (last part ${JSON.stringify(run.parts.at(-1))})`);
@@ -265,4 +269,58 @@ test('a run saved at a crossroads, after the choice, continues down the chosen r
   assert.deepEqual(back.road!.choices, [1]);
   assert.deepEqual(back.road!.biomes, s.road!.biomes);
   assert.deepEqual(back.road!.layout, s.road!.layout);
+});
+
+// ---- Quests on the road (docs/21-the-road.md, step 7)
+
+/** Moves the camera (and the party) so its centre is at road x `c`, and steps once so the road takes note. */
+function centreAt(s: GameState, c: number): void {
+  s.camX = s.prevCamX = s.trigCamX = c - VIEW_W / 2;
+  s.camMax = Math.max(s.camMax, s.camX);
+  for (const p of s.players) if (p.active) { s.ents.x[p.ent] = s.ents.px[p.ent] = c - 40; s.ents.y[p.ent] = s.ents.py[p.ent] = 120; }
+  step(s, [0, 1, 2, 3].map(createInputFrame));
+}
+
+test('a quest taken in a camp runs through the next level and is settled at the camp after it', () => {
+  const s = createSim(23, undefined, { road: { total: 3 } });
+  s.road!.town = false;
+  const camps = s.road!.layout.calm.filter((c) => c.kind === 'camp');
+  centreAt(s, (camps[0].from + camps[0].to) / 2);
+  assert.equal(s.offers.length, 3, 'givers in the first camp');
+  const escort = s.offers.findIndex((q) => q.mission === 'escort' || q.mission === 'flawless' || q.mission === 'cull' || q.mission === 'swift');
+  s.questTaken = escort;
+  const mission = s.offers[escort].mission;
+  centreAt(s, s.road!.layout.levels[1].start + 10);
+  assert.ok(s.quest, 'the quest began as the party walked into the next level');
+  assert.ok(s.quest!.startTick > 0, "a race would count from here, not from the start of the run");
+  assert.equal(s.offers.length, 0);
+  if (mission === 'escort') assert.ok(s.quest!.ent >= 0 && s.ents.kind[s.quest!.ent] === Kind.Npc, 'the ward walks with the party');
+  centreAt(s, (camps[1].from + camps[1].to) / 2);
+  assert.notEqual(s.quest!.status, 0, `the ${mission} was settled at the next camp`);
+});
+
+test('there are no quest-givers in the camp before a crossroads: the level beyond is not known yet', () => {
+  const s = createSim(23, undefined, { road: { total: 6 } });
+  s.road!.town = false;
+  const fork = s.road!.layout.calm.find((c) => c.kind === 'fork')!;
+  const before = s.road!.layout.calm[s.road!.layout.calm.indexOf(fork) - 1];
+  centreAt(s, (before.from + before.to) / 2);
+  assert.ok(s.road!.camp);
+  assert.equal(s.offers.length, 0);
+});
+
+test('the party rests at a camp: on its feet, at full health, rid of what ailed it', () => {
+  const s = createSim(23, undefined, { road: { total: 3 } });
+  s.road!.town = false;
+  activatePlayer(s, 1, 0, 0);
+  const camp = s.road!.layout.calm.find((c) => c.kind === 'camp')!;
+  centreAt(s, camp.from - 200);
+  s.ents.hp[s.players[0].ent] = 5; s.players[0].poisonT = 300;
+  s.players[1].downed = true; s.ents.hp[s.players[1].ent] = 0;
+  centreAt(s, (camp.from + camp.to) / 2);
+  assert.ok(s.road!.camp);
+  assert.equal(s.ents.hp[s.players[0].ent], s.ents.maxhp[s.players[0].ent]);
+  assert.equal(s.players[0].poisonT, 0);
+  assert.equal(s.players[1].downed, false);
+  assert.equal(s.ents.hp[s.players[1].ent], s.ents.maxhp[s.players[1].ent]);
 });

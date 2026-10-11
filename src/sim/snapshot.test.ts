@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CLASSES } from '../data/classes';
-import { makeQuest, questOffers } from '../data/quests';
-import { stockFor, wareSpot } from '../data/wares';
+import { makeQuest } from '../data/quests';
+import { wareSpot } from '../data/wares';
 import { botInput } from './bot';
 import { hashState } from './hash';
 import { Btn, createInputFrame } from './input';
@@ -59,17 +59,22 @@ test('save and restore round-trips a quest in progress', () => {
   roundTrip(() => newRun(3, ['rogue', 'warrior'], { quest }), 2, 900, 900);
 });
 
-test('save and restore round-trips the store: goods bought, a quest taken', () => {
+test('save and restore round-trips a camp on the road: goods bought', () => {
   const make = () => {
-    const s = createSim(9, undefined, { store: true, stock: stockFor(9, 1), offers: questOffers(9, { level: 2, boss: false, biome: 0 }) });
+    const s = createSim(9, undefined, { road: { total: 3 } });
+    s.road!.town = false;
+    const camp = s.road!.layout.calm.find((c) => c.kind === 'camp')!;
+    s.camX = s.prevCamX = s.camMax = s.trigCamX = camp.from - 300;
+    const e = s.players[0].ent;
+    s.ents.x[e] = s.ents.px[e] = camp.from;
     s.gold = 900;
     return s;
   };
   // walk to the first ware, buy it, saved halfway; then the second
   const route = (s: GameState, ticks: number) => {
     for (let t = 0; t < ticks; t++) {
-      const f = frames[0], e = s.players[0].ent, want = wareSpot(s.tick < 400 ? 0 : 1, s.wares.length);
-      f.moveX = Math.sign(want.x - s.ents.x[e]) * 127; f.moveY = Math.sign(want.y - s.ents.y[e]) * 127; f.aimX = f.aimY = 0;
+      const f = frames[0], e = s.players[0].ent, want = wareSpot(s.tick < 400 ? 0 : 1, Math.max(1, s.wares.length));
+      f.moveX = Math.sign(want.x + s.shopX - s.ents.x[e]) * 127; f.moveY = Math.sign(want.y - s.ents.y[e]) * 127; f.aimX = f.aimY = 0;
       f.buttons = s.tick % 20 === 0 ? Btn.Interact : 0;
       for (let k = 1; k < 4; k++) frames[k].buttons = frames[k].moveX = frames[k].moveY = 0;
       step(s, frames);

@@ -1,5 +1,5 @@
 import { createRng, Stream, type Rng } from '../engine/rng';
-import { CAM_SLACK, LEFT_BEHIND, MAX_ENTS, MAX_PLAYERS, STORE_EXIT_X, STORE_W, WORLD_W } from './constants';
+import { CAM_SLACK, LEFT_BEHIND, MAX_ENTS, MAX_PLAYERS, WORLD_W } from './constants';
 import { allocEntity, createEntities, freeEntity, Kind, type Entities } from './entities';
 import { createEvents, type EventBuf } from './events';
 import { createGrid, type Grid } from './grid';
@@ -132,7 +132,7 @@ export interface PlayerState {
   pick: number;
 }
 
-/** A good lying on the store's ground (data/wares.ts), and whether someone has bought it (each is one of a kind). */
+/** A good lying on a camp's ground (data/wares.ts), and whether someone has bought it (each is one of a kind). */
 export interface Ware extends StockItem {
   sold: boolean;
 }
@@ -172,13 +172,9 @@ export interface GameState {
   beatPlayedTick: number;
   /** Stand Down / surrender is available (from chapter II of the campaign). */
   surrender: boolean;
-  /** This is the store between two levels: no enemies, no director, won by walking on to the far end. */
-  store: boolean;
-  /** The road goes on after this field (another level or the store follows): winning it does not stop the party, who keep walking while what is left of the horde leaves. */
-  onward: boolean;
-  /** The biome on the far side of the store (-1 outside one). */
+  /** In a camp on the road, the biome of the level after it once it is known (the music turns to it at the peddler); -1 otherwise. */
   nextBiome: number;
-  /** How long the field is, and the x at which a hero has reached its end (a level is won there; the store is left there). */
+  /** How long the field (or the road) is, and the x at which a hero has reached its end. */
   worldW: number;
   exitX: number;
   /** Seed level-up offers are drawn from (the run's, not the level's). */
@@ -189,16 +185,16 @@ export interface GameState {
   spared: Int32Array;
   /** The side quest the party took in the camp for this level (sim/quests.ts), or none. */
   quest: QuestRun | null;
-  /** The store's goods on the ground (empty outside a store); bought with the trade button (sim/shop.ts). */
+  /** A camp's goods on the ground (set out as the party nears it, sim/gen/road.ts); bought with the trade button (sim/shop.ts). */
   wares: Ware[];
-  /** Where the store (or a camp on the road) begins: its goods and givers stand at their store spots plus this. */
+  /** Where the camp the goods belong to begins: its goods, givers and gift stand at their spots (in a camp's own coordinates) plus this. */
   shopX: number;
   /** A camp's gift (data/gifts.ts): two boons, each hero may take one; `giftPick` is which each hero (by slot) took, -1 for none yet. */
   gifts: number[];
   giftPick: number[];
-  /** The run's one road (sim/gen/road.ts), or null for a field of its own (a level or a store). */
+  /** The run's one road (sim/gen/road.ts), or null for a field of its own (a single level: the tests' harness, `?demo=`). */
   road: RoadState | null;
-  /** The quests offered by the givers standing in the store, and the one the party has taken (-1 = none) for the level that follows. */
+  /** The quests offered by the givers standing in the camp, and the one the party has taken (-1 = none) for the level that follows. */
   offers: QuestDef[];
   questTaken: number;
   /** Shared gold (docs/05: gold is shared). */
@@ -296,6 +292,21 @@ export function resetHero(s: GameState, slot: number, classId: number): void {
 }
 
 /**
+ * The party rests at a camp (as it did on the way into the store between two levels): everyone on their feet, at full health, rid of
+ * whatever still ailed them.
+ */
+export function restParty(s: GameState): void {
+  for (const p of s.players) {
+    if (!p.active) continue;
+    p.downed = false; p.downTimer = 0;
+    p.slowT = p.rootT = p.silenceT = p.confuseT = p.poisonT = p.hexT = p.witherT = p.pullT = 0;
+    p.burning = false;
+    p.stamina = 100; p.staminaDelay = 0; p.winded = false;
+    s.ents.hp[p.ent] = s.ents.maxhp[p.ent] = CLASSES[p.classId].hp;
+  }
+}
+
+/**
  * A hero leaves the run (a continued run whose saved hero nobody took up, docs/21-the-road.md): their body goes and the slot is empty,
  * so a newcomer who takes it starts afresh. What they bought is gone with them; the shared purse stays.
  */
@@ -315,12 +326,6 @@ export interface SimOptions {
   boss?: boolean;
   /** Enemy count multiplier for the level (1 = as planned): later levels of a biome are bigger. */
   scale?: number;
-  /** The store between levels (see `STORE_W`): nobody to fight, a peddler to trade with, and the road on into the next level's biome. */
-  store?: boolean;
-  /** The biome the store leads into (its scenery takes over past the peddler). */
-  nextBiome?: number;
-  /** Another field follows this one (see `GameState.onward`). */
-  onward?: boolean;
   /** A road scene to leave a clearing for (see `SimScene`). */
   scene?: SimScene;
   /** The party's chosen difficulty (data/heat.ts). */
@@ -333,23 +338,19 @@ export interface SimOptions {
   mix?: readonly [number, number];
   /** The first field of a run: it opens with small encounters (see `PlanOptions.opener`). */
   opener?: boolean;
-  /** How long the field is (default `WORLD_W`, a store `STORE_W`): its encounters, sites and quest are laid out along it. */
+  /** How long a field of its own is (default `WORLD_W`): its encounters, sites and quest are laid out along it. */
   length?: number;
   /** The whole run as one road (docs/21-the-road.md): `total` levels with a camp after each but the last, planned from the run's seed
    *  (the sim's `seed`) as the party nears them. The per-level options (boss, scale, mix, damage, opener) then come from the road. It
    *  starts in the town, with the profile's renown to spend and the lasting upgrades bought so far (data/meta.ts, by index). */
-  road?: { total: number; renown?: number; meta?: readonly number[] };
-  /** A store's goods (data/wares.ts `stockFor`) and the quests its givers offer (data/quests.ts `questOffers`). */
-  stock?: readonly StockItem[];
-  offers?: readonly QuestDef[];
+  road?: { total: number; renown?: number; meta?: readonly number[]; /** A story beat the first level stages (docs/12, R1: the cookfire). */ beat?: SimBeat };
 }
 
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
-  const store = opts.store === true;
   const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
-  const road = opts.road ? createRoad(seed, opts.road.total, heat, opts.road.renown ?? 0, opts.road.meta ?? []) : null;
-  const length = store ? STORE_W : road ? road.layout.length : (opts.length ?? WORLD_W);
-  const plan = store || road ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
+  const road = opts.road ? createRoad(seed, opts.road.total, heat, opts.road.renown ?? 0, opts.road.meta ?? [], opts.road.beat) : null;
+  const length = road ? road.layout.length : (opts.length ?? WORLD_W);
+  const plan = road ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
   const s: GameState = {
     seed,
     biome: biomeIndex(seed),
@@ -373,23 +374,21 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     sceneIndex: plan.findIndex((c) => c.scene !== undefined),
     tutorialHold: false,
     beatPlayedTick: -1,
-    surrender: opts.surrender === true && !store,
-    store,
-    onward: opts.onward === true,
-    nextBiome: store ? (opts.nextBiome ?? biomeIndex(seed)) : -1,
+    surrender: opts.surrender === true,
+    nextBiome: -1,
     worldW: length,
-    exitX: store ? STORE_EXIT_X : length - 70,
+    exitX: length - 70,
     offerSeed: opts.offerSeed ?? seed,
     surrenders: 0,
     betrayed: 0,
     spared: new Int32Array(MOBS.length),
-    quest: opts.quest && !store ? createQuestRun(opts.quest) : null,
-    wares: store ? (opts.stock ?? []).map((it) => ({ ware: it.ware, price: it.price, sold: false })) : [],
-    shopX: store ? 0 : -1e9,
+    quest: opts.quest ? createQuestRun(opts.quest) : null,
+    wares: [],
+    shopX: -1e9,
     gifts: [],
     giftPick: [-1, -1, -1, -1],
     road,
-    offers: store ? (opts.offers ?? []).map((q) => ({ ...q })) : [],
+    offers: [],
     questTaken: -1,
     gold: road ? TREASURY_GOLD * (road.meta[META_INDEX.treasury] ?? 0) : 0,
     heat,
@@ -419,7 +418,7 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
   activatePlayer(s, 0, 80, 100);
   applyMeta(s, 0);
   if (road) roadUpkeep(s, () => {});
-  else if (!store) placeSites(s, opts.boss !== false);
+  else placeSites(s, opts.boss !== false);
   if (s.quest) placeQuest(s);
   return s;
 }

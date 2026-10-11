@@ -24,13 +24,16 @@ import { emit, Ev } from '../events';
 import { heatHorde } from '../../data/heat';
 import { roadSceneFor, roadSceneT } from '../../data/story/road';
 import { giftsFor } from '../../data/gifts';
+import { questOffers } from '../../data/quests';
+import { Kind, NpcMode } from '../entities';
+import { createQuestRun, placeQuest, settleQuestNow } from '../quests';
 import { META } from '../../data/meta';
 import { TOWN_GATE_X, TOWN_W } from '../../data/town';
 import { stockFor } from '../../data/wares';
-import { STORE_X, VIEW_W, WORLD_H, WORLD_W } from '../constants';
+import { LEVEL_CAM_END, STORE_X, VIEW_W, WORLD_H, WORLD_W } from '../constants';
 import { placeSites } from '../sites';
-import type { GameState } from '../state';
-import { planLevel, SCENE_RELEASE, SCENE_Y, STREAM_AHEAD, type ClumpPlan } from './level';
+import { restParty, type GameState } from '../state';
+import { planLevel, SCENE_RELEASE, SCENE_Y, STREAM_AHEAD, type ClumpPlan, type SimBeat } from './level';
 
 /** How far an encounter's crowd spreads from its centre (a blob for a full party; a line is narrower). */
 export const CROWD_SPREAD = 160;
@@ -117,6 +120,11 @@ export interface RoadState {
   meta: number[];
   /** Bosses slain on this road (for the renown it earns). */
   bosses: number;
+  /** A story beat the first level stages (docs/12-story.md: R1, the cookfire), or none. */
+  beat: SimBeat | null;
+  /** The director's measure of how far the party has come (`roadAdvance`): the level it is counting, and the furthest point of that level's own field the camera has reached. */
+  trigLevel: number;
+  trigLocal: number;
 }
 
 /** The region (biome stage) level `k` belongs to. */
@@ -147,9 +155,20 @@ export function roadBiomes(runSeed: number, total: number, choices: readonly num
 /** The plan of level `k` of this road. */
 export function roadLevel(r: RoadState, k: number): LevelPlan { return levelPlan(r.runSeed, k, r.total, r.biomes[stageOf(k)]); }
 
+/**
+ * The encounters of level `k`'s field, without its road scene's marker (the road places the scene itself, on ground of its own). A level
+ * with a road scene keeps the encounters it had as a field of its own, the ones its scene's clearing left (`SCENE_CLEARING`): the road
+ * grows to give the scene room, but how much horde the level holds is as it was tuned.
+ */
+function levelEncounters(lp: LevelPlan, k: number, opts: { scale?: number; heat?: number; beat?: SimBeat } = {}): ClumpPlan[] {
+  const sc = roadSceneFor(lp.chapter, k % LEVELS_PER_BIOME, lp.boss);
+  const scene = sc ? { id: sc.id, t: roadSceneT(lp.seed) } : undefined;
+  return planLevel(lp.seed, opts.beat, { boss: lp.boss, scale: opts.scale, heat: opts.heat, opener: k === 0, length: WORLD_W, scene }).filter((c) => c.scene === undefined);
+}
+
 /** Where level `k`'s field would place its encounters (a pure function of its seed: the positions do not depend on the horde's size). */
 function levelShape(lp: LevelPlan, k: number): ClumpPlan[] {
-  return planLevel(lp.seed, undefined, { boss: lp.boss, length: WORLD_W, opener: k === 0 });
+  return levelEncounters(lp, k);
 }
 
 /** The road scene level `k` stages (if any), and where in its field (local x). */
@@ -249,7 +268,6 @@ export function inCamp(s: GameState): boolean { return s.road !== null && s.road
 
 /** A camp's stall and goods are near enough the screen to draw (a store always is). */
 export function campShown(s: GameState): boolean {
-  if (s.store) return true;
   return s.road !== null && s.camX + VIEW_W > s.shopX + CAMP_FROM - 300 && s.camX < s.shopX + CAMP_TO + 300;
 }
 
@@ -263,10 +281,40 @@ export function roadProgress(s: GameState): number {
   return Math.max(0, Math.min(1, (s.camX + VIEW_W / 2 - a) / Math.max(1, b - a)));
 }
 
-/** The director sends no packs while a calm place is on the screen or just ahead of it (a pack arrives from past the right edge). */
+/**
+ * The director sends no packs while a calm place is on the screen or just ahead of it (a pack arrives from past the right edge), nor in
+ * the last screen of a level's own field (as it never did at the end of a level).
+ */
 export function roadDirectorOff(s: GameState): boolean {
-  const lo = s.camX - 40, hi = s.camX + VIEW_W + 120;
-  return s.road!.layout.calm.some((p) => p.to > lo && p.from < hi);
+  const lo = s.camX - 40, hi = s.camX + VIEW_W + 120, r = s.road!;
+  if (r.layout.calm.some((p) => p.to > lo && p.from < hi)) return true;
+  return roadToLevel(r.layout.levels[r.level], s.camX) > LEVEL_CAM_END - 100;
+}
+
+/**
+ * Where road x `x` lies in level `lay`'s own field: inside one of its stretches, that point of the field; in the ground the road grew
+ * around a calm place, the end of the stretch before it (or the start of the field). So walking that ground does not count as advancing.
+ */
+export function roadToLevel(lay: LevelLay, x: number): number {
+  let local = lay.slices[0].from;
+  for (const sl of lay.slices) {
+    if (x < sl.from + sl.dx) break;
+    local = Math.min(x - sl.dx, sl.to);
+  }
+  return local;
+}
+
+/**
+ * How far the party has advanced this tick, for the director's packs: measured over each level's own field, as it was when a level was a
+ * field of its own, so the ground the road grew around its calm places brings no extra horde.
+ */
+export function roadAdvance(s: GameState): number {
+  const r = s.road!;
+  const local = roadToLevel(r.layout.levels[r.level], s.camX);
+  if (r.trigLevel !== r.level) { r.trigLevel = r.level; r.trigLocal = Math.min(local, 0); }
+  const adv = Math.max(0, local - r.trigLocal);
+  r.trigLocal = Math.max(r.trigLocal, local);
+  return adv;
 }
 
 /** Plans level `k`: its encounters (each stretch moved along the road, and tagged with the level's seed, biome and slice of the cast), its road scene, gates and sites. */
@@ -275,7 +323,8 @@ function planRoadLevel(s: GameState, k: number): void {
   const lp = roadLevel(r, k);
   const lay = r.layout.levels[k];
   const base = s.plan.length;
-  const plan = planLevel(lp.seed, undefined, { boss: lp.boss, scale: lp.scale * heatHorde(r.heat), heat: r.heat, opener: k === 0, length: WORLD_W });
+  // (a staged beat adds an encounter of its own and moves no other, so the layout, made without it, still holds)
+  const plan = levelEncounters(lp, k, { scale: lp.scale * heatHorde(r.heat), heat: r.heat, beat: k === 0 ? r.beat ?? undefined : undefined });
   const scene = r.layout.calm.find((c) => c.kind === 'scene' && c.level === k);
   let sceneAt = scene ? plan.findIndex((c) => levelToRoad(lay, c.x) > scene.x!) : -1;
   if (scene && sceneAt < 0) sceneAt = plan.length;
@@ -287,6 +336,7 @@ function planRoadLevel(s: GameState, k: number): void {
   // gates stand past the encounters they guard; the lair holds a boss's road until it and its retinue are dead
   for (let i = base; i < s.plan.length; i++) {
     const c = s.plan[i];
+    if (c.beat !== undefined) s.beatIndex = i;
     if (c.gate) s.gates.push({ x: c.x + GATE_PAST, clump: i });
     if (c.boss) s.gates.push({ x: c.x + LAIR_PAST, clump: i });
   }
@@ -306,7 +356,11 @@ function openCamp(s: GameState, c: Calm): void {
   const r = s.road!;
   s.shopX = c.shopX!;
   s.wares = stockFor(r.runSeed, c.level).map((it) => ({ ware: it.ware, price: it.price, sold: false }));
-  s.offers = [];
+  // quest-givers, for the level after the camp; none before a crossroads (the level beyond is not yet known: a cull needs its creatures)
+  const next = c.level + 1;
+  const known = next < r.total && stageOf(next) === stageOf(c.level);
+  const lp = known ? roadLevel(r, next) : undefined;
+  s.offers = lp ? questOffers(r.runSeed, { level: next, boss: lp.boss, biome: lp.biome }) : [];
   s.questTaken = -1;
   s.gifts = giftsFor(r.runSeed, c.level);
   s.giftPick = [-1, -1, -1, -1];
@@ -342,6 +396,7 @@ export function roadUpkeep(s: GameState, leave: (s: GameState) => void): void {
   if (at.level === r.level && at.calm === r.calm && r.since >= 0) return;
   const first = r.since < 0;
   const entering = at.calm >= 0 && at.calm !== r.calm;
+  const newLevel = at.level !== r.level;
   r.level = at.level; r.calm = at.calm; r.camp = at.calm >= 0 && L.calm[at.calm].kind === 'camp'; r.since = s.tick;
   const lp = roadLevel(r, at.level);
   s.biome = lp.biome;
@@ -352,6 +407,28 @@ export function roadUpkeep(s: GameState, leave: (s: GameState) => void): void {
   const nextLevel = Math.min(r.total - 1, at.level + 1);
   s.nextBiome = r.camp && stageOf(nextLevel) <= r.choices.length ? roadLevel(r, nextLevel).biome : -1;
   if (entering && !first) leave(s); // what is left of the horde walks off the way it came, as it did when a level was won
+  // a quest runs from the camp it was taken in, through the next level, to the next camp: there it is settled
+  if (entering && L.calm[at.calm].kind === 'camp') { endQuest(s); restParty(s); } // the party rests at a camp
+  if (newLevel && at.calm < 0 && s.questTaken >= 0 && s.offers[s.questTaken]) beginQuest(s, at.level);
+}
+
+/** The quest the party took in the camp begins as it walks into the next level: its bodies placed along that level's stretch of road. */
+function beginQuest(s: GameState, k: number): void {
+  const r = s.road!, lay = r.layout.levels[k];
+  let lead = -Infinity;
+  for (const p of s.players) if (p.active && !p.downed) lead = Math.max(lead, s.ents.x[p.ent]);
+  s.quest = createQuestRun(s.offers[s.questTaken], s.tick);
+  s.questTaken = -1;
+  s.offers = [];
+  placeQuest(s, { x0: 0, length: WORLD_W, seed: roadLevel(r, k).seed, at: (x) => levelToRoad(lay, x), wardX: Number.isFinite(lead) ? lead - 40 : s.camX + 60 });
+}
+
+/** The party reached the next camp: the quest is settled, and whoever it was about (a ward, a captive) goes home. */
+function endQuest(s: GameState): void {
+  if (!s.quest) return;
+  settleQuestNow(s, true);
+  const i = s.quest.ent;
+  if (i >= 0 && s.ents.alive[i] && s.ents.kind[i] === Kind.Npc) s.ents.mode[i] = NpcMode.Freed;
 }
 
 /** The music turns to the next level's biome at the peddler, halfway through the camp (once the road beyond is known). */
@@ -388,12 +465,12 @@ export function commitFork(s: GameState, fork: Calm, side: number): void {
 }
 
 /** A fresh road's state (level 0, nothing planned yet: the first upkeep plans it). */
-export function createRoad(runSeed: number, total: number, heat: number, renown = 0, meta: readonly number[] = []): RoadState {
+export function createRoad(runSeed: number, total: number, heat: number, renown = 0, meta: readonly number[] = [], beat?: SimBeat): RoadState {
   const n = Math.max(1, total);
   const biomes = roadBiomes(runSeed, n, []);
   return {
     runSeed, total: n, heat, layout: layoutRoad(runSeed, n, biomes), planned: 0, level: 0, calm: -1, camp: false, since: -1, choices: [], biomes,
-    town: true, renown, meta: META.map((_, i) => meta[i] ?? 0), bosses: 0,
+    town: true, renown, meta: META.map((_, i) => meta[i] ?? 0), bosses: 0, beat: beat ? { ...beat } : null, trigLevel: -1, trigLocal: 0,
   };
 }
 

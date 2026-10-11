@@ -73,4 +73,4 @@ More NPCs as the story needs them (the Elder, the mapmaker), a backdrop for the 
 
 ## How to work on it
 
-The screens page (`/art/screens.html`, run by `pnpm dev`) draws the title with the real renderer. `?store=1&players=4&pending=2` opens the in-game store directly ([07](07-procgen.md)). The other screens are exercised by `src/campaign/*.test.ts`.
+The screens page (`/art/screens.html`, run by `pnpm dev`) draws the title with the real renderer. `?seed=N&levels=3&calm=1` walks an empty road to its first camp ([21](21-the-road.md)). The other screens are exercised by `src/campaign/*.test.ts`.

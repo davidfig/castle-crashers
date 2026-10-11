@@ -16,7 +16,7 @@ export function giftsFor(runSeed: number, level: number): number[] {
   return out;
 }
 
-/** Where gift `i` stands, in the store's own coordinates: a little before the peddler's stall, on the far side of the road from his goods. */
+/** Where gift `i` stands, in a camp's own coordinates: on the near side of the road, below the quest-givers (who stand along the far side) and before the peddler's goods. */
 export function giftSpot(i: number): { x: number; y: number } {
-  return { x: 540 + i * 110, y: 58 };
+  return { x: 520 + i * 120, y: 190 };
 }

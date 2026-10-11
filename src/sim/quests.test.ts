@@ -79,11 +79,10 @@ test('a race is never offered on a boss level, and rewards grow with the level',
   assert.ok(makeQuest(0, 'cull', 'purse', { ...ctx, level: 7 }).gold > makeQuest(0, 'cull', 'purse', { ...ctx, level: 1 }).gold);
 });
 
-test('no quest on a level, none in the camp: nothing changes', () => {
-  const a = createSim(5), b = createSim(5, undefined, { store: true, quest: quest('escort') });
+test('no quest on a level: nothing changes', () => {
+  const a = createSim(5);
   assert.equal(a.quest, null);
-  assert.equal(b.quest, null);
-  assert.equal(npcs(b).length, 0);
+  assert.equal(npcs(a).length, 0);
 });
 
 test('escort: a ward stands with the party, follows it, and is still there to be paid when the field is won', () => {

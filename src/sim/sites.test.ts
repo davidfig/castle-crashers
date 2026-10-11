@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { HEAT_MAX, heatHorde } from '../data/heat';
 import { MOBS } from '../data/mobs';
 import { offerFor, UPGRADE_INDEX, UPGRADES } from '../data/upgrades';
-import { applyCarry, captureCarry } from './carry';
 import { allocEntity, Kind, ShrineKind } from './entities';
 import { planLevel } from './gen/level';
 import { hashState } from './hash';
@@ -52,10 +51,9 @@ test('every field has its chests and shrines, the same from the same seed, and n
     assert.equal(hashState(a), hashState(b));
     for (const i of [...sitesOf(a, Kind.Chest), ...sitesOf(a, Kind.Shrine)]) assert.ok(a.ents.x[i] > 700, 'well down the road');
   }
-  assert.equal(sitesOf(createSim(3, undefined, { store: true }), Kind.Chest).length, 0, 'none in the camp');
 });
 
-test('rerolling deals a fresh hand; banishing removes the boon for good; both cost a charge and carry on', () => {
+test('rerolling deals a fresh hand; banishing removes the boon for good; both cost a charge', () => {
   const s = field();
   pending(s, 1);
   const p = s.players[0];
@@ -77,17 +75,14 @@ test('rerolling deals a fresh hand; banishing removes the boon for good; both co
   // out of banishes: the stick does nothing
   step(s, idle()); step(s, stickY(127));
   assert.equal(p.banishes, 0);
-  // picking resets the deal, and the counts travel to the next level
+  // picking resets the deal (the counts last the run: it is one sim)
   step(s, idle());
   const hand = heroOffer(s, 0);
   step(s, (() => { const f = idle(); f[0].buttons = Btn.Attack; return f; })());
   assert.equal(p.pending, 0);
   assert.equal(p.salt, 0);
   assert.ok(p.ranks[hand[p.cursor]] >= 0);
-  const next = createSim(9);
-  applyCarry(next, captureCarry(s));
-  assert.equal(next.players[0].rerolls, p.rerolls);
-  assert.equal(next.players[0].banned[gone], 1);
+  assert.equal(p.banned[gone], 1);
 });
 
 test('rerolls run dry: with none left the stick does nothing', () => {

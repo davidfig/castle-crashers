@@ -17,10 +17,10 @@ import { Ev, emit } from './events';
 import { pickMobType, pickSupport } from './gen/mix';
 import { BOSS_SPECIAL, BurstStyle, clingStep, dropMud, leapStep, SP_LEAP, fireSpecial, fireSpecialOf, hasSpecial, isWarded, onMobDeath, RALLY_SPEED, shovePlayer, SP_CLING, SP_INIT, SP_WIND, onScreen, startSpecial, startSpecialOf, updateZones } from './abilities';
 import { cellX, cellY, gatherCircle, rebuildGrid } from './grid';
-import { activatePlayer, backLine, BLAST_CAP, joinParty, Phase, type GameState, type PlayerState } from './state';
+import { backLine, BLAST_CAP, joinParty, Phase, type GameState, type PlayerState } from './state';
 import { bannerMul, burstAt, executeMul, flushProcs, frenzyTick, onAura, onDodge, onDown, onExplode, onHit, onHurt, onKill, onSpecial, pop, rebirth, tickBoons, vigilBonus, wardMul } from './boons';
 import { activePlayers, hasBoss, partyScale, sceneHold, streamLevel } from './gen/level';
-import { inCamp, inTown, roadDirectorOff, roadLevel, roadProgress, roadUpkeep } from './gen/road';
+import { inCamp, inTown, roadAdvance, roadDirectorOff, roadLevel, roadProgress, roadUpkeep } from './gen/road';
 import { townTrade } from './town';
 import { TOWN_W } from '../data/town';
 import { heatDamage, heatReward, heatSpeed } from '../data/heat';
@@ -102,11 +102,10 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   s.prevCamX = s.camX;
   if (s.phase !== Phase.Playing) {
     retreatMobs(s); // a won or lost field empties the way it filled
-    if (s.phase === Phase.Won && s.onward) walkOn(s, inputs);
     return;
   }
 
-  if (s.store || inCamp(s)) updateTrade(s, inputs);
+  if (inCamp(s)) updateTrade(s, inputs);
   else if (inTown(s)) townTrade(s, inputs);
   if (s.hitStop > 0) {
     s.hitStop--;
@@ -134,9 +133,9 @@ export function step(s: GameState, inputs: InputFrame[]): void {
     flushProcs(s);
     if (s.blastN === 0 && s.procN === 0) break;
   }
-  const advance = sceneHold(s) || s.tutorialHold ? 0 : Math.max(0, s.camX - s.trigCamX);
+  const advance = sceneHold(s) || s.tutorialHold ? 0 : s.road ? roadAdvance(s) : Math.max(0, s.camX - s.trigCamX);
   s.trigCamX = Math.max(s.trigCamX, s.camX);
-  if (!s.store && !(s.road && roadDirectorOff(s))) { runDirector(s, advance); runFlanks(s, advance); }
+  if (!(s.road && roadDirectorOff(s))) { runDirector(s, advance); runFlanks(s, advance); }
   updateCamera(s);
   cullBehind(s);
   if (s.road) roadUpkeep(s, leaveField);
@@ -161,16 +160,6 @@ function cullBehind(s: GameState): void {
   }
 }
 
-/** A won field the road goes on from is not a stop: the party stays in control (to loot, to keep walking) while what is left of the horde leaves. */
-function walkOn(s: GameState, inputs: InputFrame[]): void {
-  rebuildGrid(s.grid, s.ents, s.camX);
-  for (let slot = 0; slot < s.players.length; slot++) updatePlayer(s, slot, inputs[slot]);
-  flushBlasts(s);
-  updateProjectiles(s);
-  updateCoins(s);
-  updatePotions(s);
-  updateCamera(s);
-}
 
 /** Slots are reused (LIFO), so a target list can hold a slot that now belongs to a coin or arrow. */
 function isLiveMob(e: GameState['ents'], m: number): boolean {

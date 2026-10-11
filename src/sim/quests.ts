@@ -46,6 +46,8 @@ export interface QuestRun {
   /** The tick it was settled (-1 while it is open), for the banner. */
   endTick: number;
   why: number;
+  /** The tick it began (a race counts from here): 0 for a quest a field began with; on the road, when the party walked into its level. */
+  startTick: number;
 }
 
 /** A ward's health, and how hard its sword hits: it is there to be protected, not to help. */
@@ -70,18 +72,21 @@ const CAPTIVE_COOL = 24;
 const LURE_X = 150, LURE_Y = 70;
 const CLEAR_X = 180;
 
-export function createQuestRun(def: QuestDef): QuestRun {
-  return { def, status: QuestStatus.Active, progress: 0, ent: -1, x: 0, y: 0, spawned: false, endTick: -1, why: FailWhy.None };
+export function createQuestRun(def: QuestDef, startTick = 0): QuestRun {
+  return { def, status: QuestStatus.Active, progress: 0, ent: -1, x: 0, y: 0, spawned: false, endTick: -1, why: FailWhy.None, startTick };
 }
 
+/** Where a quest's bodies go: the stretch of field (`x0`, `length`), its seed, and on the road, how a point of the level's own field maps onto the road. */
+export interface QuestSpan { x0: number; length: number; seed: number; at?: (x: number) => number; wardX?: number }
+
 /** Put the quest's bodies on the field: a ward beside the party, or a captive somewhere down the road, or the place the quarry will come from. A function of the seed. */
-export function placeQuest(s: GameState): void {
+export function placeQuest(s: GameState, span: QuestSpan = { x0: 0, length: s.worldW, seed: s.seed }): void {
   const q = s.quest;
   if (!q) return;
-  const r = createRng(s.seed, QUEST_STREAM);
+  const r = createRng(span.seed, QUEST_STREAM);
   const e = s.ents;
   if (q.def.mission === 'escort') {
-    const i = allocEntity(e, Kind.Npc, q.def.npc, 44, 130, WARD_HP);
+    const i = allocEntity(e, Kind.Npc, q.def.npc, span.wardX ?? 44, 130, WARD_HP);
     if (i >= 0) { e.mode[i] = NpcMode.Ward; q.ent = i; }
     return;
   }
@@ -89,7 +94,8 @@ export function placeQuest(s: GameState): void {
   // somewhere down the road, off the staged scenes and the chests and shrines
   let x = 0, y = 0;
   for (let tries = 0; tries < 10; tries++) {
-    x = 1000 + rngFloat(r) * (s.worldW - 1700);
+    const local = span.x0 + 1000 + rngFloat(r) * (span.length - 1700);
+    x = span.at ? span.at(local) : local;
     y = rngRange(r, 52, WORLD_H - 52);
     if (s.plan.some((c) => (c.scene || c.beat) && Math.abs(c.x - x) < 330)) continue;
     let clear = true;
@@ -371,7 +377,7 @@ export function updateQuest(s: GameState): void {
       for (const p of s.players) if (p.active && p.downed) { fail(s, FailWhy.Fell, e.x[p.ent], e.y[p.ent]); break; }
       break;
     case 'swift':
-      if (s.tick > q.def.goal * 60) fail(s, FailWhy.Late);
+      if (s.tick - q.startTick > q.def.goal * 60) fail(s, FailWhy.Late);
       break;
   }
 }
@@ -390,10 +396,20 @@ export function questKill(s: GameState, m: number): void {
 export function settleQuest(s: GameState): void {
   const q = s.quest;
   if (!q || q.status !== QuestStatus.Active || s.phase === Phase.Playing) return;
+  settleQuestNow(s, s.phase !== Phase.Lost);
+}
+
+/**
+ * The quest's level is behind the party (`reached`: it came through; otherwise it fell): whatever the quest was waiting on is decided. On
+ * the road this happens at the next camp, the quest having run through the level after the camp it was taken in.
+ */
+export function settleQuestNow(s: GameState, reached: boolean): void {
+  const q = s.quest;
+  if (!q || q.status !== QuestStatus.Active) return;
   const e = s.ents;
   const pt = party(s);
   const x = pt.n ? pt.x : 0, y = pt.n ? pt.y : 0;
-  if (s.phase === Phase.Lost) { fail(s, FailWhy.Lost, x, y); return; }
+  if (!reached) { fail(s, FailWhy.Lost, x, y); return; }
   switch (q.def.mission) {
     case 'escort': {
       const w = wardOf(s);
@@ -401,7 +417,7 @@ export function settleQuest(s: GameState): void {
       break;
     }
     case 'flawless': complete(s, x, y); break;
-    case 'swift': if (s.tick <= q.def.goal * 60) complete(s, x, y); else fail(s, FailWhy.Late, x, y); break;
+    case 'swift': if (s.tick - q.startTick <= q.def.goal * 60) complete(s, x, y); else fail(s, FailWhy.Late, x, y); break;
     default: fail(s, FailWhy.Missed, x, y);
   }
 }

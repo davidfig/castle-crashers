@@ -173,7 +173,7 @@ export class Pilot {
     plan.hasGoal = false; plan.hasAim = false; plan.attack = false; plan.special = false; plan.nova = false; plan.roll = false; plan.holdRoll = 0;
     this.clusterAt = -999;
 
-    const shopping = s.store || inCamp(s);
+    const shopping = inCamp(s);
     // on the road, each camp is a fresh store: nothing bought there yet
     if (s.road?.camp && this.campSince !== s.road.since) { this.campSince = s.road.since; this.resetForStore(); }
     if (shopping) this.storeBrain(s, p, store);
@@ -577,7 +577,7 @@ export class Pilot {
 
   private wantsPanel(s: GameState, p: GameState['players'][number]): boolean {
     const v = this.view;
-    if (s.store || inCamp(s)) return true;
+    if (inCamp(s)) return true;
     const care = this.skill.panelCare;
     if (rngFloat(this.rng) > care) return rngFloat(this.rng) < 0.04; // a careless player opens it whenever the thought strikes
     void p;
@@ -589,7 +589,7 @@ export class Pilot {
     const v = this.view;
     if (this.panelWait < 0) { this.panelWait = Math.round(this.skill.pickDelay * (0.7 + 0.6 * rngFloat(this.rng))); }
     // a careful player closes it when a fight finds them
-    if (this.skill.panelCare > 0.5 && !s.store && !inCamp(s) && this.dangerNear()) {
+    if (this.skill.panelCare > 0.5 && !inCamp(s) && this.dangerNear()) {
       if (this.tap(out, Btn.Level)) { this.stats.panelClosed++; this.panelWait = -1; this.panelCool = s.tick + 150; }
       return;
     }
@@ -642,7 +642,7 @@ export class Pilot {
     const v = this.view;
     const plan = this.plan;
     plan.hasGoal = true;
-    const exit = s.store ? s.exitX : s.shopX + STORE_EXIT_X; // the far end of the store, or of the camp on the road
+    const exit = s.shopX + STORE_EXIT_X; // the far end of the camp
     // picks first
     if (p.pending > 0) { plan.gx = v.x; plan.gy = v.y; return; }
     if (!store) this.storeDone = true;

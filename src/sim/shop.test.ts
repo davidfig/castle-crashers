@@ -2,10 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MAX_LEVEL, UPGRADES, UPGRADE_INDEX } from '../data/upgrades';
 import { WARES, priceOf, stockFor, wareSpot } from '../data/wares';
-import { questOffers, questSpot } from '../data/quests';
+import { questSpot } from '../data/quests';
 import { createSim, type GameState } from './state';
 import { buy, nearWare, TradeEv } from './shop';
 import { step } from './step';
+import { VIEW_W } from './constants';
 import { Btn, createInputFrame } from './input';
 import { Ev, EV_STRIDE } from './events';
 
@@ -71,14 +72,21 @@ test('two heroes who want the same scroll: the purse is shared, so it can run ou
   assert.equal(buy(s, 1, scroll('thick'), 70), 'broke');
 });
 
+/** A run's road with the party in its first camp: its goods and quest-givers set out. */
 function storeSim(seed: number): GameState {
-  const s = createSim(seed, undefined, { store: true, stock: stockFor(seed, 1), offers: questOffers(seed, { level: 2, boss: false, biome: 0 }) });
+  const s = createSim(seed, undefined, { road: { total: 3 } });
+  s.road!.town = false;
+  const camp = s.road!.layout.calm.find((c) => c.kind === 'camp')!;
+  s.camX = s.prevCamX = s.camMax = s.trigCamX = (camp.from + camp.to) / 2 - VIEW_W / 2;
   s.tick = 200;
+  step(s, [0, 1, 2, 3].map(createInputFrame));
+  assert.ok(s.road!.camp && s.wares.length === 4 && s.offers.length === 3, 'in the camp, its goods and givers set out');
   return s;
 }
+/** Stands hero 0 at a spot given in the camp's own coordinates. */
 function standAt(s: GameState, x: number, y: number): void {
   const e = s.players[0].ent;
-  s.ents.x[e] = s.ents.px[e] = x; s.ents.y[e] = s.ents.py[e] = y;
+  s.ents.x[e] = s.ents.px[e] = s.shopX + x; s.ents.y[e] = s.ents.py[e] = y;
 }
 /** One tick with the trade button down (`down`) or up, nothing else pressed. */
 function press(s: GameState, down: boolean): void {
@@ -92,7 +100,7 @@ function trades(s: GameState): number[][] {
   return out;
 }
 
-test('in the store the sim trades: the trade button beside a ware buys it once, from the shared purse', () => {
+test('in a camp the sim trades: the trade button beside a ware buys it once, from the shared purse', () => {
   const s = storeSim(9);
   s.gold = 1000;
   const sp = wareSpot(0, s.wares.length);
