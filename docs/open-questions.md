@@ -31,6 +31,7 @@ Track undecided items here. When resolved, move to an ADR in [decisions](decisio
 - [x] Renown: per character (multiple characters per class allowed). See [ADR-0004](decisions/0004-float-sim-and-characters.md).
 - [ ] Character slot limit; can characters be retired/deleted; does a new character start with any head start?
 - [ ] Do class tree nodes grant raw stats at all, or only expand offer pools/options?
+- [ ] Shaman and totems: bag reset rule, whether mobs can kill totems, hold-to-lob, per-kind vs total cap, pool size. See [18](18-shaman-and-totems.md#open-questions).
 - [ ] Run length target (25–40 min is a guess).
 - [ ] Death penalty detail: anything kept besides renown & codex?
 

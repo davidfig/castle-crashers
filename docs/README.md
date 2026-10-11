@@ -26,6 +26,7 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 | [15 The Random Bestiary](15-random-bestiary.md) | Per-run generated monsters and bosses: slots, powers, looks, determinism, tools |
 | [16 Skills and Elements](16-skills-and-elements.md) | Skills = delivery x element x modifiers: the ten elements and what they do, deliveries, patterns, how monsters and (later) heroes use them |
 | [17 Generated Scenery](17-generated-scenery.md) | Per-run generated biomes, the road that turns one into the next over a long stretch, the painter and the atlas band |
+| [18 Shaman and Totems](18-shaman-and-totems.md) | Design for the shaman (no damage of its own, fights through planted totems): the totem bag controls, scaling through the class tree, solo and co-op |
 | [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster) |
 | [Open Questions](open-questions.md) | Things we haven't decided |
 | [Decisions (ADRs)](decisions/README.md) | Log of decisions and why |

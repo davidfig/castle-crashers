@@ -16,6 +16,7 @@ The link between them: meta unlocks **expand what you can be offered during a ru
 | **Cleric** | Support/healer, light melee | Keep everyone alive | Holy *Favor* resource; healing aura, revive speed, smite |
 | **Rogue** | Fast melee burst | Hit and vanish | Combo points, stealth/backstab, dodge-through |
 | **Archer** | Ranged single-target/kiting | Precision from afar | Charged shots, trap placement, weak-point hits |
+| *(designed)* **Shaman** | Zone control | Plant totems that do the fighting | Deals no damage itself; a *bag* of totems planted in sequence, each pulsing an area effect. See [18](18-shaman-and-totems.md) |
 | *(later)* **Paladin, Druid, Necromancer, Bard** | | | See "Future classes" |
 
 Each class defines (in `src/data/classes/`): base stats, light-attack chain, dodge/block, 2 starting abilities, resource type, sprite set, palette rows, and a class tree.

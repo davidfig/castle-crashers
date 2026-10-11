@@ -29,3 +29,5 @@
 | **Span / turn** | One stretch of road over which one biome turns into the next; the share rises along a seeded curve. |
 | **Share** | The fraction (0..1) of the road's elements that belong to the incoming biome at a point of a turn. |
 | **Tone** | A biome's colour shift from its archetype: hue of its foliage band, sky hue, saturation, lightness. |
+| **Totem** | A planted, hero-owned entity that pulses an area effect on a beat for a while (the shaman's only damage). See [18](18-shaman-and-totems.md). |
+| **Totem bag** | The shaman's ordered loadout of totems; Attack plants the ready one and the bag advances. |
