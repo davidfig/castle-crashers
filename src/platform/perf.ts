@@ -1,6 +1,7 @@
 // Frame-time tracking for the debug overlay: FPS, dropped frames, worst frame, and a rolling graph.
 const WINDOW = 600; // ~10 s at 60 fps
 const GRAPH = 120;
+const FADE_MS = 2000; // how long the fps readout takes to fade once the frame rate recovers
 const WARMUP_FRAMES = 30; // shader compilation and first uploads are not "drops"
 
 export class FrameStats {
@@ -15,6 +16,8 @@ export class FrameStats {
   typicalMs = 16.7;
   /** Times the sim fell so far behind it had to skip ticks. */
   skippedTicks = 0;
+  /** 1 while frames are dropping or the fps is low, then fades to 0 over FADE_MS once it is back to normal. */
+  alert = 0;
   private lastSkipAt = -1e9;
 
   private flags = new Uint8Array(WINDOW);
@@ -31,6 +34,8 @@ export class FrameStats {
     this.frames++;
 
     const isDrop = this.frames > WARMUP_FRAMES && dtMs > this.typicalMs * 1.5 + 1;
+    if (isDrop || (this.frames > WARMUP_FRAMES && this.fps < 55)) this.alert = 1;
+    else this.alert = Math.max(0, this.alert - dtMs / FADE_MS);
     if (!isDrop) this.typicalMs += (dtMs - this.typicalMs) * 0.05;
 
     const leaving = this.flags[this.head];

@@ -5,6 +5,9 @@
 //   npm run sim -- --levels=3 --heat=2 --json=out.json                  a short route at heat 2, raw reports to a file
 // More: --seed0=N  --start=N (first level)  --boost=N (level-ups to spend first)  --workers=N  --levels-table (per-level detail for each scenario)
 //       --upto=N (play only N levels from --start: a stretch of the route; "win" then means surviving them)  --killers (what ended the losing runs)  --boons (boons the winners ended with)  --quiet
+//       --hard=X (how hard the road hits)  --renown=N (renown spent in the town first: 0 is the base game, ~2000 has it all built)
+//       --meta=forge:5,armoury:2 (build exactly these places instead of a renown budget)
+//       --horde=X, --boss-hp=X (the road's horde size and bosses' health, against ROAD_HORDE / ROAD_BOSS_HP: for tuning them, docs/21-the-road.md "The balance pass")
 import * as esbuild from 'esbuild';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
@@ -43,7 +46,7 @@ if (isMainThread) {
   }
   const runs = Number(flags.runs ?? 6);
   const seed0 = Number(flags.seed0 ?? 1);
-  const common = { levels: flags.levels ? Number(flags.levels) : undefined, startLevel: flags.start ? Number(flags.start) : undefined, heat: flags.heat ? Number(flags.heat) : undefined, boost: flags.boost ? Number(flags.boost) : undefined, stopAfter: flags.upto ? Number(flags.upto) : undefined };
+  const common = { levels: flags.levels ? Number(flags.levels) : undefined, startLevel: flags.start ? Number(flags.start) : undefined, heat: flags.heat ? Number(flags.heat) : undefined, boost: flags.boost ? Number(flags.boost) : undefined, stopAfter: flags.upto ? Number(flags.upto) : undefined, horde: flags.horde ? Number(flags.horde) : undefined, bossHp: flags['boss-hp'] ? Number(flags['boss-hp']) : undefined, hard: flags.hard ? Number(flags.hard) : undefined, renown: flags.renown ? Number(flags.renown) : undefined, meta: flags.meta ? Object.fromEntries(flags.meta.split(',').map((p) => { const [k, v] = p.split(':'); return [k, Number(v)]; })) : undefined };
   const jobs = [];
   scenarios.forEach((sc, si) => { for (let r = 0; r < runs; r++) jobs.push({ si, opts: { seed: seed0 + r, party: sc.party, ...common } }); });
 

@@ -3,7 +3,7 @@
 // one-player party of these; a kind is an index into TOTEMS.
 import type { ArrowDef } from './classes';
 
-export type TotemRole = 'taunt' | 'damage' | 'cannon' | 'heal' | 'storm';
+export type TotemRole = 'taunt' | 'damage' | 'cannon' | 'heal' | 'storm' | 'ward' | 'gravity' | 'frost' | 'drum';
 
 export interface TotemKind {
   id: string;
@@ -34,9 +34,20 @@ export const TOTEMS: readonly TotemKind[] = [
   { id: 'spirit', name: 'SPIRIT', glyph: 'H', color: 0x6ad8c4, accent: 0xd8fff4, role: 'heal', radius: 52, beat: 60, ttl: 720, hp: 40, cost: 12, power: 3 },
   /** Strikes the two nearest mobs in its ring with lightning every beat. */
   { id: 'storm', name: 'STORM', glyph: 'T', color: 0xe8d84a, accent: 0xffffff, role: 'storm', radius: 90, beat: 75, ttl: 600, hp: 40, cost: 14, power: 5 },
+  /** The cleric's Beacon (data/skills.ts): a lamp that holds foes like a Stone, and wards the allies near it (sim/clericSkills.ts). Not in any totem bag. */
+  { id: 'beacon', name: 'BEACON', glyph: 'B', color: 0xf0c850, accent: 0xfff4c8, role: 'taunt', radius: 110, beat: 60, ttl: 540, hp: 120, cost: 0, power: 0 },
+  // The shaman's tree totems (data/skills.ts): each replaces one of the totems on a button.
+  /** Heroes inside its ring take 30% less damage. */
+  { id: 'ward', name: 'WARD', glyph: 'W', color: 0x5a8ae0, accent: 0xc8dcff, role: 'ward', radius: 80, beat: 30, ttl: 720, hp: 60, cost: 14, power: 0.3 },
+  /** Every beat, pulls every mob in its ring toward it. */
+  { id: 'gravity', name: 'GRAVITY', glyph: 'V', color: 0x7a4ab4, accent: 0xd0b0ff, role: 'gravity', radius: 110, beat: 20, ttl: 540, hp: 50, cost: 18, power: 6 },
+  /** Every beat, freezes every mob in its ring for a moment (the stun, a chill that holds them). */
+  { id: 'frost', name: 'FROST', glyph: 'F', color: 0x5ac8f4, accent: 0xe0f8ff, role: 'frost', radius: 80, beat: 30, ttl: 600, hp: 40, cost: 14, power: 24 },
+  /** Heroes inside its ring deal 20% more damage. */
+  { id: 'drum', name: 'DRUM', glyph: 'D', color: 0xd89a3a, accent: 0xffe0a0, role: 'drum', radius: 90, beat: 60, ttl: 720, hp: 50, cost: 14, power: 0.2 },
 ];
 
-export const EMBER = 0, STONE = 1, CANNON = 2, SPIRIT = 3, STORM = 4;
+export const EMBER = 0, STONE = 1, CANNON = 2, SPIRIT = 3, STORM = 4, BEACON = 5, WARD = 6, GRAVITY = 7, FROST = 8, DRUM = 9;
 
 /** The fireball a cannon totem lobs at the nearest mob: a splash shot, drawn like the mage's. */
 export const CANNON_SHOT: ArrowDef = { damage: 9, knock: 3, speed: 2.8, ttl: 70, cooldown: 0, splash: 30, radius: 7 };

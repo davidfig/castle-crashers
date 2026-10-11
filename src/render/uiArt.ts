@@ -6,6 +6,7 @@ import type { Frame } from '../platform/gl/batcher';
 import { glyphWidth, GLYPH_H, STORY_GLYPHS } from '../data/storyFont';
 import { TITLE_LINES } from '../data/title';
 import { BOON_SYMBOLS, boonPixels } from './boonIcons';
+import { SKILL_SYMBOLS } from './skillIcons';
 
 type Pix = { w: number; h: number; rgba: Uint8ClampedArray };
 type Add = (b: Pix) => Frame;
@@ -164,6 +165,7 @@ export function buildUiArt(add: Add): UiArt {
   for (const [name, rows] of Object.entries(ICONS)) icons[name] = add(bitmap(rows));
   const boonPal = { ...GLASS, k: GLASS.lead };
   for (const [id, sym] of Object.entries(BOON_SYMBOLS)) icons[`boon-${id}`] = add(boonPixels(sym, boonPal));
+  for (const [slug, sym] of Object.entries(SKILL_SYMBOLS)) icons[`skill-${slug}`] = add(boonPixels(sym, boonPal));
   const logo = add(buildLogo(TITLE_LINES));
   return { story, corner, cursor, icons, logo };
 }

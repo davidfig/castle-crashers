@@ -3,6 +3,7 @@
 // so a run costs only the sim (tens of thousands of ticks a second). The report is cut into the road's levels and camps, as it was when
 // they were separate. A run is a pure function of its options.
 import { CLASSES } from '../data/classes';
+import { META, metaForRenown } from '../data/meta';
 import { WARES } from '../data/wares';
 import { MAX_PLAYERS } from '../sim/constants';
 import { ShrineKind } from '../sim/entities';
@@ -41,6 +42,15 @@ export interface RunOptions {
   boost?: number;
   /** Stop a part of the road (a level, a camp) after this many ticks and call it a timeout (a stuck player). Default 15 minutes of play. */
   maxLevelTicks?: number;
+  /** The road's horde size (default `ROAD_HORDE`): for tuning it with bot runs (`pnpm sim --horde=X`). */
+  horde?: number;
+  /** The bosses' health on the road (default `ROAD_BOSS_HP`): for tuning it (`pnpm sim --boss-hp=X`). */
+  bossHp?: number;
+  /** How hard the road hits (default `ROAD_HARD`) and how much renown the party has spent in the town before setting out (default none: the base game). */
+  hard?: number;
+  renown?: number;
+  /** Ranks of the town's places by id ({ forge: 5 }), instead of a renown budget: to see what one place does. */
+  meta?: Record<string, number>;
   /** Called after every tick of play with the state and the route level. */
   onTick?: (s: GameState, level: number, pilots: readonly Pilot[]) => void;
 }
@@ -114,8 +124,8 @@ function classIndex(c: number | string): number {
 }
 
 /** The run's one road (docs/21-the-road.md), set up as the game sets it up, the party already in their classes in the town. */
-function makeRoad(seed: number, total: number, party: PartyMember[], heat: number): GameState {
-  const s = createSim(seed, undefined, { road: { total, beat: { id: 'R1' } }, heat, offerSeed: seed });
+function makeRoad(seed: number, total: number, party: PartyMember[], heat: number, horde?: number, bossHp?: number, hard?: number, renown = 0, metaNamed?: Record<string, number>): GameState {
+  const s = createSim(seed, undefined, { road: { total, beat: { id: 'R1' }, horde, bossHp, hard, meta: metaNamed ? META.map((m) => Math.min(m.maxRank, metaNamed[m.id] ?? 0)) : metaForRenown(renown) }, heat, offerSeed: seed });
   for (let k = 0; k < party.length && k < MAX_PLAYERS; k++) {
     const c = classIndex(party[k].classId);
     if (k === 0) resetHero(s, 0, c);
@@ -216,7 +226,7 @@ export function runRoute(opts: RunOptions): RunReport {
   const inputs = Array.from({ length: MAX_PLAYERS }, createInputFrame);
   const report: RunReport = { seed, outcome: 'won', total, startLevel: start, levelsCleared: 0, ticks: 0, kills: 0, gold: 0, heat, levels: [], stores: [], heroes: [], };
   const heroDamage = [0, 0, 0, 0], heroDowns = [0, 0, 0, 0];
-  const s = makeRoad(seed, total, party, heat);
+  const s = makeRoad(seed, total, party, heat, opts.horde, opts.bossHp, opts.hard, opts.renown, opts.meta);
   if (start > 0) roadJump(s, start);
   if (opts.boost) for (const p of s.players) if (p.active) { p.level += opts.boost; p.pending += opts.boost; }
 

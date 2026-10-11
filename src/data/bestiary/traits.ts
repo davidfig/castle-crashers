@@ -92,6 +92,8 @@ add({ id: 'lunge', group: 'hit', on: [M], minU: 0, weight: 1.4, themes: [KEEP, M
 // ---- how it moves
 add({ id: 'weave', group: 'move', on: [M], minU: 0, weight: 2, cheap: true, apply: (m, d) => { m.weave = round(d.range(0.5, 0.95), 2); } });
 add({ id: 'hop', group: 'move', on: [M], minU: 0, weight: 1.8, themes: [MARSH], excl: ['burrow', 'charge'], cheap: true, apply: (m, d) => { m.hop = { every: d.int(45, 65), speed: round(d.range(1.2, 1.6), 1), minDist: 30 }; } });
+add({ id: 'sprint', group: 'move', on: [M], minU: 0, weight: 2.2, themes: [MEADOW, DUNES, FROZEN], excl: ['burrow', 'charge'], cheap: true,
+  apply: (m, d) => { m.sprint = { every: d.int(130, 190), ticks: d.int(26, 34), mul: round(d.range(2.8, 3.4), 1), minDist: 40 }; } });
 add({ id: 'retreat', group: 'move', on: [M], minU: 0, weight: 1.6, themes: [FROZEN], excl: ['burrow'], cheap: true, apply: (m, d) => { m.retreat = d.int(24, 40); } });
 add({ id: 'backstep', group: 'move', on: [R], minU: 0, weight: 1.6, themes: [MEADOW, DUNES], cheap: true, apply: (m, d) => { m.backstep = { trigger: d.int(40, 50), dist: d.int(58, 70), every: d.int(130, 170) }; } });
 add({ id: 'evade', group: 'move', on: ALL, minU: 0, weight: 1.6, themes: [DUNES], motifs: ['ghost'], cheap: true, apply: (m, d) => { m.evade = round(d.range(0.15, 0.3), 2); } });

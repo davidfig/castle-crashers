@@ -2,6 +2,7 @@
 // continuing"). `GameState` is plain data (docs/08): numbers, booleans, strings, arrays, plain objects and typed arrays. A restored
 // sim steps on exactly as the one it was taken from would have (the round trip is tested), so everything that decides how the
 // game plays must live in `GameState`, never in a module of the sim or outside it.
+import { newTreeSaves } from '../data/trees';
 import { MAX_ENTS } from './constants';
 import { createEvents } from './events';
 import type { GameState } from './state';
@@ -105,5 +106,14 @@ export function restore(text: string): GameState {
   if (raw.v !== SNAPSHOT_VERSION || typeof raw.s !== 'object' || raw.s === null) throw new Error(`snapshot: version ${String(raw.v)} is not ${SNAPSHOT_VERSION}`);
   const s = unpack(raw.s) as Record<string, unknown>;
   for (const [k, make] of Object.entries(FRESH)) s[k] = make();
-  return s as unknown as GameState;
+  const g = s as unknown as GameState;
+  // A save from before the class trees: nothing built, the quake equipped, no skill under way.
+  if (g.road && !g.road.trees) {
+    const old = (g.road as unknown as { tree?: { owned: number[]; focus: number[]; loadout?: number[]; skill?: number } }).tree;
+    g.road.trees = newTreeSaves();
+    if (old) { g.road.trees[0].owned = old.owned; g.road.trees[0].focus = old.focus; g.road.trees[0].loadout = old.loadout ?? [0, 0, old.skill ?? 0, 0]; }
+    g.road.treeGated = !!old; // (a save made before the trees dealt from the open pool)
+  }
+  for (const p of g.players) Object.assign(p, { loadout: new Uint8Array(4), spinT: 0, meteorT: 0, meteorX: 0, meteorY: 0, sanctT: 0, sanctX: 0, sanctY: 0, sanctR: 0, sanctPow: 1, aegisT: 0, smokeT: 0, smokeX: 0, smokeY: 0, smokeR: 0, riposteT: 0, drawT: 0, patchT: 0, patchX: 0, patchY: 0, patchR: 0, patchDmg: 0, patchStun: 0, patchEvery: 1, patchOnce: 0, patchLook: 0, rageOn: false, roarT: 0, roarR: 0, stdT: 0, stdX: 0, stdY: 0, stdR: 0, stdPow: 1, knockN: 0, knockT: 0, treeOpen: false, treePrev: 0 }, Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined)));
+  return g;
 }

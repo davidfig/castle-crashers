@@ -14,8 +14,11 @@ import { HEAT_NAMES } from '../data/heat';
 import { BOSS_SPECIAL, isWarded, SP_CLING, SP_LEAP, SP_WIND } from '../sim/abilities';
 import { Phase, type GameState } from '../sim/state';
 import { campShown, roadProgress } from '../sim/gen/road';
-import { drawForkGround, drawForkLabels } from './fork';
-import { drawTownGround, drawTownLabels } from './town';
+import { drawForkGround, drawForkLabels, standingForkSigns } from './fork';
+import { drawTownLabels, standingTown } from './town';
+import { drawTree, standingTrainer } from './treeUi';
+import { standingSkills } from './skills';
+import { StandingList } from './standing';
 import { BLAST_RADIUS, Behavior, LEGACY_BOSS_MOVES, MOBS, NovaStyle, ProjStyle, isBossType } from '../data/mobs';
 import { PLAYER_COLORS, type Sprites } from './art';
 import { drawWeather, stormCover } from './weather';
@@ -25,9 +28,9 @@ import { LEVELS_PER_BIOME } from '../campaign/route';
 import { roadOffset, Scenery } from './scenery';
 import { getWorld, levelsPlayed, roadShift } from './sceneryWorld';
 import { BLINK_TICKS, FIRE_RING_LIFE, SLASH_TICKS, type Fx } from './fx';
-import { drawCamps, drawGifts, drawStore, drawStoreHints, drawStoreWares, type StoreView } from './camp';
-import { drawQuestBoard, drawQuestGivers, drawQuestHud, drawQuestMarks, drawQuestNpc, type QuestView } from './quests';
-import { drawLevelUp } from './levelup';
+import { drawGifts, drawStoreHints, drawStoreWares, standingCamps, standingGifts, standingStore, standingWares, type StoreView } from './camp';
+import { drawQuestBoard, drawQuestHud, drawQuestMarks, drawQuestNpc, standingQuestGivers, type QuestView } from './quests';
+import { drawLevelUp, LANE_W } from './levelup';
 import { drawBoonPops, drawBoonStrip } from './boonHud';
 import { drawMercy } from './mercy';
 import { heroFrame } from './hero';
@@ -96,6 +99,8 @@ export function topplePose(w: number, h: number, flip: boolean, rot: number, t: 
 }
 const order = new Int32Array(4096);
 const sortedBuf = new Int32Array(4096);
+/** What stands on the field this frame (stalls, signposts, banners, chests, totems, a road scene's figures): merged into the characters' depth order. */
+const standing = new StandingList();
 /** Enemies still climbing up from behind the hill at the top edge (drawn before the ground, so the hill covers them). */
 const enterTop = new Int32Array(4096);
 /**
@@ -227,9 +232,18 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawGround(b, S, scenery, camX + road, oy, ft);
   drawCrest(b, S, scenery, camX + road, oy);
   drawFog(b, S, scenery, camX + road, oy, ft);
-  drawCamps(b, S, s, camX, oy);
-  if (campShown(s)) { drawStore(b, S, s, camX, oy); drawQuestGivers(b, S, s, camX, oy, dbg.questView); }
-  if (s.road) { drawForkGround(b, S, s, camX, oy); drawTownGround(b, S, s, camX, oy); }
+  if (s.road) drawForkGround(b, S, s, camX, oy); // (the stones between a crossroads' roads lie flat)
+  // what stands on the field is gathered here and drawn among the characters, by where each touches the ground (render/standing.ts)
+  standing.clear();
+  standingCamps(standing, b, S, s, camX, oy);
+  if (campShown(s)) {
+    standingStore(standing, b, S, s, camX, oy);
+    standingQuestGivers(standing, b, S, s, camX, oy, dbg.questView);
+    standingWares(standing, b, S, s, camX, oy, dbg.storeView);
+    standingGifts(standing, b, S, s, camX, oy, dbg.storeView);
+  }
+  if (s.road) { standingForkSigns(standing, b, S, s, camX, oy); standingTown(standing, b, S, s, camX, oy); standingTrainer(standing, b, S, s, camX, oy); }
+  standingSkills(standing, b, S, s, camX, oy);
 
   // --- corpses
   const cTint = hex(0xffffff, 0.92);
@@ -255,13 +269,15 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     for (let t = -3; t <= 3; t++) b.drawScaled(S.px, Math.round(sx + dx * t), Math.round(sy + dy * t), 1, 1, hex(t === 3 ? 0xd8d0b8 : t < -1 ? 0xe8e0c8 : 0x9a7a40, 0.92));
   }
 
-  // --- ground zones: lobbed rocks about to land, poison pools
+  // --- ground zones: lobbed rocks about to land, poison pools (clipped at the horizon: a zone near the far edge must not spill into the sky)
+  b.setClip(0, GROUND_TOP + oy, VIEW_W, VIEW_H);
   for (let i = 0; i < e.highWater; i++) {
     if (!e.alive[i] || e.kind[i] !== Kind.Zone) continue;
     const sx = e.x[i] - camX;
     if (sx < -40 || sx > VIEW_W + 40) continue;
     drawZone(b, S, e, i, sx, FIELD_Y0 + e.y[i] + oy, s.tick);
   }
+  b.clearClip();
 
   // --- visible entities, bucket-sorted by depth
   bucket.fill(0);
@@ -327,58 +343,36 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     if (ph < 6) b.drawScaled(S.px, sx + 2, sy - e.z[i] - f.h - bob - 1 - (ph >> 1), 1, 1, hex(e.sub[i] === 1 ? 0xfff08a : 0x7dffa0, 0.9));
   }
 
-  // --- chests and shrines: props on the ground with a price or a name over them and a ring that fills while a hero stands close
+  // --- chests and shrines: a shadow and (a running shrine's) rings flat on the ground; the chest or shrine itself, with its price or name and
+  // the ring that fills while a hero stands close, stands among the characters
   for (let i = 0; i < e.highWater; i++) {
     const kind = e.kind[i];
     if (!e.alive[i] || (kind !== Kind.Chest && kind !== Kind.Shrine)) continue;
     const sx = Math.round(e.x[i] - camX);
     if (sx < -60 || sx > VIEW_W + 60) continue;
     const sy = Math.round(FIELD_Y0 + e.y[i] + oy);
-    const st = e.elite[i];
-    const spent = st === SiteState.Spent;
-    const pulse = 0.5 + 0.5 * Math.sin((s.tick + i * 9) * 0.1);
     b.draw(S.shadow[1], sx - S.shadow[1].w / 2, sy - 3, false, hex(0x000000, 0.35));
-    let top = sy;
-    if (kind === Kind.Chest) {
-      const f = S.chest[spent ? 1 : 0];
-      const y0 = sy - f.h - Math.max(0, e.z[i]);
-      b.draw(f, sx - f.w / 2, y0, false, spent ? hex(0xc0c0c0) : 0xffffffff);
-      top = y0;
-      if (!spent) {
-        const free = st === SiteState.Free;
-        const cost = chestCost(s);
-        const label = free ? 'FREE' : String(cost);
-        drawText(b, S, label, sx - label.length * 2, y0 - 8, hex(free || s.gold >= cost ? 0xffd35a : 0xe0503a), 1, true);
-        if (free && (s.tick + i) % 50 < 6) b.drawScaled(S.px, sx + 3, y0 - 1, 2, 2, hex(0xffffff, 0.9));
-      }
-    } else {
-      const sub = e.sub[i];
-      const f = S.shrine[sub];
-      const y0 = sy - f.h;
-      b.draw(f, sx - f.w / 2, y0, false, spent ? hex(0x777777) : 0xffffffff);
-      top = y0;
-      const col = [0xe0442e, 0x4aa0ff, 0xffc02a, 0xe8ecff][sub];
-      if (st === SiteState.Waiting) drawText(b, S, ['CURSE', 'CHARGE', 'GREED', 'MERCY'][sub], sx - ['CURSE', 'CHARGE', 'GREED', 'MERCY'][sub].length * 2, y0 - 8, hex(col), 1, true);
-      if (st === SiteState.Running) {
-        groundRing(b, S, sx, sy, 10 + 3 * pulse, 14, hex(col, 0.9));
-        if (sub === ShrineKind.Charge) {
-          // the field of the charge: a ring that fills clockwise as the meter climbs
-          const frac = chargeFrac(s, i), dots = 48;
-          for (let d = 0; d < dots; d++) {
-            const a = (d / dots) * Math.PI * 2 - Math.PI / 2;
-            b.drawScaled(S.px, sx + Math.cos(a) * 60 - 1, sy + Math.sin(a) * 60 * 0.7 - 1, 2, 2, hex(col, d / dots < frac ? 0.95 : 0.28));
-          }
+    if (kind === Kind.Shrine && e.elite[i] === SiteState.Running) {
+      const sub = e.sub[i], col = SHRINE_COLORS[sub];
+      const pulse = 0.5 + 0.5 * Math.sin((s.tick + i * 9) * 0.1);
+      groundRing(b, S, sx, sy, 10 + 3 * pulse, 14, hex(col, 0.9));
+      if (sub === ShrineKind.Charge) {
+        // the field of the charge: a ring that fills clockwise as the meter climbs
+        const frac = chargeFrac(s, i), dots = 48;
+        for (let d = 0; d < dots; d++) {
+          const a = (d / dots) * Math.PI * 2 - Math.PI / 2;
+          b.drawScaled(S.px, sx + Math.cos(a) * 60 - 1, sy + Math.sin(a) * 60 * 0.7 - 1, 2, 2, hex(col, d / dots < frac ? 0.95 : 0.28));
         }
       }
     }
-    if (e.buff[i] > 0 && st !== SiteState.Running) {
-      const w = 18, f = Math.min(1, e.buff[i] / CHANNEL);
-      b.drawScaled(S.px, sx - w / 2 - 1, top - 5, w + 2, 4, hex(0x000000, 0.7));
-      b.drawScaled(S.px, sx - w / 2, top - 4, Math.round(w * f), 2, hex(0xffd35a));
-    }
+    standing.push(e.y[i], () => drawSite(b, S, s, i, sx, sy));
   }
 
-  drawTotems(b, S, s, camX, oy, alpha);
+  drawTotems(b, S, s, camX, oy, alpha, standing);
+  // a road scene's figures stand among the creatures too
+  const cast = dbg.cast;
+  if (cast) for (let k = 0; k < cast.figures.length; k++) standing.push(cast.figures[k].y, () => cast.drawFigure(b, S, k, camX, oy, s.tick));
+  standing.sort();
 
   // --- the cleric's aura: while it is on, a ring of holy light turns steadily on the ground around her (the damage is continuous, see sim/step.ts)
   for (const pl of s.players) {
@@ -420,13 +414,10 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     b.draw(sh, sx - sh.w / 2, sy - sh.h / 2 - 1, false, tint);
   }
 
-  // the road scene's figures stand among the creatures, in depth order (they are sorted by field y)
-  const cast = dbg.cast;
-  let nextFig = 0;
-  const figCount = cast ? cast.figures.length : 0;
+  // the characters in depth order, with what stands on the field merged in (render/standing.ts)
   for (let k = 0; k < n; k++) {
     const i = sorted[k];
-    while (cast && nextFig < figCount && cast.figures[nextFig].y <= e.y[i]) cast.drawFigure(b, S, nextFig++, camX, oy, s.tick);
+    standing.drawUpTo(e.y[i]);
     const sx = lerp(e.px[i], e.x[i], alpha) - camX;
     const sy = feetY(e, i, alpha) + oy;
     const flip = e.face[i] < 0;
@@ -444,7 +435,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
         // a lobbed ball climbs and falls in an arc over its flight, with a shadow marking where it will land
         const lift = shot.lob ? 4 * 46 * Math.min(1, Math.max(0, (shot.ttl - e.hp[i]) / shot.ttl)) * (1 - Math.min(1, Math.max(0, (shot.ttl - e.hp[i]) / shot.ttl))) : 0;
         if (shot.lob) drawDisc(b, S, sx, sy, 6 - lift / 14, hex(0x000000, 0.25));
-        const cy = sy - 12 - lift;
+        const cy = Math.max(GROUND_TOP + oy + 9, sy - 12 - lift); // the arc never climbs above the horizon
         for (let t = 6; t >= 1; t--) {
           const w = 12 - t;
           drawDisc(b, S, sx - dx * t * 5, cy - dy * t * 5, w / 2, hex(t > 3 ? 0xa02a1e : 0xd8402e, 0.5 - t * 0.06));
@@ -628,7 +619,10 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
       b.drawScaled(S.px, fx0 + 18, fy, 2, 2, hex(spReady ? 0xffd35a : 0x6a5a30));
     }
   }
-  while (cast && nextFig < figCount) cast.drawFigure(b, S, nextFig++, camX, oy, s.tick);
+  standing.drawRest();
+
+  // the wizard's light columns, shockwave rings and particles are cut at the horizon so none of them reaches the sky
+  b.setClip(0, GROUND_TOP + oy, VIEW_W, VIEW_H);
 
   // --- teleport: the wizard's afterimage dissolves upward at the origin, with a light column at each end
   for (let k = 0; k < fx.blt.length; k++) {
@@ -737,6 +731,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     }
   }
 
+  b.clearClip();
+
   // --- foreground ridge along the bottom of the field
   drawRidge(b, S, scenery, camX + road, oy, ft);
   drawAmbient(b, S, scenery, camX + road, oy, ft);
@@ -792,7 +788,8 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     }
   }
 
-  // --- particles
+  // --- particles (cut at the horizon)
+  b.setClip(0, GROUND_TOP + oy, VIEW_W, VIEW_H);
   for (let i = 0; i < fx.n; i++) {
     const sx = fx.x[i] - camX;
     if (sx < -4 || sx > VIEW_W + 4) continue;
@@ -801,6 +798,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
     const sz = fx.big[i] ? 2 : 1;
     b.drawScaled(S.px, sx, FIELD_Y0 + fx.y[i] - fx.z[i] + oy, sz, sz, c >>> 0);
   }
+  b.clearClip();
 
   drawWeather(b, S, getWorld()!.sky, mood, camX + road, oy, ft);
 
@@ -810,25 +808,13 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   drawLevelUp(b, S, s, dbg.levelKeys);
   drawQuestMarks(b, S, s, camX, oy, alpha);
   drawQuestHud(b, S, s);
-  if (s.road) { drawForkLabels(b, S, s, camX, oy); drawTownLabels(b, S, s, camX, oy, dbg.storeHints); }
+  if (s.road) { drawForkLabels(b, S, s, camX, oy); drawTownLabels(b, S, s, camX, oy, dbg.storeHints); drawTree(b, S, s, dbg.storeHints); }
   if (campShown(s)) { drawStoreWares(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawGifts(b, S, s, camX, oy, dbg.storeView, dbg.storeHints); drawQuestBoard(b, S, s, camX, oy, dbg.questView, dbg.storeHints); drawStoreHints(b, S, s, camX, oy); }
 }
 
 function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): void {
   const e = s.ents;
-  // progress bar: where the party is on the way to the far end
-  const bw = 200, bx = (VIEW_W - bw) / 2;
-  b.drawScaled(S.px, bx - 1, 5, bw + 2, 5, hex(0x000000, 0.7));
-  b.drawScaled(S.px, bx, 6, bw, 3, hex(0x2a3340));
-  for (const p of s.players) {
-    if (!p.active) continue;
-    const t = Math.min(1, Math.max(0, e.x[p.ent] / s.worldW));
-    b.drawScaled(S.px, bx + Math.round(t * (bw - 2)), 4, 2, 7, hex(PLAYER_COLORS[e.sub[p.ent]]));
-  }
-  drawText(b, S, 'GOAL', bx + bw + 6, 5, hex(0xffd35a));
-  if (dbg.routeLabel) drawText(b, S, dbg.routeLabel, bx - 6 - dbg.routeLabel.length * 4, 5, hex(0xcfd8e0));
-
-  // Boss health bar: a wide bar under the progress bar while the boss is on (or about to enter) the screen.
+  // Boss health bar: a wide bar at the top while the boss is on (or about to enter) the screen.
   if (e.boss >= 0 && e.alive[e.boss] && e.x[e.boss] < s.camX + VIEW_W + 140) {
     const bi = e.boss;
     const frac = Math.max(0, e.hp[bi] / e.maxhp[bi]);
@@ -842,18 +828,21 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
     drawText(b, S, label, Math.round(VIEW_W / 2 - label.length * 2), 13, hex(enraged ? 0xff7a5a : 0xffe0c0));
   }
 
-  // party strip
+  // party strip: each hero's health bar runs the width of their lane, over where their level-up panel opens
   let row = 0;
   for (const p of s.players) {
     if (!p.active) continue;
     const slot = e.sub[p.ent];
-    const y = 6 + row * 11;
-    drawText(b, S, `P${slot + 1}`, 6, y, hex(PLAYER_COLORS[slot]));
-    bar(b, S, 22, y + 1, 40, 3, e.hp[p.ent] / CLASSES[p.classId].hp, 0x4fd05a);
-    drawText(b, S, String(p.kills), 68, y, 0xffffffff);
+    const x0 = Math.round(slot * LANE_W) + 3, y = 6;
     const cls = CLASSES[p.classId];
-    b.drawScaled(S.px, 22, y + 5, Math.round(40 * p.fury / cls.furyMax), 1, hex(p.fury >= cls.novaCost ? 0xffc23a : 0xa07a30));
-    row++;
+    const kills = String(p.kills);
+    const kx = x0 + LANE_W - 6 - kills.length * 4;
+    drawText(b, S, `P${slot + 1}`, x0, y, hex(PLAYER_COLORS[slot]));
+    const bx = x0 + 15, bw = kx - 4 - bx;
+    bar(b, S, bx, y + 1, bw, 3, e.hp[p.ent] / cls.hp, 0x4fd05a);
+    drawText(b, S, kills, kx, y, 0xffffffff);
+    b.drawScaled(S.px, bx, y + 5, Math.round(bw * p.fury / cls.furyMax), 1, hex(p.fury >= cls.novaCost ? 0xffc23a : 0xa07a30));
+    row = 1;
   }
 
   if (fx.streak >= 5) {
@@ -873,30 +862,33 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
   let mobs = 0;
   for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Mob) mobs++;
   const st = dbg.stats;
-  const good = hex(0xcfd8e0), bad = hex(0xff6a5a), warn = hex(0xffd35a);
-  const lines: [string, number][] = [
-    [`FPS ${st.fps}`, st.fps < 55 ? bad : good],
-    [`DROPS ${st.drops} /10S`, st.drops > 0 ? bad : good],
-    [`WORST ${st.worstMs.toFixed(0)}MS`, st.worstMs > st.typicalMs * 1.5 + 1 ? bad : good],
-  ];
-  if (dbg.simLag) lines.push([`SIM LAG ${st.skippedTicks}`, bad]);
-  lines.push([`MOBS ${mobs}`, good], [`KILLS ${s.kills}`, good], [`DRAWS ${dbg.drawCalls}/${dbg.sprites}`, good]);
-  lines.forEach(([t, c], i) => drawText(b, S, t, VIEW_W - 6 - t.length * 4, 6 + i * 8, c));
+  const good = 0xcfd8e0, bad = 0xff6a5a, warn = 0xffd35a;
+  // The frame-rate readout only shows while frames are dropping, and fades once they recover.
+  const perfA = st.alert > 0 || dbg.simLag ? (dbg.simLag ? 1 : st.alert) : 0;
+  const lines: [string, number, number][] = [];
+  if (perfA > 0) lines.push(
+    [`FPS ${st.fps}`, st.fps < 55 ? bad : good, perfA],
+    [`DROPS ${st.drops} /10S`, st.drops > 0 ? bad : good, perfA],
+    [`WORST ${st.worstMs.toFixed(0)}MS`, st.worstMs > st.typicalMs * 1.5 + 1 ? bad : good, perfA],
+  );
+  if (dbg.simLag) lines.push([`SIM LAG ${st.skippedTicks}`, bad, 1]);
+  lines.push([`MOBS ${mobs}`, good, 1], [`KILLS ${s.kills}`, good, 1], [`DRAWS ${dbg.drawCalls}/${dbg.sprites}`, good, 1]);
+  lines.forEach(([t, c, a], i) => drawText(b, S, t, VIEW_W - 6 - t.length * 4, 6 + i * 8, hex(c, a)));
 
   // Frame-time graph: one bar per frame, newest on the right; red bars are dropped frames.
-  const gx = VIEW_W - 6 - st.graphLength, gy = 6 + lines.length * 8 + 3, gh = 18;
-  b.drawScaled(S.px, gx - 1, gy - 1, st.graphLength + 2, gh + 2, hex(0x000000, 0.55));
-  const base = st.typicalMs * 2; // a bar the full height = twice the normal frame time
-  b.drawScaled(S.px, gx, gy + gh / 2, st.graphLength, 1, hex(0x4a5a6a, 0.8)); // the "normal frame" line
-  for (let k = 0; k < st.graphLength; k++) {
-    const ms = st.graph[(st.graphStart + k) % st.graphLength];
-    if (ms === 0) continue;
-    const h = Math.max(1, Math.min(gh, Math.round((ms / base) * gh)));
-    const dropped = ms > st.typicalMs * 1.5 + 1;
-    b.drawScaled(S.px, gx + k, gy + gh - h, 1, h, dropped ? bad : ms > st.typicalMs * 1.2 ? warn : hex(0x6ad07a, 0.9));
+  if (perfA > 0) {
+    const gx = VIEW_W - 6 - st.graphLength, gy = 6 + lines.length * 8 + 3, gh = 18;
+    b.drawScaled(S.px, gx - 1, gy - 1, st.graphLength + 2, gh + 2, hex(0x000000, 0.55 * perfA));
+    const base = st.typicalMs * 2; // a bar the full height = twice the normal frame time
+    b.drawScaled(S.px, gx, gy + gh / 2, st.graphLength, 1, hex(0x4a5a6a, 0.8 * perfA)); // the "normal frame" line
+    for (let k = 0; k < st.graphLength; k++) {
+      const ms = st.graph[(st.graphStart + k) % st.graphLength];
+      if (ms === 0) continue;
+      const h = Math.max(1, Math.min(gh, Math.round((ms / base) * gh)));
+      const dropped = ms > st.typicalMs * 1.5 + 1;
+      b.drawScaled(S.px, gx + k, gy + gh - h, 1, h, hex(dropped ? bad : ms > st.typicalMs * 1.2 ? warn : 0x6ad07a, 0.9 * perfA));
+    }
   }
-
-  drawText(b, S, `MOVE WASD/ARROWS/L-STICK  AIM R-STICK  J/RT ATTACK  I/X BIG SWING  K/A NOVA  L/B DASH  O/PAD-LB LEVEL UP${s.surrender ? '  U/PAD-B STAND DOWN' : ''}  R RESTART`, 6, VIEW_H - 10, hex(0xffffff, 0.8));
 
   if (s.phase !== Phase.Playing && !dbg.hideEndBanner) {
     b.drawScaled(S.px, 0, VIEW_H / 2 - 30, VIEW_W, 60, hex(0x000000, 0.6));
@@ -908,6 +900,42 @@ function drawHud(b: Batcher, S: Sprites, s: GameState, fx: Fx, dbg: DebugInfo): 
 }
 
 /** Windup tells: a "!" over heavy attackers, an aim line for archers and a charge lane (bosses only: ordinary mobs don't show where they'll go), a blast-radius ring for lit bombers. */
+/** A shrine's colour, by kind (curse, charge, greed, mercy). */
+const SHRINE_COLORS = [0xe0442e, 0x4aa0ff, 0xffc02a, 0xe8ecff];
+
+/** A chest or shrine standing on the field: the prop, its price or name over it, and the ring that fills while a hero stands close. */
+function drawSite(b: Batcher, S: Sprites, s: GameState, i: number, sx: number, sy: number): void {
+  const e = s.ents, kind = e.kind[i], st = e.elite[i];
+  const spent = st === SiteState.Spent;
+  let top = sy;
+  if (kind === Kind.Chest) {
+    const f = S.chest[spent ? 1 : 0];
+    const y0 = sy - f.h - Math.max(0, e.z[i]);
+    b.draw(f, sx - f.w / 2, y0, false, spent ? hex(0xc0c0c0) : 0xffffffff);
+    top = y0;
+    if (!spent) {
+      const free = st === SiteState.Free;
+      const cost = chestCost(s);
+      const label = free ? 'FREE' : String(cost);
+      drawText(b, S, label, sx - label.length * 2, y0 - 8, hex(free || s.gold >= cost ? 0xffd35a : 0xe0503a), 1, true);
+      if (free && (s.tick + i) % 50 < 6) b.drawScaled(S.px, sx + 3, y0 - 1, 2, 2, hex(0xffffff, 0.9));
+    }
+  } else {
+    const sub = e.sub[i];
+    const f = S.shrine[sub];
+    const y0 = sy - f.h;
+    b.draw(f, sx - f.w / 2, y0, false, spent ? hex(0x777777) : 0xffffffff);
+    top = y0;
+    const name = ['CURSE', 'CHARGE', 'GREED', 'MERCY'][sub];
+    if (st === SiteState.Waiting) drawText(b, S, name, sx - name.length * 2, y0 - 8, hex(SHRINE_COLORS[sub]), 1, true);
+  }
+  if (e.buff[i] > 0 && st !== SiteState.Running) {
+    const w = 18, f = Math.min(1, e.buff[i] / CHANNEL);
+    b.drawScaled(S.px, sx - w / 2 - 1, top - 5, w + 2, 4, hex(0x000000, 0.7));
+    b.drawScaled(S.px, sx - w / 2, top - 4, Math.round(w * f), 2, hex(0xffd35a));
+  }
+}
+
 function drawTelegraph(b: Batcher, S: Sprites, e: GameState['ents'], i: number, def: (typeof MOBS)[number], sx: number, top: number, feetY: number, tick: number): void {
   if (e.mode[i] === SP_WIND && def.special) {
     drawSpecialTelegraph(b, S, e, i, def.special, sx, top, feetY, tick);
@@ -1356,8 +1384,7 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
     const sc = 1 + 0.4 * p;
     const jx = ((tick & 1) ? 1 : -1) * p * 1.5;
     b.drawScaled(f, sx - (f.w * sc) / 2 + jx, sy - f.h * sc + drop, f.w * sc, f.h * sc, 0xffffffff);
-    drawTelegraph(b, S, e, i, def, sx, sy - f.h + drop, sy, tick);
-    return;
+    return; // the swell and shake is the tell; no ring
   }
 
   const x0 = sx - f.w / 2 + ox, y0 = sy - f.h + oy + drop;
@@ -1433,7 +1460,7 @@ function drawMob(b: Batcher, S: Sprites, e: GameState['ents'], i: number, tick: 
     for (let k = 0; k < 3; k++) b.drawScaled(S.px, sx + face * (9 + k * 2), sy - f.h * 0.6 + (k - 1) * 3, 2, 1, a);
   }
 
-  if (winding) drawTelegraph(b, S, e, i, def, sx, sy - f.h, sy, tick);
+  // no warning rings, lanes or glyphs for ordinary mobs: the windup pose above is the only tell (docs/decisions/0005)
 }
 
 /**

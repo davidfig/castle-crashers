@@ -1,10 +1,11 @@
 // The one road of a run (docs/21-the-road.md): a single sim walks the whole route with no cut. The road is a line of FIGHTING stretches
 // (a level's battlefield, or part of one) and CALM places (the camp after a level, a road scene in the middle of one, and later towns),
 // and it GROWS around the calm places: each is given its own ground, and the fighting is pushed far enough away on both sides that no
-// horde can reach it. The spacing follows from how the horde arrives, not from hand-made clearings:
-//  - after a calm place, the next encounter lies so far past its end that it streams in (`STREAM_AHEAD` past the screen) only once the
-//    camera's centre has left it, so the horde appears off screen and walks in, never popping up as the party leaves;
-//  - before one, the last encounter lies half a screen (plus a crowd's spread) short of it, so the fighting is done out of its sight;
+// horde can reach it, and keep the empty ground as short as that allows:
+//  - while the party is in a calm place nothing streams in, and the moment it has left, the next crowd is spawned just off the right edge of
+//    the screen (wherever its plan puts it) and walks in, so it never pops up and never reaches the place; the encounter after a place only
+//    has to lie `CLEAR_AFTER` past it, far enough that its gate lets the camera's centre leave the place;
+//  - before one, the last encounter lies `CLEAR_BEFORE` short of it, so its crowd does not reach the ground;
 //  - while a calm place is on screen, or about to be, the director sends no packs (`roadDirectorOff`).
 // The layout (`layoutRoad`) is a pure function of the run's seed, laid out in full when the road is made (it is small: where things go);
 // what is IN each level (its encounters, gates and sites; the camp's goods) is planned as the party nears it. Sim coordinates on the road
@@ -27,7 +28,8 @@ import { giftsFor } from '../../data/gifts';
 import { questOffers } from '../../data/quests';
 import { Kind, NpcMode } from '../entities';
 import { createQuestRun, placeQuest, settleQuestNow } from '../quests';
-import { META } from '../../data/meta';
+import { META, metaMultipliers } from '../../data/meta';
+import { cloneTreeSaves, newTreeSaves, type TreeSave } from '../../data/trees';
 import { TOWN_GATE_X, TOWN_W } from '../../data/town';
 import { stockFor } from '../../data/wares';
 import { LEVEL_CAM_END, STORE_X, VIEW_W, WORLD_H, WORLD_W } from '../constants';
@@ -37,14 +39,36 @@ import { planLevel, SCENE_RELEASE, SCENE_Y, STREAM_AHEAD, type ClumpPlan, type S
 
 /** How far an encounter's crowd spreads from its centre (a blob for a full party; a line is narrower). */
 export const CROWD_SPREAD = 160;
-/** From the end of a calm place to the next encounter: it streams in only once the camera's centre has left the place. */
-export const CLEAR_AFTER = VIEW_W / 2 + STREAM_AHEAD + CROWD_SPREAD;
-/** From the last encounter (or gate) before a calm place to where the place begins: the fight stays out of its sight. */
-export const CLEAR_BEFORE = VIEW_W / 2 + CROWD_SPREAD;
-/** A camp's ground, in the store's own coordinates: from just before the first quest-giver to past the last of the peddler's goods. */
-export const CAMP_FROM = 330, CAMP_TO = 1100;
+/**
+ * From the end of a calm place to the next encounter. Nothing streams in while the party is in the place, and the moment it has left, the
+ * crowd is spawned off the right edge wherever its plan puts it (`streamLevel`), so this gap does not have to hide anything: it only has to
+ * be long enough that the encounter's gate (which stands 40 px past it and holds the camera) lets the camera's centre leave the place.
+ */
+export const CLEAR_AFTER = 260;
+/** From the last encounter (or gate) before a calm place to where the place begins: its crowd (`CROWD_SPREAD`) does not reach the ground. */
+export const CLEAR_BEFORE = CROWD_SPREAD + 60;
+/** A camp's ground, in the store's own coordinates: from a little before the first quest-giver to a little past the last of the peddler's goods. */
+export const CAMP_FROM = 380, CAMP_TO = 1040;
 /** A road scene's ground around where its figures stand: where the party stops to listen, to where the scene lets it go. */
 export const SCENE_BEFORE = 420;
+/**
+ * The size of the road's horde against the levels' own plans and the director's packs: a tuning knob (`pnpm sim --horde=X`). Left at 1 by
+ * the balance pass (docs/21-the-road.md, "The balance pass"): a smaller horde barely shortens a run but starves the heroes of experience,
+ * so they meet the later bosses under-levelled and the run gets harder, not easier.
+ */
+export const ROAD_HORDE = 1;
+/**
+ * A boss's health on the road, against its own. The boss levels were more than half of a run's time (the first boss, met at the party's
+ * weakest, the longest; the last a wall), so the bosses are a little frailer: a run lands near half an hour (docs/21, "The balance pass").
+ * Tuned with `pnpm sim --boss-hp=X`.
+ */
+export const ROAD_BOSS_HP = 0.75;
+/**
+ * How hard the road hits against the depth curve (`depthDamage`). The base game is meant to be very hard: a party with none of the
+ * town's upgrades should meet a road that only a very good player can beat, and slowly; the town's upgrades (data/meta.ts) are how it
+ * becomes beatable with ordinary skill. Tuned with `pnpm sim --hard=X --renown=N` (docs/21-the-road.md, "Difficulty and the town").
+ */
+export const ROAD_HARD = 1.9;
 /** How far past the boss the lair's gate stands. */
 const LAIR_PAST = 150;
 /** A gate stands this far past the encounter it guards (as `planGates` puts it). */
@@ -54,7 +78,7 @@ const SCENE_STREAM = 5001;
 const SCENE_GONE = 160;
 /** A crossroads' ground: the signposts stand `FORK_SIGNS` into it, the party's choice is counted when a hero crosses `FORK_COMMIT`, and the
  *  ground runs on to `FORK_LEN` so that, when it is counted, the screen does not yet reach the road beyond. */
-export const FORK_SIGNS = 200, FORK_COMMIT = 520, FORK_LEN = 900;
+export const FORK_SIGNS = 200, FORK_COMMIT = 520, FORK_LEN = 800;
 /** The scenery turns into the chosen biome only this far past the crossroads (never before the choice: the biome is not known). */
 const FORK_TURN = 400;
 
@@ -118,10 +142,22 @@ export interface RoadState {
   /** Renown left to spend in the town, and the lasting upgrades' ranks (data/meta.ts, by index): from the profile, and what the town bought. */
   renown: number;
   meta: number[];
+  /** The class trees (data/trees), one per class (index = classId): which nodes the town has built, the active branches, the loadout. */
+  trees: TreeSave[];
+  /** The run was made with a tree (the game always does): offers are dealt from each class's tree pool rather than from everything. */
+  treeGated: boolean;
   /** Bosses slain on this road (for the renown it earns). */
   bosses: number;
   /** A story beat the first level stages (docs/12-story.md: R1, the cookfire), or none. */
   beat: SimBeat | null;
+  /** How big the horde is on this road, as a multiple of the levels' own plans and the director's packs (`ROAD_HORDE`, tuned with bot runs). */
+  horde: number;
+  /** A boss's health on this road, as a multiple of its own (`ROAD_BOSS_HP`). */
+  bossHp: number;
+  /** The multipliers the town's built places give every hero: [damage dealt, damage taken, speed] (data/meta.ts, kept up to date as places are built). */
+  metaMul: [number, number, number];
+  /** How hard the road hits, as a multiple of the depth curve's damage (`ROAD_HARD`): the base difficulty a party meets with no upgrades built. */
+  hard: number;
   /** The director's measure of how far the party has come (`roadAdvance`): the level it is counting, and the furthest point of that level's own field the camera has reached. */
   trigLevel: number;
   trigLocal: number;
@@ -163,7 +199,20 @@ export function roadLevel(r: RoadState, k: number): LevelPlan { return levelPlan
 function levelEncounters(lp: LevelPlan, k: number, opts: { scale?: number; heat?: number; beat?: SimBeat } = {}): ClumpPlan[] {
   const sc = roadSceneFor(lp.chapter, k % LEVELS_PER_BIOME, lp.boss);
   const scene = sc ? { id: sc.id, t: roadSceneT(lp.seed) } : undefined;
-  return planLevel(lp.seed, opts.beat, { boss: lp.boss, scale: opts.scale, heat: opts.heat, opener: k === 0, length: WORLD_W, scene }).filter((c) => c.scene === undefined);
+  const plan = planLevel(lp.seed, opts.beat, { boss: lp.boss, scale: opts.scale, heat: opts.heat, opener: k === 0, length: WORLD_W, scene }).filter((c) => c.scene === undefined);
+  // The last crowd before a calm place (the road scene in the middle of the level, or the camp after it) holds the party with a gate until it
+  // is dead: nobody walks into a camp or a scene with a fight still on, and what is left when the party arrives would be sent away unkilled
+  // (`leaveField`). A boss's lair has a gate of its own.
+  const cuts = scene ? [760 + scene.t * (WORLD_W - 1100)] : [];
+  const ends = [...cuts, Infinity];
+  let from = -Infinity;
+  for (const to of ends) {
+    let last = -1;
+    plan.forEach((c, i) => { if (c.x >= from && c.x < to && !c.boss && !c.elite && c.beat === undefined) last = i; });
+    if (last >= 0) plan[last] = { ...plan[last], gate: true };
+    from = to;
+  }
+  return plan;
 }
 
 /** Where level `k`'s field would place its encounters (a pure function of its seed: the positions do not depend on the horde's size). */
@@ -286,7 +335,7 @@ export function roadProgress(s: GameState): number {
  * the last screen of a level's own field (as it never did at the end of a level).
  */
 export function roadDirectorOff(s: GameState): boolean {
-  const lo = s.camX - 40, hi = s.camX + VIEW_W + 120, r = s.road!;
+  const lo = s.camX, hi = s.camX + VIEW_W + 80, r = s.road!;
   if (r.layout.calm.some((p) => p.to > lo && p.from < hi)) return true;
   return roadToLevel(r.layout.levels[r.level], s.camX) > LEVEL_CAM_END - 100;
 }
@@ -324,7 +373,7 @@ function planRoadLevel(s: GameState, k: number): void {
   const lay = r.layout.levels[k];
   const base = s.plan.length;
   // (a staged beat adds an encounter of its own and moves no other, so the layout, made without it, still holds)
-  const plan = levelEncounters(lp, k, { scale: lp.scale * heatHorde(r.heat), heat: r.heat, beat: k === 0 ? r.beat ?? undefined : undefined });
+  const plan = levelEncounters(lp, k, { scale: lp.scale * heatHorde(r.heat) * r.horde, heat: r.heat, beat: k === 0 ? r.beat ?? undefined : undefined });
   const scene = r.layout.calm.find((c) => c.kind === 'scene' && c.level === k);
   let sceneAt = scene ? plan.findIndex((c) => levelToRoad(lay, c.x) > scene.x!) : -1;
   if (scene && sceneAt < 0) sceneAt = plan.length;
@@ -334,12 +383,15 @@ function planRoadLevel(s: GameState, k: number): void {
   });
   if (scene && sceneAt === plan.length) s.plan.push({ x: scene.x!, y: SCENE_Y, size: 0, line: false, t: 1, scene: scene.scene, rid: SCENE_STREAM, seed: lp.seed, biome: lp.biome, mix: lp.mix });
   // gates stand past the encounters they guard; the lair holds a boss's road until it and its retinue are dead
+  const gates: { x: number; clump: number }[] = [];
   for (let i = base; i < s.plan.length; i++) {
     const c = s.plan[i];
     if (c.beat !== undefined) s.beatIndex = i;
-    if (c.gate) s.gates.push({ x: c.x + GATE_PAST, clump: i });
-    if (c.boss) s.gates.push({ x: c.x + LAIR_PAST, clump: i });
+    if (c.gate) gates.push({ x: c.x + GATE_PAST, clump: i });
+    if (c.boss) gates.push({ x: c.x + LAIR_PAST, clump: i });
   }
+  gates.sort((a, b) => a.x - b.x); // (crowds are jittered, so a neighbour's gate can stand a little before another's: the camera meets them in order)
+  s.gates.push(...gates);
   placeSites(s, lp.boss, {
     x0: 0, length: WORLD_W, seed: lp.seed, surrender: lp.chapter >= 2,
     at: (x) => levelToRoad(lay, x),
@@ -401,7 +453,7 @@ export function roadUpkeep(s: GameState, leave: (s: GameState) => void): void {
   const lp = roadLevel(r, at.level);
   s.biome = lp.biome;
   s.mix = lp.mix;
-  s.damageMul = lp.damage;
+  s.damageMul = lp.damage * r.hard;
   s.surrender = lp.chapter >= 2;
   // (the camp before a crossroads leads nowhere certain yet: the music keeps to this region's key)
   const nextLevel = Math.min(r.total - 1, at.level + 1);
@@ -465,12 +517,12 @@ export function commitFork(s: GameState, fork: Calm, side: number): void {
 }
 
 /** A fresh road's state (level 0, nothing planned yet: the first upkeep plans it). */
-export function createRoad(runSeed: number, total: number, heat: number, renown = 0, meta: readonly number[] = [], beat?: SimBeat): RoadState {
+export function createRoad(runSeed: number, total: number, heat: number, renown = 0, meta: readonly number[] = [], beat?: SimBeat, horde = ROAD_HORDE, bossHp = ROAD_BOSS_HP, trees?: readonly TreeSave[], hard = ROAD_HARD): RoadState {
   const n = Math.max(1, total);
   const biomes = roadBiomes(runSeed, n, []);
   return {
     runSeed, total: n, heat, layout: layoutRoad(runSeed, n, biomes), planned: 0, level: 0, calm: -1, camp: false, since: -1, choices: [], biomes,
-    town: true, renown, meta: META.map((_, i) => meta[i] ?? 0), bosses: 0, beat: beat ? { ...beat } : null, trigLevel: -1, trigLocal: 0,
+    town: true, renown, meta: META.map((_, i) => meta[i] ?? 0), metaMul: metaMultipliers(meta), trees: trees ? cloneTreeSaves(trees) : newTreeSaves(), treeGated: !!trees, bosses: 0, beat: beat ? { ...beat } : null, trigLevel: -1, trigLocal: 0, horde, bossHp, hard,
   };
 }
 

@@ -4,6 +4,7 @@
 // unlocks plus generic perks (docs/04, roadmap M4). Offers are a pure function of (run seed, slot, level), so they are
 // stable across pause, desync recovery and replays.
 import { createRng, rngFloat, rngInt, Stream } from '../engine/rng';
+import { skillIn } from './skills';
 
 export interface UpgradeDef {
   id: string;
@@ -145,6 +146,8 @@ export interface OfferContext {
   salt?: number;
   /** Boons the hero has banished this run (index = UPGRADES, non-zero = never offered again). */
   banned?: ArrayLike<number>;
+  /** The hero's class tree pool (data/trees `poolFor`): a flag per upgrade; non-zero = in the pool. Absent = everything (a class with no tree). */
+  pool?: ArrayLike<number>;
 }
 
 export function offerFor(seed: number, slot: number, levelNumber: number, ranks?: ArrayLike<number>, classId?: number, ctx: OfferContext = {}): number[] {
@@ -159,6 +162,7 @@ export function offerFor(seed: number, slot: number, levelNumber: number, ranks?
     if (u.classes && (classId === undefined || !u.classes.includes(classId))) continue;
     if (ranks && ranks[i] >= u.maxRank) continue;
     if (ctx.banned && ctx.banned[i]) continue;
+    if (ctx.pool && !ctx.pool[i]) continue;
     if (u.evolve) { if (ranks && evolved(u, ranks) && !(u.needsParty && ctx.party !== undefined && ctx.party < 2)) evos.push(i); continue; }
     if (u.needsParty && ctx.party !== undefined && ctx.party < 2) continue;
     if (u.unlock && ctx.unlocked && !ctx.unlocked.has(u.unlock)) continue;
@@ -209,15 +213,27 @@ export const NOUNS: readonly (readonly [string, string, string, string])[] = [
   ['AURA', 'HOLY BURST', 'HOLY NOVA', 'HEAL ROLL'],
   ['DAGGER', 'SHADOWCUT', 'BLADE RING', 'ROLL'],
   ['ARROW', 'VOLLEY', 'RAIN', 'ROLL'],
+  ['STONE', 'CANNON', 'EMBER', 'ROLL'],
 ];
 const RANGED = [1, 4];
 const AURA = 2;
 const DODGE_KIND = ['charge', 'teleport', 'heal', 'roll', 'roll'];
 
+/** The picture on a card: a track card of a slot holding a replacement skill shows that skill's picture, else the boon's own. */
+export function cardIcon(def: UpgradeDef, loadout?: ArrayLike<number>): string {
+  const s = def.scales;
+  const skill = s && loadout ? skillIn(loadout, s.ability) : undefined;
+  return skill?.tracks[s!.track] ? skill.icon : def.icon;
+}
+
 /** The card's name and text for `def`, for a hero of `classId`: ability boons say what they do to that class's own attack. */
-export function cardFor(def: UpgradeDef, classId: number): { name: string; text: readonly string[] } {
+export function cardFor(def: UpgradeDef, classId: number, loadout?: ArrayLike<number>): { name: string; text: readonly string[] } {
   const s = def.scales;
   if (!s) return { name: def.name, text: def.text };
+  // A replacement skill (data/skills.ts) in the card's slot says what the track means for it.
+  const skill = loadout ? skillIn(loadout, s.ability) : undefined;
+  const line = skill?.tracks[s.track];
+  if (skill && line) return { name: skill.short, text: [line[0], s.ability === 2 ? `FURY +${line[1] / 2}%` : `COST +${line[1]}%`] };
   const noun = NOUNS[classId]?.[s.ability] ?? def.name;
   const ranged = RANGED.includes(classId);
   const pct = (n: number): string => (s.ability === 2 ? `FURY +${n / 2}%` : `COST +${n}%`);

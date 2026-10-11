@@ -22,6 +22,15 @@ import { bannerMul, burstAt, executeMul, flushProcs, frenzyTick, onAura, onDodge
 import { activePlayers, hasBoss, partyScale, sceneHold, streamLevel } from './gen/level';
 import { inCamp, inTown, roadAdvance, roadDirectorOff, roadLevel, roadProgress, roadUpkeep } from './gen/road';
 import { townTrade } from './town';
+import { aegis, mendBolt } from './clericSkills';
+import { drawStep } from './archerSkills';
+import { setPatch } from './patches';
+import { shadowStep } from './rogueSkills';
+import { chainBolt, lineStrike, startMeteor } from './mageSkills';
+import { hooks } from './skillHooks';
+import { castSkill, novaBase, onKnock, rageEnds, rageKillFury, skillDealt, skillTaken, tickSkills } from './skills';
+import { treeInput } from './treeUi';
+import { SLOT_NOVA, variantOf } from '../data/skills';
 import { TOWN_W } from '../data/town';
 import { heatDamage, heatReward, heatSpeed } from '../data/heat';
 import { heroOffer } from './offers';
@@ -46,6 +55,11 @@ const BLAST_KNOCK = 4;
 /** Reinforcement and flank triggers are spaced in px of forward progress (the camera), not in time: a party that stands still faces no growing horde. */
 const REINFORCE_INTERVAL = 200;
 const REINFORCE_FLOOR = 220;
+/** The progress owed for time the director was held back near a calm place is capped (five packs, three waves), and paid at this many px per tick. */
+const PACK_DEBT_CAP = 5 * REINFORCE_INTERVAL;
+const FLANK_DEBT_CAP = 3 * 620;
+const DEBT_PAY_PACK = 3;
+const DEBT_PAY_FLANK = 8;
 /** Flank waves (top/bottom entrances): base gap in px of advance, how much shorter it gets at full depth, and pack size. */
 const FLANK_INTERVAL = 620;
 const FLANK_INTERVAL_DEEP = 220;
@@ -71,6 +85,10 @@ const POTION_PER_SECOND = 0.1;
 const POTION_BUDGET_MAX = 2;
 /** A mob sliding faster than this (px/tick) bowls into whatever it touches. */
 const BOWL_SPEED2 = 2.6;
+/** Mobs keep this much of each other's size clear (1 = just touching), push apart this hard, and never faster than `SEP_MAX` px a tick: a best-effort spread, not a collision wall. */
+const SEP_ROOM = 1.3;
+const SEP_PUSH = 1.0;
+const SEP_MAX = 0.7;
 const BOWL_DAMAGE = 3;
 /** Walking speed of a hero who is slowed (a ghoul's claws, a scream, a poison pool). */
 const SLOW_FACTOR = 0.55;
@@ -135,7 +153,17 @@ export function step(s: GameState, inputs: InputFrame[]): void {
   }
   const advance = sceneHold(s) || s.tutorialHold ? 0 : s.road ? roadAdvance(s) : Math.max(0, s.camX - s.trigCamX);
   s.trigCamX = Math.max(s.trigCamX, s.camX);
-  if (!(s.road && roadDirectorOff(s))) { runDirector(s, advance); runFlanks(s, advance); }
+  if (s.road && roadDirectorOff(s)) {
+    // Held back near a calm place (nothing is sent to walk in on whoever is shopping or listening): the progress still counts, as a debt
+    // of packs and waves, paid out below once the party has moved on, so a level is as full of fighting as it was.
+    s.packDebt = Math.min(PACK_DEBT_CAP, s.packDebt + advance);
+    s.flankDebt = Math.min(FLANK_DEBT_CAP, s.flankDebt + advance);
+  } else {
+    const payPack = Math.min(s.packDebt, DEBT_PAY_PACK), payFlank = Math.min(s.flankDebt, DEBT_PAY_FLANK);
+    s.packDebt -= payPack; s.flankDebt -= payFlank;
+    runDirector(s, advance + payPack);
+    runFlanks(s, advance + payFlank);
+  }
   updateCamera(s);
   cullBehind(s);
   if (s.road) roadUpkeep(s, leaveField);
@@ -165,6 +193,8 @@ function cullBehind(s: GameState): void {
 function isLiveMob(e: GameState['ents'], m: number): boolean {
   return e.alive[m] === 1 && e.kind[m] === Kind.Mob;
 }
+
+hooks.damageMob = damageMob; // (the class skills' way into the sim's damage)
 
 export function stop(s: GameState, ticks: number): void {
   if (ticks > s.hitStop) s.hitStop = ticks;
@@ -287,6 +317,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   const p = s.players[slot];
   const e = s.ents;
   inp = levelUpInput(s, p, inp);
+  inp = treeInput(s, p, slot, inp);
   if (p.active && !p.downed && s.surrender && (inp.buttons & Btn.Interact)) {
     p.standT++;
     standingInput.moveX = Math.round(inp.moveX * STAND_SLOW);
@@ -307,10 +338,11 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
     return;
   }
 
-  const cls = CLASSES[p.classId];
+  const cls = variantOf(CLASSES[p.classId], p.loadout); // the class with its replacement skills (data/skills.ts)
   const i = p.ent;
   if (p.cdAttack > 0) p.cdAttack--;
   frenzyTick(s, slot);
+  tickSkills(s, slot);
   if (p.cdAbility1 > 0) p.cdAbility1--;
   if (p.cdDash > 0) p.cdDash--;
   if (p.cdSpecial > 0) p.cdSpecial--;
@@ -416,6 +448,7 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
   const powerRank = rankOf(p.ranks, 3, 3), dodgePower = 1 + DODGE_POWER * powerRank;
   if (p.dashT === 0 && p.bufDodge > 0 && p.cdDash === 0 && !p.winded && p.stamina >= dodgeCost) {
     spendStamina(s, slot, dodgeCost);
+    p.spinT = 0;
     p.dashT = cls.dashTicks;
     p.rootT = 0; // a dodge-roll tears free of a snare
     // Dodge scaling (sim/abilityMods.ts): Count chains extra dodges with a short gap; Speed shortens the gap between dodges.
@@ -426,10 +459,17 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
     p.bufDodge = 0;
     if (len > 0.2) { p.dashX = mx / len; p.dashY = my / len; }
     else { p.dashX = p.faceX; p.dashY = p.faceY; }
+    if (cls.dashBack) { p.dashX = -p.faceX; p.dashY = -p.faceY; } // (Backflip Shot leaps away from where it shoots)
     const kind = cls.dashKind;
     const fromX = e.x[i], fromY = e.y[i];
     emit(s.events, Ev.Dash, e.x[i], e.y[i], p.dashX, p.dashY, kind === 'charge' ? 1 : kind === 'teleport' ? 3 : kind === 'heal' ? 4 : 0);
     onDodge(s, slot, e.x[i], e.y[i]);
+    if (cls.dashAegis) aegis(s, slot, cls, dodgeReach, dodgePower); // (Aegis Roll shields the heroes beside the cleric)
+    if (cls.riposte) p.riposteT = 90; // (the Rapier's next thrust after a dodge is a riposte)
+    if (cls.dashPatch) setPatch(p, fromX, fromY, cls.dashPatch, dodgeReach, dodgePower); // (Caltrops, the Snare Trap)
+    if (cls.dashPlant !== undefined) plantTotem(s, slot, cls.dashPlant); // (Spirit Step)
+    if (cls.dashVolley && cls.shot) fireArrows(s, slot, cls.shot, cls.dashVolley.count, cls.dashVolley.spread, !!cls.shot.pierce); // (Backflip Shot)
+    if (cls.dashStep) shadowStep(s, slot, cls, dodgeReach); // (Shadow Step)
     if (kind === 'teleport') {
       const nx = clamp(e.x[i] + p.dashX * (cls.dashPower ?? 80) * dodgeReach, s.camX + 10, heroMaxX(s));
       const ny = clamp(e.y[i] + p.dashY * (cls.dashPower ?? 80) * dodgeReach, 2, WORLD_H - 2);
@@ -454,12 +494,13 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
     e.y[i] += p.dashY * cls.dashSpeed * dodgeReach;
     p.dashT--;
     if (cls.dashDamage > 0) dashPlow(s, slot, cls, dodgeReach, dodgePower);
+    if (p.dashT === 0 && cls.dashSlam) dashSlam(s, slot, cls, dodgeReach, dodgePower);
   } else {
     if (p.slowT > 0) p.slowT--;
     const rooted = p.rootT > 0;
     if (rooted) p.rootT--;
     const turn = p.confuseT > 0 ? (p.confuseT--, -1) : 1; // a whiteout reverses the way the stick moves you
-    const speed = rooted ? 0 : (p.winded ? cls.speed * cls.windedSpeed : cls.speed) * (p.slowT > 0 ? SLOW_FACTOR : 1) * speedMul(p.ranks) * (p.cdAttack > 0 ? cls.attackMove ?? 1 : 1);
+    const speed = rooted ? 0 : (p.winded ? cls.speed * cls.windedSpeed : cls.speed) * (p.slowT > 0 ? SLOW_FACTOR : 1) * speedMul(p.ranks) * (s.road ? s.road.metaMul[2] : 1) * (p.cdAttack > 0 ? cls.attackMove ?? 1 : 1) * (p.spinT > 0 && cls.spin ? cls.spin.move : 1) * (p.drawT > 0 ? 0.5 : 1);
     e.x[i] += mx * speed * turn;
     e.y[i] += my * speed * turn;
     if (p.lungeT > 0) {
@@ -467,6 +508,12 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
       e.y[i] += p.faceY * LUNGE_SPEED;
       p.lungeT--;
     }
+    if (p.spinT > 0 && cls.spin) {
+      // Whirlwind: the spin keeps hitting all round, every few ticks, and drains stamina until it ends or the hero is winded.
+      spendStamina(s, slot, cls.spin.drain);
+      if (p.winded) p.spinT = 0;
+      else { p.spinT--; if (p.spinT % cls.spin.every === 0) swing(s, slot, cls, cls.special, true); }
+    } else p.spinT = 0;
     if (cls.auraDrain) {
       // The attack button flips the aura; while it is on it hurts everything in reach every few ticks, a constant grind, and the stamina bleeds away until it runs out.
       if (pressed & Btn.Attack && (p.auraOn || (!p.winded && p.stamina > 0))) p.auraOn = !p.auraOn;
@@ -476,8 +523,14 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
         else if (p.cdAttack === 0) swing(s, slot, cls, cls.combo[0], false);
       }
     }
+    if (cls.charge) {
+      // Charged Shot: the attack button draws the bow; letting go looses the shot
+      const ready = p.cdAttack === 0 && !p.winded && p.silenceT === 0 && p.stamina >= cls.attackCost * costMul(p.ranks, 0);
+      if (drawStep(s, slot, cls, (inp.buttons & Btn.Attack) !== 0, ready)) { spendStamina(s, slot, cls.attackCost * costMul(p.ranks, 0)); p.cdAttack = cls.charge.cooldown; }
+    }
+    rageEnds(p); // (the button switches Rage off)
     const acted = p.cdAttack + p.cdSpecial + p.cdAbility1;
-    if (!cls.rain && !cls.totems && p.silenceT === 0 && p.bufAbility1 > 0 && p.cdAbility1 === 0 && p.fury >= novaCost(p.ranks, cls.novaCost, cls.furyMax)) {
+    if (!cls.rain && !cls.totems && p.silenceT === 0 && p.bufAbility1 > 0 && p.cdAbility1 === 0 && p.fury >= novaCost(p.ranks, novaBase(p, cls), cls.furyMax)) {
       nova(s, slot, cls);
       p.bufAbility1 = 0;
     } else if (!cls.totems && p.silenceT === 0 && p.bufAbility2 > 0 && p.cdSpecial === 0 && !p.winded && p.stamina >= cls.specialCost * costMul(p.ranks, 1) && (p.cdAttack === 0 || p.auraOn)) {
@@ -489,7 +542,10 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
         const split = rankOf(p.ranks, 1, 1) * (cls.specialShot.count > 1 ? 2 : 1); // Split: a fan gains two arrows a rank, a single ball one more ball
         fireArrows(s, slot, cls.specialShot, cls.specialShot.count + split, cls.specialShot.spread + 0.06 * split, !!cls.specialShot.pierce, true);
         p.cdAttack = cls.specialShot.cooldown;
-      } else swing(s, slot, cls, cls.special, true);
+      } else if (cls.spin) p.spinT = cls.spin.ticks;
+      else if (cls.meteor) startMeteor(s, slot, cls);
+      else if (cls.bolt) lineStrike(s, slot, cls);
+      else swing(s, slot, cls, cls.special, true);
       onSpecial(s, slot);
     } else if (cls.totems) {
       // The shaman does no damage: the buttons plant totems and herd mobs (sim/totems.ts, data/totems.ts, docs/18).
@@ -500,12 +556,18 @@ function updatePlayer(s: GameState, slot: number, inp: InputFrame): void {
         else if ('herd' in act) { herd(s, slot, act.herd); if (act.herd === 'gale') p.cdAbility1 = HERDS.gale.cooldown; else p.cdSpecial = HERDS.gather.cooldown; }
         p.bufPlant = 0;
       }
-    } else if (inp.buttons & Btn.Attack && !cls.auraDrain && p.cdAttack === 0 && !p.winded && p.stamina >= cls.attackCost * costMul(p.ranks, 0)) {
+    } else if (inp.buttons & Btn.Attack && !cls.auraDrain && !cls.charge && p.cdAttack === 0 && !p.winded && p.stamina >= cls.attackCost * costMul(p.ranks, 0)) {
       if (cls.shot) {
         spendStamina(s, slot, cls.attackCost * costMul(p.ranks, 0));
         const twin = p.ranks[UPGRADE_INDEX.twin] + rankOf(p.ranks, 0, 1); // Twin Flame and the basic Split both add shots
         fireArrows(s, slot, cls.shot, 1 + twin, 0.05 * twin, !!cls.shot.pierce);
         p.cdAttack = cls.shot.cooldown;
+      } else if (cls.chain) {
+        // Chain Bolt: only loosed at a foe; the cost and the pause come with the shot
+        if (chainBolt(s, slot, cls)) { spendStamina(s, slot, cls.attackCost * costMul(p.ranks, 0)); p.cdAttack = Math.round(cls.chain.cooldown * Math.max(0.5, 1 - QUICK_MELEE * rankOf(p.ranks, 0, 2))); }
+      } else if (cls.mend) {
+        // Healing Bolt: only loosed at a target; the cost and the pause come with the shot
+        if (mendBolt(s, slot, cls)) { spendStamina(s, slot, cls.attackCost * costMul(p.ranks, 0)); p.cdAttack = Math.round(cls.mend.cooldown * Math.max(0.5, 1 - QUICK_MELEE * rankOf(p.ranks, 0, 2))); }
       } else cleave(s, slot, cls);
     }
     // Striking from the shadows gives him away.
@@ -576,7 +638,7 @@ function fireArrows(s: GameState, slot: number, a: ArrowDef, count: number, spre
 function explodeShot(s: GameState, owner: number, a: ArrowDef, x: number, y: number, struck: number, scale = 1): void {
   const e = s.ents;
   const pl = s.players[owner];
-  const cls = CLASSES[pl.classId];
+  const cls = variantOf(CLASSES[pl.classId], pl.loadout);
   const ab: AbilityKind = a === cls.specialShot ? 1 : 0;
   const radius = (a.splash ?? 0) * scale * (1 + SIZE_RANGED * rankOf(pl.ranks, ab, 0));
   const power = 1 + POWER_PER_RANK * rankOf(pl.ranks, ab, 3);
@@ -605,6 +667,7 @@ function cleave(s: GameState, slot: number, cls: ClassDef): void {
 
 /** The rogue steps out of hiding and must wait out his cooldown before he can slip away again. */
 function revealRogue(s: GameState, p: PlayerState): void {
+  if (p.smokeT > 0) return; // (in the smoke he is not seen, whatever he does)
   p.vanishT = 0;
   p.revealT = CLASSES[p.classId].hideCooldown ?? 0;
 }
@@ -633,7 +696,9 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
   const range = sw.range * reach * wide, wave = sw.wave * reach * wide, waveWidth = sw.waveWidth * reach * wide;
   const split = rankOf(p.ranks, ab, 1);
   const dot = sw.aoe ? sw.dot : Math.max(-1, (ambushing ? Math.min(sw.dot, -0.3) : sw.dot) - ARC_PER_RANK * split);
-  const damage = sw.damage * (1 + POWER_PER_RANK * rankOf(p.ranks, ab, 3));
+  const riposte = !heavy && cls.riposte && p.riposteT > 0 ? cls.riposte : 1; // the first blow after a dodge hits harder (the Rapier)
+  if (riposte > 1) p.riposteT = 0;
+  const damage = sw.damage * (1 + POWER_PER_RANK * rankOf(p.ranks, ab, 3)) * riposte;
   const cooldown = Math.max(Math.ceil(sw.cooldown / 2), Math.round(sw.cooldown * (1 - QUICK_MELEE * rankOf(p.ranks, ab, 2))));
   p.cdAttack = cooldown;
   p.comboTimer = cooldown + cls.comboWindow;
@@ -641,6 +706,7 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
   const cx = e.x[p.ent], cy = e.y[p.ent];
   // Facing scaled by range so the presentation can size the slash arc; c = arc dot.
   if (sw.aoe) { if (heavy) emit(s.events, Ev.Pulse, cx, cy, range, 1, 0, slot); } // (the cleric's plain aura has no per-hit burst: the renderer draws it turning)
+  else if (sw.flame) emit(s.events, Ev.Cone, cx, cy, p.faceX * range, p.faceY * range, Math.acos(Math.max(-1, Math.min(1, dot))) / (2 * Math.PI), 1);
   else emit(s.events, heavy ? Ev.Finisher : Ev.Swing, cx, cy, p.faceX * range, p.faceY * range, dot, slot);
 
   const n = gatherCircle(s.grid, e, cx, cy, range, s.scratch);
@@ -700,6 +766,7 @@ function swing(s: GameState, slot: number, cls: ClassDef, sw: Swing, heavy: bool
 function nova(s: GameState, slot: number, cls: ClassDef): void {
   const p = s.players[slot];
   if (cls.rain) { castRain(s, slot, cls, cls.rain); return; }
+  if (p.loadout[SLOT_NOVA] > 0) { castSkill(s, slot, cls); return; } // a replacement skill in the nova slot (data/skills.ts)
   if (cls.quake) { castQuake(s, slot, cls, cls.quake); return; }
   const big = p.fury >= cls.furyMax;
   p.fury = big ? 0 : p.fury - novaCost(p.ranks, cls.novaCost, cls.furyMax);
@@ -871,6 +938,21 @@ function healPulse(s: GameState, cx: number, cy: number, radius: number, amount:
   }
 }
 
+/** Shield Rush's end: everything round where the hero stops takes a slam and is stunned. */
+function dashSlam(s: GameState, slot: number, cls: ClassDef, reach: number, power: number): void {
+  const p = s.players[slot], e = s.ents, sl = cls.dashSlam!;
+  const cx = e.x[p.ent], cy = e.y[p.ent], radius = sl.radius * reach;
+  emit(s.events, Ev.Nova, cx, cy, radius, 0, 0);
+  const n = gatherCircle(s.grid, e, cx, cy, radius, s.scratch);
+  for (let k = 0; k < n; k++) {
+    const m = s.scratch[k];
+    if (!isLiveMob(e, m)) continue;
+    const dx = e.x[m] - cx, dy = e.y[m] - cy, d = Math.sqrt(dx * dx + dy * dy);
+    if (damageMob(s, m, sl.damage * power, d > 0.001 ? dx / d : p.dashX, d > 0.001 ? dy / d : p.dashY, sl.knock, slot, PIERCE) === 1) e.stun[m] = Math.max(e.stun[m], sl.stun);
+  }
+  stop(s, 4);
+}
+
 function dashPlow(s: GameState, slot: number, cls: ClassDef, reach: number, power: number): void {
   const p = s.players[slot];
   const e = s.ents;
@@ -882,7 +964,7 @@ function dashPlow(s: GameState, slot: number, cls: ClassDef, reach: number, powe
     const dx = e.x[m] - cx, dy = e.y[m] - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     const inv = dist > 0.001 ? 1 / dist : 0;
-    damageMob(s, m, cls.dashDamage * power, dist > 0.001 ? dx * inv : p.dashX, dist > 0.001 ? dy * inv : p.dashY, cls.dashKnock, slot, 0);
+    if (damageMob(s, m, cls.dashDamage * power, dist > 0.001 ? dx * inv : p.dashX, dist > 0.001 ? dy * inv : p.dashY, cls.dashKnock, slot, 0) === 1 && cls.dashStun) e.stun[m] = Math.max(e.stun[m], Math.min(250, Math.round(cls.dashStun * power))); // (Ice Slide freezes)
   }
 }
 
@@ -912,7 +994,7 @@ export function damageMob(s: GameState, m: number, dmg: number, dirX: number, di
     return 0;
   }
   if (def.thorns && owner >= 0) poisonPlayer(s, owner, def.thorns); // its skin is venomous to whatever strikes it
-  if (owner >= 0) dmg *= damageMul(s.players[owner].ranks) * executeMul(s, owner, m) * bannerMul(s, owner);
+  if (owner >= 0) dmg *= damageMul(s.players[owner].ranks) * (s.road ? s.road.metaMul[0] : 1) * executeMul(s, owner, m) * bannerMul(s, owner) * skillDealt(s, owner);
   if (def.shield && !(flags & PIERCE) && dirX * e.face[m] < 0 && (def.shieldHp === undefined || e.shieldHp[m] > 0)) {
     // Attacker is on the shield side: the shield takes the blow, and breaks once it has taken enough.
     e.vx[m] += dirX * knock * 0.25;
@@ -988,7 +1070,7 @@ export function damageMob(s: GameState, m: number, dmg: number, dirX: number, di
       if (e.flags[m] & SURRENDERED) s.betrayed++;
       grantXp(s, def.behavior === Behavior.Boss ? XP_BOSS : 1, e.x[m], e.y[m]);
       p.kills++;
-      p.fury = Math.min(cls.furyMax, p.fury + cls.furyPerKill);
+      p.fury = Math.min(cls.furyMax, p.fury + cls.furyPerKill + rageKillFury(p));
       onKill(s, owner, e.x[m], e.y[m]);
     }
     if (def.onDeath) onMobDeath(s, m, def.onDeath, dirX, dirY);
@@ -1009,13 +1091,13 @@ export function hurtPlayer(s: GameState, slot: number, dmg: number, slow = 0, fl
   const e = s.ents;
   const dot = (flags & HURT_DOT) !== 0;
   if (p.downed || (p.invuln > 0 && !dot)) return;
-  dmg *= takenMul(p.ranks) * wardMul(s, slot) * (p.hexT > 0 ? HEX_TAKEN : 1) * (dot ? 1 : heatDamage(s.heat) * s.damageMul);
+  dmg *= takenMul(p.ranks) * (s.road ? s.road.metaMul[1] : 1) * wardMul(s, slot) * skillTaken(s, slot) * (p.hexT > 0 ? HEX_TAKEN : 1) * (dot ? 1 : heatDamage(s.heat) * s.damageMul);
   if (slow > p.slowT) p.slowT = slow;
   const i = p.ent;
   const cls = CLASSES[p.classId];
   e.hp[i] -= dmg;
   e.hurt[i] = 8;
-  if (!dot) p.invuln = 24;
+  if (!dot) { p.invuln = 24; onKnock(s, slot); }
   if (p.vanishT > 0) revealRogue(s, p); // a hit gives him away
   p.fury = Math.min(cls.furyMax, p.fury + 3); // pain feeds the rage
   if (!dot) stop(s, 2);
@@ -1025,6 +1107,7 @@ export function hurtPlayer(s: GameState, slot: number, dmg: number, slow = 0, fl
     e.hp[i] = 0;
     p.downed = true;
     p.auraOn = false;
+    p.rageOn = false;
     p.poisonT = 0;
     p.burning = false;
     p.downTimer = REVIVE_TICKS;
@@ -1127,7 +1210,7 @@ function updateProjectiles(s: GameState): void {
       // A player's fireball reaching the end of its range fizzles into a small splash.
       const owner = e.sub[i] - 1;
       const pl = s.players[owner];
-      const a = shotOf(CLASSES[pl.classId], e.flags[i]);
+      const a = shotOf(variantOf(CLASSES[pl.classId], pl.loadout), e.flags[i]);
       const x = e.x[i], y = e.y[i], special = (e.flags[i] & 4) !== 0;
       freeEntity(e, i);
       if (a && a.splash) explodeShot(s, owner, a, x, y, -1, special ? 1 : SPLASH_FIZZLE); // a special runs out of range with its full blast
@@ -1146,7 +1229,7 @@ function updateProjectiles(s: GameState): void {
       // A player's arrow: hits the first mob it touches (a piercing one keeps going), blocked by shields.
       const owner = e.sub[i] - 1;
       const pl = s.players[owner];
-      const ocls = CLASSES[pl.classId];
+      const ocls = variantOf(CLASSES[pl.classId], pl.loadout); // (the class as it plays with its replacement skills)
       const a = shotOf(ocls, e.flags[i]);
       if (!a) { freeEntity(e, i); continue; }
       const pierce = (e.flags[i] & 2) !== 0;
@@ -1711,6 +1794,7 @@ function updateMobs(s: GameState): void {
     // revealed. With nobody else to go for, mobs mill about.
     let target = -1;
     let best = Infinity;
+    let roared = false; // a warrior's Roar holds every foe within its reach on the roarer
     let aimX = 0, aimY = 0;
     for (let k = 0; k < players.length; k++) {
       const p = players[k];
@@ -1728,7 +1812,8 @@ function updateMobs(s: GameState): void {
       }
       const dx = px - x, dy = py - y;
       const d2 = dx * dx + dy * dy;
-      if (d2 < best) { best = d2; target = k; aimX = px; aimY = py; }
+      const roar = p.roarT > 0 && d2 < p.roarR * p.roarR;
+      if (roar ? (!roared || d2 < best) : (!roared && d2 < best)) { best = d2; target = k; aimX = px; aimY = py; if (roar) roared = true; }
     }
     if (target < 0) {
       if (vanishedN > 0) confusedStep(s, i, def);
@@ -1839,6 +1924,7 @@ function updateMobs(s: GameState): void {
           const dx = x - e.x[j], dy = y - e.y[j];
           const d2 = dx * dx + dy * dy;
           const minD = def.radius + MOBS[e.sub[j]].radius;
+          const room = minD * SEP_ROOM;
           if (flying && e.stun[j] === 0 && e.hp[i] > 0 && d2 < (minD + 2) * (minD + 2)) {
             const d = Math.sqrt(d2) || 1;
             const v = Math.sqrt(e.vx[i] * e.vx[i] + e.vy[i] * e.vy[i]);
@@ -1846,19 +1932,23 @@ function updateMobs(s: GameState): void {
             e.vx[i] *= 0.75;
             e.vy[i] *= 0.75;
           }
-          if (d2 >= minD * minD) continue;
+          if (d2 >= room * room) continue;
           if (d2 < 1e-6) {
-            sepX += i < j ? 0.3 : -0.3;
-            sepY += i < j ? 0.2 : -0.2;
+            sepX += i < j ? 0.5 : -0.5;
+            sepY += i < j ? 0.35 : -0.35;
           } else {
             const d = Math.sqrt(d2);
-            const push = (minD - d) / minD * 0.6;
+            const push = (room - d) / room * SEP_PUSH;
             sepX += (dx / d) * push;
             sepY += (dy / d) * push;
           }
         }
       }
     }
+
+    // best effort, not a wall: it can never push a mob faster than it walks, so a packed crowd stays as big as it was
+    const sepLen = Math.hypot(sepX, sepY);
+    if (sepLen > SEP_MAX) { sepX *= SEP_MAX / sepLen; sepY *= SEP_MAX / sepLen; }
 
     let packMul = 1;
     if (def.swarm) {
@@ -1875,7 +1965,9 @@ function updateMobs(s: GameState): void {
       for (let k = 0; k < n && mates < 3; k++) { const m = s.scratch[k]; if (m !== i && e.alive[m] === 1 && e.kind[m] === Kind.Mob && e.sub[m] === e.sub[i]) mates++; }
       packMul = 1 + def.pack.bonus * mates;
     }
-    const speed = def.speed * MOB_SPEED_MUL * heatSpeed(s.heat) * packMul * (0.85 + (Math.imul(i, 2654435761) >>> 28) / 15 * 0.3) * (e.buff[i] > 0 ? RALLY_SPEED : 1);
+    const sprint = def.sprint && e.stun[i] === 0 && dist > def.sprint.minDist && (s.tick + i * 7) % def.sprint.every < def.sprint.ticks;
+    if (sprint && (s.tick + i * 7) % def.sprint!.every === 0) emit(s.events, Ev.Burst, x, y, 7, BurstStyle.Sand); // a puff of dust as it breaks into a run
+    const speed = def.speed * MOB_SPEED_MUL * heatSpeed(s.heat) * packMul * (sprint ? def.sprint!.mul : 1) * (0.85 + (Math.imul(i, 2654435761) >>> 28) / 15 * 0.3) * (e.buff[i] > 0 ? RALLY_SPEED : 1);
     let mvX = 0, mvY = 0;
     let detonated = false;
 
@@ -2214,7 +2306,7 @@ function runDirector(s: GameState, advance: number): void {
   // Top-up packs arrive from ahead, past the right edge of the screen.
   const r = s.rngSpawn;
   const t = levelProgress(s);
-  const size = Math.round((6 + Math.floor(t * 10)) * scale);
+  const size = Math.round((6 + Math.floor(t * 10)) * scale * (s.road?.horde ?? 1));
   for (let k = 0; k < size; k++) {
     const type = pickMobType(r, t, s.biome, s.mix);
     const i = allocEntity(e, Kind.Mob, type, s.camX + VIEW_W + 24 + rngRange(r, 0, 40), rngRange(r, 6, WORLD_H - 6), MOBS[type].hp);
@@ -2267,7 +2359,7 @@ function runFlanks(s: GameState, advance: number): void {
 
   const r = s.rngSpawn;
   const scale = partyScale(activePlayers(s));
-  const size = Math.round((FLANK_SIZE + Math.floor(t * FLANK_SIZE_DEEP) + rngInt(r, 10)) * scale);
+  const size = Math.round((FLANK_SIZE + Math.floor(t * FLANK_SIZE_DEEP) + rngInt(r, 10)) * scale * (s.road?.horde ?? 1));
   // "In front of the players": between the lead hero and the right edge of the screen.
   const hi = s.camX + VIEW_W - 8;
   const lo = Math.min(front + 30, hi - 60);

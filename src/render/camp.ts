@@ -10,13 +10,19 @@ import { drawText } from './draw';
 import { PLAYER_COLORS } from './art';
 import { wrapLines } from './quests';
 import { drawIcon, drawNpc, drawPanel } from './ui';
+import type { StandingList } from './standing';
 
-export function drawCamps(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
+/** The R1 cookfire (docs/12), standing among the characters at its place on the field. */
+export function standingCamps(list: StandingList, b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
   if (s.beatIndex < 0 || s.nextClump <= s.beatIndex) return;
   const c = s.plan[s.beatIndex];
   if (c.beat !== 'R1') return;
-  const sx = Math.round(c.x - camX), sy = Math.round(FIELD_Y0 + c.y + oy);
+  const sx = Math.round(c.x - camX);
   if (sx < -40 || sx > VIEW_W + 40) return;
+  list.push(c.y, () => drawCookfire(b, S, s, sx, Math.round(FIELD_Y0 + c.y + oy)));
+}
+
+function drawCookfire(b: Batcher, S: Sprites, s: GameState, sx: number, sy: number): void {
   const px = (x: number, y: number, w: number, h: number, color: number, a = 1) => b.drawScaled(S.px, sx + x, sy + y, w, h, hex(color, a));
   const t = s.tick;
   // scorched ground and the glow it throws
@@ -42,10 +48,14 @@ export function drawCamps(b: Batcher, S: Sprites, s: GameState, camX: number, oy
  * The store between levels: the peddler's stall, standing halfway along the road's turn between two levels
  * (the scenery under it is the road's, see `Scenery`).
  */
-export function drawStore(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
-  const sx = Math.round(s.shopX + STORE_X - camX), sy = Math.round(FIELD_Y0 + STORE_Y + oy);
-  const px = (x: number, y: number, w: number, h: number, color: number, a = 1) => b.drawScaled(S.px, x, y, w, h, hex(color, a));
+export function standingStore(list: StandingList, b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
+  const sx = Math.round(s.shopX + STORE_X - camX);
   if (sx < -140 || sx > VIEW_W + 140) return;
+  list.push(STORE_Y, () => drawStall(b, S, s, sx, Math.round(FIELD_Y0 + STORE_Y + oy)));
+}
+
+function drawStall(b: Batcher, S: Sprites, s: GameState, sx: number, sy: number): void {
+  const px = (x: number, y: number, w: number, h: number, color: number, a = 1) => b.drawScaled(S.px, x, y, w, h, hex(color, a));
   // the stall: a counter in front of him, an awning over him on two poles, crates at the side
   px(sx - 36, sy - 40, 3, 40, 0x4a3220);
   px(sx + 33, sy - 40, 3, 40, 0x4a3220);
@@ -82,30 +92,40 @@ export interface StoreView {
 
 /** The goods on the ground with their prices beside them, a panel over the one a hero stands next to (what it is, what it does, what it
  * would do for each hero there and the button that buys it, like the quest-givers'), and a line over a ware just tried. */
-export function drawStoreWares(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: StoreView | undefined, hints: readonly string[] | undefined): void {
+/** The goods on the ground, each standing among the characters with its price beside it. */
+export function standingWares(list: StandingList, b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: StoreView | undefined): void {
   if (!view) return;
   const t = s.tick;
-  let panel = -1;
   view.wares.forEach((w, i) => {
     const sx = Math.round(w.x - camX), sy = Math.round(FIELD_Y0 + w.y + oy);
     if (sx < -40 || sx > VIEW_W + 40) return;
-    const price = String(w.price);
-    const priceW = (price.length + 2) * 4; // the coin and a space, then the digits
-    if (w.sold) {
-      drawText(b, S, 'SOLD', sx - 8, sy - 6, hex(0x8a8f99));
-      return;
-    }
+    const nearBy = view.near.some((n) => n === i);
+    list.push(w.y, () => {
+      if (w.sold) { drawText(b, S, 'SOLD', sx - 8, sy - 6, hex(0x8a8f99)); return; }
+      const price = String(w.price);
+      const priceW = (price.length + 2) * 4; // the coin and a space, then the digits
+      // a pool of light on the ground under the ware, brighter when someone stands beside it
+      b.drawScaled(S.px, sx - 12, sy - 2, 24, 4, hex(0xffe9a8, nearBy ? 0.22 : 0.1));
+      const bob = Math.round(Math.sin(t / 14 + i * 1.7) * 1.5);
+      const icon = S.ui.icons[w.icon];
+      const scale = 2;
+      if (icon) { const iw = icon.w * scale, ih = icon.h * scale; b.drawScaled(S.px, sx - iw / 2, sy + 1, iw, 2, hex(0x000000, 0.3)); b.drawScaled(icon, sx - iw / 2, sy - ih - 2 + bob, iw, ih); }
+      // the price beside it, in red when the purse cannot cover it
+      drawIcon(b, S, 'coin', sx - Math.round(priceW / 2), sy + 6, 1);
+      drawText(b, S, price, sx - Math.round(priceW / 2) + 12, sy + 6, hex(w.afford ? 0xffd35a : 0xe2564a));
+    });
+  });
+}
+
+/** Over the goods, on top of everything: the panel over the one a hero stands beside, the short form over another, a line over a ware just tried. */
+export function drawStoreWares(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: StoreView | undefined, hints: readonly string[] | undefined): void {
+  if (!view) return;
+  let panel = -1;
+  view.wares.forEach((w, i) => {
+    const sx = Math.round(w.x - camX), sy = Math.round(FIELD_Y0 + w.y + oy);
+    if (sx < -40 || sx > VIEW_W + 40 || w.sold) return;
     const nearBy = view.near.some((n) => n === i);
     if (nearBy && panel < 0) panel = i;
-    // a pool of light on the ground under the ware, brighter when someone stands beside it
-    b.drawScaled(S.px, sx - 12, sy - 2, 24, 4, hex(0xffe9a8, nearBy ? 0.22 : 0.1));
-    const bob = Math.round(Math.sin(t / 14 + i * 1.7) * 1.5);
-    const icon = S.ui.icons[w.icon];
-    const scale = 2;
-    if (icon) { const iw = icon.w * scale, ih = icon.h * scale; b.drawScaled(S.px, sx - iw / 2, sy + 1, iw, 2, hex(0x000000, 0.3)); b.drawScaled(icon, sx - iw / 2, sy - ih - 2 + bob, iw, ih); }
-    // the price beside it, in red when the purse cannot cover it
-    drawIcon(b, S, 'coin', sx - Math.round(priceW / 2), sy + 6, 1);
-    drawText(b, S, price, sx - Math.round(priceW / 2) + 12, sy + 6, hex(w.afford ? 0xffd35a : 0xe2564a));
     // a second hero beside another ware gets the short form: its name and their button
     if (nearBy && panel !== i) {
       drawText(b, S, w.name, Math.round(sx - w.name.length * 2), sy - 36, 0xffffffff);
@@ -158,7 +178,8 @@ export function drawStoreHints(b: Batcher, S: Sprites, s: GameState, camX: numbe
 }
 
 /** A camp's gift: two boons on stone pedestals, each hero to take one (the panel over the one a hero stands beside says what it does). */
-export function drawGifts(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: StoreView | undefined, hints: readonly string[] | undefined): void {
+/** A camp's gift: two boons on stone pedestals, standing among the characters, each with its name and the marks of those who took it. */
+export function standingGifts(list: StandingList, b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: StoreView | undefined): void {
   if (!view?.gifts?.length) return;
   const t = s.tick;
   const px = (x: number, y: number, w: number, h: number, c: number, a = 1) => b.drawScaled(S.px, x, y, w, h, hex(c, a));
@@ -166,15 +187,26 @@ export function drawGifts(b: Batcher, S: Sprites, s: GameState, camX: number, oy
     const sx = Math.round(g.x - camX), sy = Math.round(FIELD_Y0 + g.y + oy);
     if (sx < -60 || sx > VIEW_W + 60) return;
     const near = view.giftNear?.some((n) => n === i) ?? false;
-    // the pedestal
-    px(sx - 9, sy - 10, 18, 12, 0x6a6660); px(sx - 9, sy - 10, 18, 2, 0x9a968e); px(sx - 11, sy, 22, 3, 0x4e4a46);
-    b.drawScaled(S.px, sx - 14, sy + 2, 28, 4, hex(0x9ed0ff, near ? 0.25 : 0.1));
-    const icon = S.ui.icons[g.icon];
-    const bob = Math.round(Math.sin(t / 16 + i * 2.1) * 1.5);
-    if (icon) b.drawScaled(icon, sx - icon.w, sy - 12 - icon.h * 2 + bob, icon.w * 2, icon.h * 2);
-    drawText(b, S, g.name, Math.round(sx - g.name.length * 2), sy + 6, hex(0xcfe8ff));
-    // who took this one: a mark in their colour
-    g.takenBy.forEach((k, n) => px(sx - 9 + n * 6, sy + 15, 4, 4, PLAYER_COLORS[k]));
+    list.push(g.y, () => {
+      px(sx - 9, sy - 10, 18, 12, 0x6a6660); px(sx - 9, sy - 10, 18, 2, 0x9a968e); px(sx - 11, sy, 22, 3, 0x4e4a46);
+      b.drawScaled(S.px, sx - 14, sy + 2, 28, 4, hex(0x9ed0ff, near ? 0.25 : 0.1));
+      const icon = S.ui.icons[g.icon];
+      const bob = Math.round(Math.sin(t / 16 + i * 2.1) * 1.5);
+      if (icon) b.drawScaled(icon, sx - icon.w, sy - 12 - icon.h * 2 + bob, icon.w * 2, icon.h * 2);
+      drawText(b, S, g.name, Math.round(sx - g.name.length * 2), sy + 6, hex(0xcfe8ff));
+      // who took this one: a mark in their colour
+      g.takenBy.forEach((k, n) => px(sx - 9 + n * 6, sy + 15, 4, 4, PLAYER_COLORS[k]));
+    });
+  });
+}
+
+/** Over a camp's gift, on top of everything: the panel over the one a hero stands beside, and a line just said. */
+export function drawGifts(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: StoreView | undefined, hints: readonly string[] | undefined): void {
+  if (!view?.gifts?.length) return;
+  view.gifts.forEach((g, i) => {
+    const sx = Math.round(g.x - camX), sy = Math.round(FIELD_Y0 + g.y + oy);
+    if (sx < -60 || sx > VIEW_W + 60) return;
+    const near = view.giftNear?.some((n) => n === i) ?? false;
     if (!near) return;
     const lines = [...g.text];
     const rows: { text: string; color: number }[] = [];

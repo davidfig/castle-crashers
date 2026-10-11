@@ -75,8 +75,12 @@ const BEAT_T = 0.3;
 const BEAT_T_EARLY = 0.12;
 const BEAT_STREAM = 5000;
 
-/** Encounters are spawned this far past the right edge of the screen, i.e. out of sight. */
-export const STREAM_AHEAD = 520;
+/** Encounters are spawned this far past the right edge of the screen, i.e. out of sight (a crowd's spread, `CROWD_SPREAD`, still keeps them
+ * there). Closer than it once was (520): on the road a horde streams in as the camera reaches it, and a foe that spawns far off is a long walk
+ * of waiting for the party (docs/21-the-road.md, "The balance pass"). */
+export const STREAM_AHEAD = 300;
+/** A crowd spawned off screen keeps its nearest member this far beyond the right edge. */
+export const SPAWN_MARGIN = 24;
 /** Streaming waits until the opening seconds are over, so players who join right away are counted. */
 export const STREAM_DELAY_TICKS = 120;
 
@@ -188,7 +192,7 @@ function spawnBoss(s: GameState, plan: ClumpPlan, index: number, scale: number):
   const def = MOBS[type];
   const b = def.boss!;
   const n = Math.max(1, Math.min(4, activePlayers(s)));
-  const hp = def.hp * b.hpScale[n - 1];
+  const hp = def.hp * b.hpScale[n - 1] * (s.road?.bossHp ?? 1);
   const i = allocEntity(s.ents, Kind.Mob, type, plan.x, WORLD_H / 2, hp);
   if (i < 0) return;
   const e = s.ents;
@@ -281,8 +285,14 @@ function spawnSurrendered(s: GameState, plan: ClumpPlan): void {
 }
 
 /** Spawn one planned encounter for a party of the given scale. */
-export function spawnClump(s: GameState, index: number, scale: number): void {
-  const plan = s.plan[index];
+/** How far an ordinary crowd's members stray from its centre, for a party of `scale` (a line is narrow, a blob wide: see `spawnClump`). */
+export function crowdSpread(plan: ClumpPlan, scale: number): number {
+  return plan.line ? 18 * Math.sqrt(scale) : 24 + plan.size * 0.9 * Math.sqrt(scale);
+}
+
+/** Spawn one planned encounter for a party of the given scale, its centre moved `dx` along the field (see `streamLevel`). */
+export function spawnClump(s: GameState, index: number, scale: number, dx = 0): void {
+  const plan = dx === 0 ? s.plan[index] : { ...s.plan[index], x: s.plan[index].x + dx };
   if (plan.boss) { spawnBoss(s, plan, index, scale); return; }
   if (plan.elite) { spawnMiniBoss(s, plan, index, scale); return; }
   if (plan.scene) return; // the road scene is staged by the renderer; the sim only keeps the road clear
@@ -324,6 +334,9 @@ export function sceneHold(s: GameState): boolean {
 /** Called every tick: spawn the encounters the camera is about to reach, sized for the current party. */
 export function streamLevel(s: GameState): void {
   if (s.tick < STREAM_DELAY_TICKS || s.tutorialHold) return;
+  // On the road nothing streams in while the party is in a calm place (a camp, a scene, a town): the horde would walk in on whoever is
+  // shopping or listening. It streams in the moment the party has left, from just off the edge of the screen (below).
+  if (s.road && s.road.calm >= 0) return;
   const scale = partyScale(activePlayers(s));
   const horizon = s.camX + VIEW_W + STREAM_AHEAD;
   while (s.nextClump < s.plan.length) {
@@ -334,7 +347,13 @@ export function streamLevel(s: GameState): void {
     // (on a run's one road the scene has ground of its own, far enough from the next encounter that nothing need wait: sim/gen/road.ts)
     if (!s.road && s.sceneIndex >= 0 && s.nextClump > s.sceneIndex && s.camX + VIEW_W / 2 < sceneX(s) + SCENE_RELEASE) break;
     if (s.ents.capacity - s.ents.count < 400) return; // entity budget: try again once things have been cleared
-    spawnClump(s, s.nextClump, scale);
+    // A crowd never appears on screen: if its place on the plan is already inside the view (the party was held in a calm place, or a gate
+    // held the camera back), it is spawned just beyond the right edge instead and walks in, as the rest of the horde does.
+    let dx = 0;
+    if (s.road && !next.boss && !next.elite && !next.scene && next.beat === undefined) {
+      dx = Math.max(0, s.camX + VIEW_W + SPAWN_MARGIN + crowdSpread(next, scale) - next.x);
+    }
+    spawnClump(s, s.nextClump, scale, dx);
     s.nextClump++;
   }
 }

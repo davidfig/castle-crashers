@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Pilot } from '../ai/pilot';
 import { resolveSkill } from '../ai/skill';
 import { levelPlan, ROUTE_LEVELS } from '../campaign/route';
-import { VIEW_W, WORLD_W } from './constants';
+import { ROAD_STRIDE, VIEW_W, WORLD_W } from './constants';
 import { MOBS, MobType } from '../data/mobs';
 import { allocEntity, BYSTANDER, Kind, SURRENDERED } from './entities';
 import { activatePlayer } from './state';
@@ -45,12 +45,11 @@ test('every encounter keeps clear of every calm place: far enough past one to st
   }
 });
 
-test('the road grows: calm places push the fighting apart instead of clearing it away', () => {
+test('the road grows around its calm places, and no longer than the old levels and stores did', () => {
   const lay = layoutRoad(5, ROUTE_LEVELS);
-  for (let k = 1; k < lay.levels.length; k++) assert.ok(lay.levels[k].slices[0].dx > lay.levels[k - 1].slices[0].dx + WORLD_W, `level ${k} starts past the whole of level ${k - 1}`);
-  const ordinary = ROUTE_LEVELS * WORLD_W;
-  assert.ok(lay.length > ordinary, `the road (${Math.round(lay.length)} px) is longer than its levels end to end (${ordinary})`);
-  assert.ok(lay.length < ordinary * 2.2, `but not absurdly (${Math.round(lay.length)} px)`);
+  for (let k = 1; k < lay.levels.length; k++) assert.ok(lay.levels[k].slices[0].dx > lay.levels[k - 1].slices[lay.levels[k - 1].slices.length - 1].dx, `level ${k} begins after level ${k - 1}`);
+  assert.ok(lay.calm.length >= ROUTE_LEVELS, 'a camp after every level but the last, and road scenes');
+  assert.ok(lay.length < ROUTE_LEVELS * ROAD_STRIDE, `the road (${Math.round(lay.length)} px) is shorter than the old route (${ROUTE_LEVELS * ROAD_STRIDE}): the empty ground is kept as short as the guarantees allow`);
   const b = stageBounds(lay);
   assert.equal(b.length, ROUTE_LEVELS / 3 + 1);
   assert.ok(b.every((x, i) => i === 0 || x > b[i - 1]), 'each biome\'s stretch begins after the last');
@@ -87,7 +86,7 @@ test('each level on the road is the level it would have been on its own, cut at 
 /** An expert simulated player walks a road of `total` levels, recording each part of the road and what was on screen in the calm places. */
 interface Part { level: number; calm: string; damage: number; biome: number; streamed: number; hostileOnScreen: number; popIns: number }
 function walkRoad(seed: number, total: number, cap: number): { s: GameState; won: boolean; parts: Part[]; bought: number; scenesLeft: number[] } {
-  const s = createSim(seed, undefined, { road: { total } });
+  const s = createSim(seed, undefined, { road: { total, hard: 0.7 } }); // (the road's flow, not its difficulty: an easier road than the base game's)
   const pilot = new Pilot(0, resolveSkill('expert'), seed);
   const f = [0, 1, 2, 3].map(createInputFrame);
   const parts: Part[] = [];
@@ -137,7 +136,7 @@ test('a simulated player walks the whole road in one sim, through every level, s
 test('each level plays with its own damage and biome, as its level plan says', () => {
   for (const p of run.parts.filter((q) => !q.calm)) {
     const lp = roadLevel(run.s.road!, p.level);
-    assert.equal(p.damage, lp.damage, `level ${p.level} damage`);
+    assert.equal(p.damage, lp.damage * run.s.road!.hard, `level ${p.level} damage`);
     assert.equal(p.biome, lp.biome, `level ${p.level} biome`);
   }
 });
@@ -323,4 +322,79 @@ test('the party rests at a camp: on its feet, at full health, rid of what ailed 
   assert.equal(s.players[0].poisonT, 0);
   assert.equal(s.players[1].downed, false);
   assert.equal(s.ents.hp[s.players[1].ent], s.ents.maxhp[s.players[1].ent]);
+});
+
+// ---- Empty ground kept short (docs/21-the-road.md, step 7 and the balance pass)
+
+test('nothing streams in while the party is in a calm place, and the crowd after it appears just off the right edge the moment it leaves', () => {
+  const s = createSim(23, undefined, { road: { total: 3 } });
+  s.road!.town = false;
+  const camp = s.road!.layout.calm.find((c) => c.kind === 'camp')!;
+  s.tick = 300;
+  // in the camp, with the next crowd's place on the plan well inside the view (the road no longer puts it far away)
+  centreAt(s, (camp.from + camp.to) / 2);
+  const before = s.nextClump;
+  const next = s.plan[before];
+  assert.ok(next, 'a crowd is planned after the camp');
+  for (let t = 0; t < 30; t++) step(s, [0, 1, 2, 3].map(createInputFrame));
+  assert.equal(s.nextClump, before, 'nothing streams in while the party is in the camp');
+  // the party walks out of the camp
+  const mobsBefore = new Set<number>();
+  for (let i = 0; i < s.ents.highWater; i++) if (s.ents.alive[i] && s.ents.kind[i] === Kind.Mob) mobsBefore.add(i);
+  centreAt(s, camp.to + 4);
+  assert.ok(s.nextClump > before, 'the crowd streams in as the party leaves');
+  let nearest = Infinity;
+  for (let i = 0; i < s.ents.highWater; i++) {
+    if (!s.ents.alive[i] || s.ents.kind[i] !== Kind.Mob || mobsBefore.has(i)) continue;
+    nearest = Math.min(nearest, s.ents.x[i] - (s.camX + VIEW_W));
+  }
+  assert.ok(nearest >= 0 && Number.isFinite(nearest), `every new mob is beyond the right edge (the nearest ${Math.round(nearest)} px past it)`);
+});
+
+test('a camp\'s people and goods are set out before the party can see them', () => {
+  const s = createSim(23, undefined, { road: { total: 3 } });
+  s.road!.town = false;
+  const camp = s.road!.layout.calm.find((c) => c.kind === 'camp')!;
+  // the camera's right edge has only just reached the stall's ground: the goods exist, and nothing of the camp is yet on screen
+  s.tick = 300;
+  s.camX = s.prevCamX = s.camMax = s.trigCamX = camp.from - 700;
+  step(s, [0, 1, 2, 3].map(createInputFrame));
+  assert.equal(s.wares.length, 4);
+  assert.equal(s.offers.length, 3);
+  assert.equal(s.gifts.length, 2);
+  const firstThing = Math.min(s.shopX + 430, s.shopX + 520); // the first quest-giver and the first gift
+  assert.ok(firstThing > s.camX + VIEW_W, 'they stand beyond the right edge of the screen');
+});
+
+test('the last crowd before every calm place holds the party with a gate: nobody walks into a camp or a scene with a fight still on', () => {
+  for (const seed of [3, 9, 14]) {
+    const s = plannedRoad(seed, ROUTE_LEVELS);
+    for (const p of s.road!.layout.calm) {
+      if (p.kind !== 'camp' && p.kind !== 'scene') continue;
+      let last = -1;
+      s.plan.forEach((c, i) => { if (!c.scene && c.beat === undefined && c.x < p.from && (last < 0 || c.x > s.plan[last].x)) last = i; });
+      assert.ok(last >= 0);
+      assert.ok(s.gates.some((g) => g.clump === last && g.x < p.from), `seed ${seed}: the last crowd before the ${p.kind} at ${Math.round(p.from)} has a gate`);
+    }
+  }
+});
+
+test('progress made while the director is held back near a calm place is banked, and paid out as packs once the party has moved on', () => {
+  const s = createSim(23, undefined, { road: { total: 3 } });
+  s.road!.town = false;
+  s.tick = 300;
+  const scene = s.road!.layout.calm.find((c) => c.kind === 'scene')!;
+  // walking the last stretch before the scene: the calm place is on the screen, so no packs, but the progress counts
+  for (let x = scene.from - 700; x < scene.from - 300; x += 40) centreAt(s, x);
+  assert.ok(s.packDebt > 0, `the held-back progress is banked (${s.packDebt})`);
+  assert.ok(s.flankDebt > 0);
+  // in the widest stretch where no calm place is near the screen, the debt is paid out as the party walks
+  const owed = s.packDebt;
+  const calm = s.road!.layout.calm;
+  let best = 0;
+  for (let i = 1; i + 1 < calm.length; i++) if (calm[i + 1].from - calm[i].to > calm[best + 1 < calm.length ? best + 1 : 0].from - calm[best].to) best = i;
+  const lo = calm[best].to + VIEW_W / 2, hi = calm[best + 1].from - VIEW_W / 2 - 100;
+  assert.ok(hi > lo, 'there is a stretch clear of calm places');
+  for (let x = lo; x < Math.min(hi, lo + 300); x += 20) centreAt(s, x);
+  assert.ok(s.packDebt < owed, 'and it is paid out once the party has moved on');
 });

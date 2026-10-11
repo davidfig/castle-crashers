@@ -103,6 +103,21 @@ export function shovePlayer(s: GameState, slot: number, dx: number, dy: number, 
 }
 
 /**
+ * Where a hero will be `ticks` from now if they keep going the way they are: the spot a thrown or dropped area is aimed at. Heroes outrun anything that has to
+ * walk to them, so an area dropped where they stand is dodged by simply running on; aimed ahead of a runner it catches one who never changes course, and a
+ * hero beats it by turning, stopping or rolling. `LEAD` is how much of the run it counts on and `LEAD_MAX` how far ahead it will look (px).
+ */
+const LEAD = 0.75;
+const LEAD_MAX = 56;
+function leadPoint(s: GameState, tp: number, ticks: number): [number, number] {
+  const e = s.ents;
+  let dx = (e.x[tp] - e.px[tp]) * ticks * LEAD, dy = (e.y[tp] - e.py[tp]) * ticks * LEAD;
+  const len = Math.hypot(dx, dy);
+  if (len > LEAD_MAX) { dx *= LEAD_MAX / len; dy *= LEAD_MAX / len; }
+  return [clamp(e.x[tp] + dx, s.camX + 8, s.camX + VIEW_W - 8), clamp(e.y[tp] + dy, 6, WORLD_H - 6)];
+}
+
+/**
  * Called once the mob is free to act and its special is off cooldown. Starts the telegraph (and returns true) when the
  * situation calls for the move; otherwise returns false and the mob goes on with its ordinary behaviour.
  */
@@ -118,8 +133,7 @@ export function startSpecialOf(s: GameState, i: number, sp: Special, target: num
   switch (sp.kind) {
     case 'lob':
       if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
-      e.ax[i] = e.x[tp]; // the rock lands where the hero stands now; moving away dodges it
-      e.ay[i] = e.y[tp];
+      [e.ax[i], e.ay[i]] = leadPoint(s, tp, sp.windup + sp.delay); // the rock lands where the hero is heading; turning or stopping dodges it
       break;
     case 'beam':
       if (!onScreen(s, x) || dist > sp.range) return false;
@@ -146,8 +160,7 @@ export function startSpecialOf(s: GameState, i: number, sp: Special, target: num
     case 'storm':
       if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
       if (sp.cap !== undefined && countZones(s, ZoneKind.Storm) + countZones(s, ZoneKind.Frost) + stormsCasting(s) * (sp.count ?? 1) + (sp.count ?? 1) > Math.round(sp.cap * partyScale(activePlayers(s)))) { e.cool2[i] = 40; return false; }
-      e.ax[i] = e.x[tp];
-      e.ay[i] = e.y[tp];
+      [e.ax[i], e.ay[i]] = leadPoint(s, tp, sp.windup + sp.delay);
       break;
     case 'whiteout':
     case 'wail':
@@ -166,14 +179,12 @@ export function startSpecialOf(s: GameState, i: number, sp: Special, target: num
     case 'hex':
     case 'dazzle':
       if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
-      e.ax[i] = e.x[tp]; // the mark lands where the hero stands now; moving away dodges it
-      e.ay[i] = e.y[tp];
+      [e.ax[i], e.ay[i]] = leadPoint(s, tp, sp.windup); // the mark lands where the hero is heading
       break;
     case 'pit':
       if (!onScreen(s, x) || dist < sp.minRange || dist > sp.maxRange) return false;
       if (countZones(s, ZoneKind.Pit) >= Math.round(4 * partyScale(activePlayers(s)))) { e.cool2[i] = 40; return false; }
-      e.ax[i] = e.x[tp];
-      e.ay[i] = e.y[tp];
+      [e.ax[i], e.ay[i]] = leadPoint(s, tp, sp.windup + sp.delay);
       break;
     case 'bolt':
     case 'cone':

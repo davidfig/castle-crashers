@@ -14,6 +14,7 @@ import type { Sprites } from './art';
 import { FIELD_Y0 } from './background';
 import { drawText } from './draw';
 import { getWorld } from './sceneryWorld';
+import type { StandingList } from './standing';
 
 /** Field y of the upper and the lower road's signposts. */
 const SIGN_Y = [WORLD_H * 0.22, WORLD_H * 0.8];
@@ -32,12 +33,11 @@ function placeName(biome: number, stage: number): { place: string; boss: string 
   return { place: biomeName(biome, tone).toUpperCase(), boss };
 }
 
-/** The ground of a crossroads: the two signposts and the stones between the roads (under the heroes). */
+/** The ground of a crossroads: the stones between the roads (flat on the ground, under the heroes). */
 export function drawForkGround(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
   const f = forkInView(s, camX);
   if (!f) return;
   const px = (x: number, y: number, w: number, h: number, c: number, a = 1) => b.drawScaled(S.px, Math.round(x), Math.round(y), w, h, hex(c, a));
-  const chosen = s.road!.choices.length >= f.stage! ? s.road!.choices[f.stage! - 1] : -1;
   // the stones down the middle, from the signposts to the line where the choice is counted
   const mid = FIELD_Y0 + oy + WORLD_H / 2;
   for (let x = f.from + FORK_SIGNS + 40; x < f.commit! + 30; x += 18) {
@@ -45,34 +45,41 @@ export function drawForkGround(b: Batcher, S: Sprites, s: GameState, camX: numbe
     px(sx, mid - h, 8, h + 2, 0x5a5650);
     px(sx + 1, mid - h, 6, 1, 0x8a867e);
   }
+}
+
+/** The two signposts, standing among the characters (a hero walking behind one is hidden by it), each with the words on its board. */
+export function standingForkSigns(list: StandingList, b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
+  const f = forkInView(s, camX);
+  if (!f) return;
+  const px = (x: number, y: number, w: number, h: number, c: number, a = 1) => b.drawScaled(S.px, Math.round(x), Math.round(y), w, h, hex(c, a));
+  const chosen = s.road!.choices.length >= f.stage! ? s.road!.choices[f.stage! - 1] : -1;
   for (let side = 0; side < 2; side++) {
-    const sx = f.from + FORK_SIGNS - camX, sy = FIELD_Y0 + oy + SIGN_Y[side];
-    const dim = chosen >= 0 && chosen !== side;
-    px(sx - 1, sy - 30, 3, 30, dim ? 0x3a2a1c : 0x5a3e24); // the post
-    px(sx - 22, sy - 34, 44, 12, 0x000000, 0.35);
-    px(sx - 21, sy - 35, 42, 10, dim ? 0x4a3a2a : chosen === side ? 0xb08a4a : 0x8a6a3c); // the board
-    px(sx + 21, sy - 33, 4, 6, dim ? 0x4a3a2a : chosen === side ? 0xb08a4a : 0x8a6a3c); // its pointed end
-    px(sx - 21, sy - 35, 42, 1, 0xc8a870, dim ? 0.3 : 1);
+    list.push(SIGN_Y[side], () => {
+      const sx = f.from + FORK_SIGNS - camX, sy = FIELD_Y0 + oy + SIGN_Y[side];
+      const dim = chosen >= 0 && chosen !== side;
+      px(sx - 1, sy - 30, 3, 30, dim ? 0x3a2a1c : 0x5a3e24); // the post
+      px(sx - 22, sy - 34, 44, 12, 0x000000, 0.35);
+      px(sx - 21, sy - 35, 42, 10, dim ? 0x4a3a2a : chosen === side ? 0xb08a4a : 0x8a6a3c); // the board
+      px(sx + 21, sy - 33, 4, 6, dim ? 0x4a3a2a : chosen === side ? 0xb08a4a : 0x8a6a3c); // its pointed end
+      px(sx - 21, sy - 35, 42, 1, 0xc8a870, dim ? 0.3 : 1);
+      // where the road leads, and whose lair is at its end
+      const { place, boss } = placeName(f.options![side], f.stage!);
+      const c = hex(dim ? 0x6a6a6a : chosen === side ? 0xffe9a8 : 0xffffff);
+      [place, boss ? `LAIR: ${boss}` : ''].filter(Boolean).forEach((t, i) => {
+        const w = t.length * 4 + 6;
+        b.drawScaled(S.px, Math.round(sx) + 30, Math.round(sy) - 38 + i * 9, w, 9, hex(0x000000, 0.55));
+        drawText(b, S, t, Math.round(sx) + 33, Math.round(sy) - 36 + i * 9, c);
+      });
+    });
   }
 }
 
 /** The signposts' words: where each road leads, whose lair is at its end, and what to do (over the heroes). */
+/** What to do at the crossroads, on top of everything. */
 export function drawForkLabels(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number): void {
   const f = forkInView(s, camX);
   if (!f) return;
   const chosen = s.road!.choices.length >= f.stage! ? s.road!.choices[f.stage! - 1] : -1;
-  for (let side = 0; side < 2; side++) {
-    const { place, boss } = placeName(f.options![side], f.stage!);
-    const sx = Math.round(f.from + FORK_SIGNS - camX), sy = Math.round(FIELD_Y0 + oy + SIGN_Y[side]);
-    const dim = chosen >= 0 && chosen !== side;
-    const c = hex(dim ? 0x6a6a6a : chosen === side ? 0xffe9a8 : 0xffffff);
-    const lines = [place, boss ? `LAIR: ${boss}` : ''].filter(Boolean);
-    lines.forEach((t, i) => {
-      const w = t.length * 4 + 6;
-      b.drawScaled(S.px, sx + 30, sy - 38 + i * 9, w, 9, hex(0x000000, 0.55));
-      drawText(b, S, t, sx + 33, sy - 36 + i * 9, c);
-    });
-  }
   const hint = chosen < 0 ? 'UP OR DOWN: CHOOSE YOUR ROAD' : `THE PARTY TAKES THE ${chosen === 0 ? 'UPPER' : 'LOWER'} ROAD`;
   const hx = Math.round(f.from + FORK_SIGNS + 60 - camX), hy = Math.round(FIELD_Y0 + oy + WORLD_H / 2 - 18);
   b.drawScaled(S.px, hx - 3, hy - 2, hint.length * 4 + 6, 9, hex(0x000000, 0.5));

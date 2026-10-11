@@ -2,6 +2,7 @@
 // combination: SIZE (reach / blast), COUNT (more arcs, shots or splits), SPEED (flies faster / recovers quicker) and POWER (damage).
 // Each rank makes the ability better and makes it cost more stamina, so a hero who stacks all four pays for it. The numbers live
 // here; the cards (data/upgrades.ts) say what they mean for each class.
+import { TRACK_BOONS } from '../data/skills';
 import { UPGRADE_INDEX } from '../data/upgrades';
 
 /** 0 = the basic attack, 1 = the special (ability 2), 2 = the nova (ability 1, paid in fury: quake, rain), 3 = the dodge (paid in stamina). */
@@ -9,12 +10,7 @@ export type AbilityKind = 0 | 1 | 2 | 3;
 /** 0 size, 1 count, 2 speed, 3 power. */
 export type Track = 0 | 1 | 2 | 3;
 
-export const TRACK_IDS: readonly (readonly string[])[] = [
-  ['bsize', 'bcount', 'bspeed', 'bpower'],
-  ['ssize', 'scount', 'sspeed', 'spower'],
-  ['nsize', 'ncount', 'nspeed', 'npower'],
-  ['dsize', 'dcount', 'dspeed', 'dpower'],
-];
+export const TRACK_IDS: readonly (readonly string[])[] = TRACK_BOONS;
 const INDEX: readonly (readonly number[])[] = TRACK_IDS.map((ids) => ids.map((id) => UPGRADE_INDEX[id]));
 
 /** Stamina cost added per rank, as a fraction of the base cost, by track. */

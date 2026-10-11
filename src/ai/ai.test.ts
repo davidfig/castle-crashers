@@ -209,7 +209,7 @@ test('damage is attributed to what dealt it', () => {
 });
 
 test('a route is a pure function of its options, and levels, stores and carry all happen', () => {
-  const opts = { seed: 7, party: [{ classId: 'warrior', skill: 'expert' }], levels: 2 };
+  const opts = { seed: 7, party: [{ classId: 'warrior', skill: 'expert' }], levels: 2, hard: 1 }; // (plumbing, not difficulty)
   const a = runRoute(opts), b = runRoute(opts);
   assert.deepEqual(a, b);
   assert.equal(a.outcome, 'won');

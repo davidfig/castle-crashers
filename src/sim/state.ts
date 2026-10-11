@@ -6,7 +6,8 @@ import { createGrid, type Grid } from './grid';
 import { CLASSES } from '../data/classes';
 import { MOBS } from '../data/mobs';
 import { UPGRADES } from '../data/upgrades';
-import { ARMOURY_UPGRADE, META_INDEX, TREASURY_GOLD } from '../data/meta';
+import { TREES, type TreeSave } from '../data/trees';
+import { META } from '../data/meta';
 import { biomeIndex } from '../data/roster';
 import { HEAT_MAX, heatHorde } from '../data/heat';
 import { placeSites } from './sites';
@@ -130,6 +131,54 @@ export interface PlayerState {
   plantT: number;
   /** The shaman's selected extra: an index into the class's `totems.extras`. */
   pick: number;
+  /** The skill in each of the four slots (swing, big swing, nova, dodge; data/skills.ts): 0 is the class's own. Rage switched on, and the Roar's ticks and reach left; ticks left of a Whirlwind's spin. */
+  loadout: Uint8Array;
+  spinT: number;
+  /** A Meteor marked: ticks until it lands, and where. */
+  meteorT: number;
+  meteorX: number;
+  meteorY: number;
+  /** A Sanctuary Ring standing: ticks left, where, how wide, how strong its mending is (1 = base). */
+  sanctT: number;
+  sanctX: number;
+  sanctY: number;
+  sanctR: number;
+  sanctPow: number;
+  /** Ticks left shielded by an Aegis Roll. */
+  aegisT: number;
+  /** The rogue's Smoke Bomb: ticks left, where, how wide. His Rapier's riposte: ticks left to land it. */
+  smokeT: number;
+  smokeX: number;
+  smokeY: number;
+  smokeR: number;
+  riposteT: number;
+  /** The archer's Charged Shot: ticks the bow has been drawn. */
+  drawT: number;
+  /** A patch of ground left behind (sim/patches.ts): ticks left, where, how wide, damage and stun it deals every `patchEvery` ticks, a trap that springs once, how it is drawn. */
+  patchT: number;
+  patchX: number;
+  patchY: number;
+  patchR: number;
+  patchDmg: number;
+  patchStun: number;
+  patchEvery: number;
+  patchOnce: number;
+  patchLook: number;
+  rageOn: boolean;
+  roarT: number;
+  roarR: number;
+  /** The Planted Standard: ticks left, where it stands, its reach and its strength (1 = base). */
+  stdT: number;
+  stdX: number;
+  stdY: number;
+  stdR: number;
+  stdPow: number;
+  /** Hard Knocks (Guardian): hits taken lately (up to 3) and ticks left before they fade. */
+  knockN: number;
+  knockT: number;
+  /** The class tree is open in the town (the hero can do nothing else), and the buttons held last tick for its edges. The cursor is `cursor`. */
+  treeOpen: boolean;
+  treePrev: number;
 }
 
 /** A good lying on a camp's ground (data/wares.ts), and whether someone has bought it (each is one of a kind). */
@@ -219,6 +268,9 @@ export interface GameState {
   trigCamX: number;
   /** Px of forward progress until the next flank wave (packs entering over the top/bottom edges). */
   flankTimer: number;
+  /** Progress made while the director was held back near a calm place (docs/21-the-road.md): the packs and waves it owes, paid out gradually once the party has moved on. */
+  packDebt: number;
+  flankDebt: number;
   /** Pending bomber explosions: [x, y, ownerSlot, harmsPlayers] * BLAST_CAP. */
   blasts: Float64Array;
   blastN: number;
@@ -244,6 +296,7 @@ function createPlayer(): PlayerState {
     fury: 50, combo: 0, comboTimer: 0, lungeT: 0, standT: 0, xp: 0, level: 1, pending: 0, panel: false, lock: false, rawPrev: 0, cursor: 0, stickPrev: 0, ranks: new Uint8Array(UPGRADES.length), boonCd: new Uint16Array(UPGRADES.length), stamina: 100, staminaDelay: 0, winded: false, cdSpecial: 0, bufAbility2: 0, slowT: 0,
     rootT: 0, dashChain: 0, chainT: 0, echoLeft: 0, echoT: 0, echoBig: false, silenceT: 0, confuseT: 0, poisonT: 0, burning: false, hexT: 0, witherT: 0, pullT: 0, pullX: 0, pullY: 0,
     rerolls: START_REROLLS, banishes: START_BANISHES, salt: 0, banned: new Uint8Array(UPGRADES.length), stickPrevY: 0, bufPlant: 0, plantT: 0, pick: 0,
+    loadout: new Uint8Array(4), spinT: 0, meteorT: 0, meteorX: 0, meteorY: 0, sanctT: 0, sanctX: 0, sanctY: 0, sanctR: 0, sanctPow: 1, aegisT: 0, smokeT: 0, smokeX: 0, smokeY: 0, smokeR: 0, riposteT: 0, drawT: 0, patchT: 0, patchX: 0, patchY: 0, patchR: 0, patchDmg: 0, patchStun: 0, patchEvery: 1, patchOnce: 0, patchLook: 0, rageOn: false, roarT: 0, roarR: 0, stdT: 0, stdX: 0, stdY: 0, stdR: 0, stdPow: 1, knockN: 0, knockT: 0, treeOpen: false, treePrev: 0,
   };
 }
 
@@ -255,12 +308,23 @@ export function activatePlayer(s: GameState, slot: number, x: number, y: number)
   p.ent = allocEntity(s.ents, Kind.Player, slot, x, y, cls.hp);
 }
 
-/** Lasting upgrades from the town (data/meta.ts) a hero sets out with: the Armoury's ranks of Thick Skin. */
+/**
+ * Lasting upgrades from the town (data/meta.ts) a hero sets out with: the level they begin at (with that many level-ups to choose in the
+ * field) and their tree's loadout. The stat places (Armoury, Forge, Stables) are multipliers on `RoadState.metaMul`, applied in the fight.
+ * Idempotent: a place built while heroes are in the town takes hold at once, and a hero never loses what they have.
+ */
 export function applyMeta(s: GameState, slot: number): void {
   const r = s.road;
   if (!r) return;
-  const p = s.players[slot], up = ARMOURY_UPGRADE, have = r.meta[META_INDEX.armoury] ?? 0;
-  p.ranks[up] = Math.min(UPGRADES[up].maxRank, Math.max(p.ranks[up], have));
+  const p = s.players[slot];
+  META.forEach((m, i) => {
+    const rank = r.meta[i] ?? 0;
+    if ('level' in m.gives && p.level < 1 + rank) {
+      p.pending += 1 + rank - p.level;
+      p.level = 1 + rank;
+    }
+  });
+  if (TREES[p.classId]) p.loadout.set(r.trees[p.classId].loadout); else p.loadout.fill(0); // the tree's equipped skills (data/trees)
 }
 
 /**
@@ -343,12 +407,12 @@ export interface SimOptions {
   /** The whole run as one road (docs/21-the-road.md): `total` levels with a camp after each but the last, planned from the run's seed
    *  (the sim's `seed`) as the party nears them. The per-level options (boss, scale, mix, damage, opener) then come from the road. It
    *  starts in the town, with the profile's renown to spend and the lasting upgrades bought so far (data/meta.ts, by index). */
-  road?: { total: number; renown?: number; meta?: readonly number[]; /** A story beat the first level stages (docs/12, R1: the cookfire). */ beat?: SimBeat };
+  road?: { total: number; renown?: number; meta?: readonly number[]; /** The class trees' owned nodes, active branches and equipped skill (data/trees). */ trees?: readonly TreeSave[]; /** A story beat the first level stages (docs/12, R1: the cookfire). */ beat?: SimBeat; /** The horde's size and the bosses' health (defaults `ROAD_HORDE`, `ROAD_BOSS_HP`): tuning knobs for the balance probe. */ horde?: number; bossHp?: number; hard?: number };
 }
 
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
   const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
-  const road = opts.road ? createRoad(seed, opts.road.total, heat, opts.road.renown ?? 0, opts.road.meta ?? [], opts.road.beat) : null;
+  const road = opts.road ? createRoad(seed, opts.road.total, heat, opts.road.renown ?? 0, opts.road.meta ?? [], opts.road.beat, opts.road.horde, opts.road.bossHp, opts.road.trees, opts.road.hard) : null;
   const length = road ? road.layout.length : (opts.length ?? WORLD_W);
   const plan = road ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
   const s: GameState = {
@@ -390,7 +454,7 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     road,
     offers: [],
     questTaken: -1,
-    gold: road ? TREASURY_GOLD * (road.meta[META_INDEX.treasury] ?? 0) : 0,
+    gold: road ? META.reduce((a, m, i) => a + ('gold' in m.gives ? m.gives.gold * (road.meta[i] ?? 0) : 0), 0) : 0,
     heat,
     damageMul: opts.damage ?? 1,
     mix: opts.mix ?? [0, 1],
@@ -403,6 +467,8 @@ export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): 
     spawnTimer: 300,
     trigCamX: 0,
     flankTimer: 420,
+    packDebt: 0,
+    flankDebt: 0,
     blasts: new Float64Array(BLAST_CAP * 4),
     blastN: 0,
     procs: new Float64Array(PROC_CAP * 6),

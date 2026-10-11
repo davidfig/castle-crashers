@@ -1,5 +1,6 @@
 // Side quests, drawn (docs/15-quests.md): the people in the camp who offer them, the ward and the captive on the field, the marked brute,
 // and the tracker that follows the party. Purely presentation: it reads the sim and never feeds back.
+import type { StandingList } from './standing';
 import { QUEST_NPCS, npcName, missionText, questAsk, questGoalText, rewardText, type QuestArt, type QuestDef } from '../data/quests';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
@@ -68,16 +69,19 @@ function sword(b: Batcher, S: Sprites, hx: number, hy: number, dir: number, t: n
 }
 
 /** The quest-givers standing in the camp, under the creatures. */
-export function drawQuestGivers(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: QuestView | undefined): void {
+/** The quest-givers standing in a camp, among the characters in depth order (the glow and shadow at their feet go with them). */
+export function standingQuestGivers(list: StandingList, b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, view: QuestView | undefined): void {
   if (!view) return;
   view.offers.forEach((o, i) => {
     const sx = Math.round(o.x - camX), sy = Math.round(FIELD_Y0 + o.y + oy);
     if (sx < -40 || sx > VIEW_W + 40) return;
     const npc = QUEST_NPCS[o.def.npc];
     const nearBy = view.near.some((n) => n === i);
-    b.drawScaled(S.px, sx - 12, sy - 2, 24, 4, hex(0xffe9a8, nearBy ? 0.22 : view.taken === i ? 0.18 : 0.08));
-    b.drawScaled(S.px, sx - 7, sy - 2, 14, 3, hex(0x000000, 0.28));
-    figure(b, S, npc.art, sx, sy, false, nearBy || (s.tick >> 7) % 4 === i, s.tick);
+    list.push(o.y, () => {
+      b.drawScaled(S.px, sx - 12, sy - 2, 24, 4, hex(0xffe9a8, nearBy ? 0.22 : view.taken === i ? 0.18 : 0.08));
+      b.drawScaled(S.px, sx - 7, sy - 2, 14, 3, hex(0x000000, 0.28));
+      figure(b, S, npc.art, sx, sy, false, nearBy || (s.tick >> 7) % 4 === i, s.tick);
+    });
   });
 }
 

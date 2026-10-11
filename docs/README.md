@@ -30,6 +30,7 @@ A locally co-op, pixel-art, fantasy beat-'em-up roguelike. Built with TypeScript
 | [19 Generated Humans](19-generated-humans.md) | Per-run people for the story figures: offices, wardrobes, the court's livery, the sprite composer |
 | [20 Generated Heroes](20-generated-heroes.md) | Per-run player characters: a person per slot, always wearing their class's defining kit |
 | [21 The Road](21-the-road.md) | How a run works: one road from the starting town to the last boss in one sim, camps and road scenes the road grows around, crossroads chosen by walking, saving and continuing, renown and the town, joining mid-run; then generated places per region |
+| [22 Class Trees](22-class-trees.md) | The meta skill trees: one 24-node template per class, what a node may grant, focus cap, keystones; per-class trees in `trees/` |
 | [Briefs](briefs/frozen-pass-roster.md) | Hand-off briefs for work another owner picks up (now: the Frozen Pass enemy roster; superseded for art by the generated bestiary, kept as history) |
 | [Open Questions](open-questions.md) | Things we haven't decided |
 | [Decisions (ADRs)](decisions/README.md) | Log of decisions and why |

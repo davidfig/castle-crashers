@@ -3,6 +3,7 @@
 // ring, Cannon lobs fireballs at the nearest mob, Spirit mends heroes. The shaman's own tools (Gale, Gather) only move mobs.
 // Entity fields: sub = the totem kind, by = the owner's slot, rem = ticks left, cool = ticks to the next beat, atk = bite cooldown.
 import { CLASSES, type ClassDef } from '../data/classes';
+import { variantOf } from '../data/skills';
 import { CANNON_SHOT, HERDS, TOTEMS, type Action, type Herd, type TotemBagDef } from '../data/totems';
 import { MOBS } from '../data/mobs';
 import { BurstStyle } from './abilities';
@@ -55,7 +56,7 @@ export function bagInput(p: PlayerState, cls: ClassDef, pressed: number, held: n
 
 /** What a pending-action code means for a class, with the selected extra filled in. */
 export function actionOf(classId: number, code: number, p: PlayerState): Action {
-  const def = CLASSES[classId].totems;
+  const def = variantOf(CLASSES[classId], p.loadout).totems; // (the totems on the buttons, with the tree's replacements)
   if (!def) return null;
   return resolve(def, p, actionIn(def, code));
 }
@@ -66,8 +67,8 @@ export function resolve(def: TotemBagDef, p: PlayerState, a: Action): Action {
 }
 
 /** The actions on the buttons right now, for the HUD: the plain bank, or the Alt bank while Alt is held. */
-export function bank(classId: number, alt: boolean): readonly Action[] {
-  const def = CLASSES[classId].totems!;
+export function bank(classId: number, alt: boolean, loadout?: ArrayLike<number>): readonly Action[] {
+  const def = (loadout ? variantOf(CLASSES[classId], loadout) : CLASSES[classId]).totems!;
   return alt ? def.alt : def.plain;
 }
 
@@ -90,11 +91,11 @@ export function canDo(p: PlayerState, a: Action): boolean {
 /** Sets a totem of `kind` down a step ahead of the hero. One live totem per kind per hero: a second plant moves the first (and mends it). */
 export function plantTotem(s: GameState, slot: number, kind: number): void {
   const p = s.players[slot];
-  const def = CLASSES[p.classId].totems!;
+  const reach = CLASSES[p.classId].totems?.reach ?? 24; // (the cleric's Beacon is planted by a class with no bag)
   const k = TOTEMS[kind];
   const e = s.ents;
-  const x = Math.max(s.camX + 6, e.x[p.ent] + p.faceX * def.reach);
-  const y = Math.max(4, Math.min(WORLD_H - 4, e.y[p.ent] + p.faceY * def.reach));
+  const x = Math.max(s.camX + 6, e.x[p.ent] + p.faceX * reach);
+  const y = Math.max(4, Math.min(WORLD_H - 4, e.y[p.ent] + p.faceY * reach));
   let at = -1;
   for (let i = 0; i < e.highWater; i++) if (e.kind[i] === Kind.Totem && e.alive[i] && e.sub[i] === kind && e.by[i] === slot) { at = i; break; }
   if (at < 0) {
@@ -276,6 +277,42 @@ export function updateTotems(s: GameState): void {
         if (dx * dx + dy * dy <= k.radius * k.radius) e.hp[i] = Math.min(e.maxhp[i], e.hp[i] + k.power * 2);
       }
       emit(s.events, Ev.TotemPulse, e.x[t], e.y[t], k.radius, e.sub[t], owner);
+    } else if (k.role === 'frost') {
+      // a freezing ring: every mob in it is held for a moment, every beat
+      const n = gatherCircle(s.grid, e, e.x[t], e.y[t], k.radius, s.scratch);
+      for (let i = 0; i < n; i++) {
+        const m = s.scratch[i];
+        if (!isMob(e, m) || (e.flags[m] & 2)) continue;
+        if ((e.x[m] - e.x[t]) ** 2 + ((e.y[m] - e.y[t]) * 1.18) ** 2 > k.radius * k.radius) continue;
+        e.stun[m] = Math.max(e.stun[m], k.power);
+      }
+      emit(s.events, Ev.TotemPulse, e.x[t], e.y[t], k.radius, e.sub[t], owner);
+    } else if (k.role === 'gravity') {
+      // a well: every mob in its ring is hauled toward it, every beat
+      const n = gatherCircle(s.grid, e, e.x[t], e.y[t], k.radius, s.scratch);
+      for (let i = 0; i < n; i++) {
+        const m = s.scratch[i];
+        if (!isMob(e, m) || (e.flags[m] & 2) || MOBS[e.sub[m]].armored) continue;
+        const dx = e.x[t] - e.x[m], dy = e.y[t] - e.y[m], d = Math.hypot(dx, dy);
+        if (d > k.radius || d < 4) continue;
+        const f = k.power * 0.5 * (1 - MOBS[e.sub[m]].knockResist * 0.5);
+        e.vx[m] += (dx / d) * f; e.vy[m] += (dy / d) * f;
+      }
+      emit(s.events, Ev.TotemPulse, e.x[t], e.y[t], k.radius, e.sub[t], owner);
     } else emit(s.events, Ev.TotemPulse, e.x[t], e.y[t], k.radius, e.sub[t], owner);
   }
+}
+
+/** The strongest standing totem of `role` (any owner) that hero `slot` is inside the ring of: its `power`, or 0. (Ward: damage taken less; Drum: damage dealt more.) */
+export function totemAura(s: GameState, slot: number, role: 'ward' | 'drum'): number {
+  const e = s.ents, me = s.players[slot];
+  let best = 0;
+  for (let t = 0; t < e.highWater; t++) {
+    if (e.kind[t] !== Kind.Totem || !e.alive[t]) continue;
+    const k = TOTEMS[e.sub[t]];
+    if (k.role !== role || k.power <= best) continue;
+    const dx = e.x[me.ent] - e.x[t], dy = e.y[me.ent] - e.y[t];
+    if (dx * dx + (dy * 1.18) ** 2 <= k.radius * k.radius) best = k.power;
+  }
+  return best;
 }

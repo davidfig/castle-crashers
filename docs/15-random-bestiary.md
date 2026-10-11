@@ -33,7 +33,7 @@ run seed ──► generateBestiary(seed) ──► Bestiary { defs[], looks[], 
   becomes a caster). The bomber slot stays a bomber. The first enemy of every biome is always plain melee with no powers.
 - **Skills and elements** (docs/16): most powers are *elemental*: a delivery made of an element (fire burns, ice chills, lightning jumps...) with modifiers (patterns, pierce, residue...). A monster leans on one element, so its powers read as a set.
 - **Powers** (`data/bestiary/traits.ts`). A monster wears 0-3 powers from one kit: a melee hit that slows/launches/poisons/roots/withers/drains,
-  a movement quirk (weave, hop, retreat, evade, burrow), a bull charge, a body trait (armour, shield, thorns, regen, berserk, pack, revive, mud trail),
+  a movement quirk (weave, hop, sprint, retreat, evade, burrow), a bull charge, a body trait (armour, shield, thorns, regen, berserk, pack, revive, mud trail),
   an aura (flame, chill), a death effect (burst into swarm, poison pool, ice shards, spore cloud), a way of shooting (volley, fan, harpoon, glob, firebolt,
   falcon) and a telegraphed **special** (the 24 in `Special`: lob, summon, heal, rally, blink, nova, beam, trap, cling, ward, storm, whiteout, wail, lure,
   leap, pounce, gust, pit, hex, dazzle, bolt, ring, cone, totem). They are all mechanics the sim already has, so the generator only sets fields on a `MobDef`.

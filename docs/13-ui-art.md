@@ -29,7 +29,7 @@ The game is about a bounty office and its books, so the art direction is stained
 | Camp: doors | menu (doors) | Door frames with node icons | framed panels, node icon, cursor: **done** |
 | Level-up panel (in the sky band) | `render/levelup.ts` | Card frames, upgrade icons, the pip | **done** (framed cards, icons, a star pip) |
 | Barks | `render/barks.ts` | Story font, speech bubble tail | vellum bubble with a tail, story font: **done** |
-| Title and logo | `render/titleArt.ts` | The name, a backdrop | **done**: dusk, the keep with lit windows and a waving banner, a horde crossing the field, the name as 1x pixel lettering (the story font's letterforms smoothed with Scale3x and outlined, built at startup, `buildLogo` in `uiArt.ts`) on a gold plaque, a "Per Head" ribbon; shown on a fresh load (`?hub=1` skips it); the name is *The Final Tally: Per Head* |
+| Title and logo | `render/titleArt.ts` | The name, a backdrop | **done**: dusk (stars, moon, mountains, the keep and where the party stands are re-rolled each time the title comes up, `render/titleLayout.ts`; the horde is drawn from the run cast by size), the keep with lit windows and a waving banner, a horde crossing the field, the name as 1x pixel lettering (the story font's letterforms smoothed with Scale3x and outlined, built at startup, `buildLogo` in `uiArt.ts`) on a gold plaque, a "Per Head" ribbon; shown on a fresh load (`?hub=1` skips it); the name is *The Final Tally: Per Head* |
 | Hub (the city) | none yet | The city at each chapter's mood | planned |
 
 ## The kit (built)

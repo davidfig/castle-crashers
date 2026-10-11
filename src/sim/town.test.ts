@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CLASSES } from '../data/classes';
-import { ARMOURY_UPGRADE, META, META_INDEX, renownFor, TREASURY_GOLD } from '../data/meta';
+import { META, META_INDEX, META_TOTAL, metaForRenown, metaMultipliers, renownFor, TREASURY_GOLD } from '../data/meta';
+
 import { classStand, heatShrine, metaPlace, TOWN_GATE_X, TOWN_W } from '../data/town';
 import { loadProfile, metaRanks, newProfile, PROFILE_KEY, saveProfile, withRun } from '../campaign/profile';
 import { VIEW_W } from './constants';
@@ -10,10 +11,14 @@ import { CLEAR_AFTER, TownEv } from './gen/road';
 import { Btn, createInputFrame } from './input';
 import { restore, snapshot } from './snapshot';
 import { activatePlayer, createSim, joinParty, type GameState } from './state';
+import { MOBS, MobType } from '../data/mobs';
+import { allocEntity, Kind } from './entities';
 import { step } from './step';
 
 // The starting town (docs/21-the-road.md, step 6) and joining a run under way.
 
+/** The town's ranks in `META` order, from a few named ones. */
+function ranks(named: Record<string, number>): number[] { return META.map((m) => named[m.id] ?? 0); }
 function town(renown = 0, meta: number[] = []): GameState {
   return createSim(31, undefined, { road: { total: 4, renown, meta } });
 }
@@ -62,7 +67,7 @@ test('a hero takes up a class at its stand: a fresh hero of that class, with the
   assert.deepEqual(press(s, 0), [TownEv.Class]);
   assert.equal(s.players[0].classId, mage);
   assert.equal(s.ents.maxhp[s.players[0].ent], CLASSES[mage].hp);
-  assert.equal(s.players[0].ranks[ARMOURY_UPGRADE], 1, 'still armoured');
+  assert.equal(s.road!.metaMul[1], 0.89, 'still armoured');
 });
 
 test('the town\'s places are built up with renown, take hold at once, and refuse when too dear or at their height', () => {
@@ -73,8 +78,8 @@ test('the town\'s places are built up with renown, take hold at once, and refuse
   assert.deepEqual(press(s, 0), [TownEv.Built]);
   assert.equal(s.road!.renown, 100 - META[armoury].cost(0));
   assert.equal(s.road!.meta[armoury], 1);
-  assert.equal(s.players[0].ranks[ARMOURY_UPGRADE], 1);
-  assert.equal(s.players[1].ranks[ARMOURY_UPGRADE], 1, 'every hero in the party');
+  assert.equal(s.road!.metaMul[1], 0.89, 'heroes take 11% less damage');
+  assert.equal(s.players[0].ranks[1], 0, 'and it is a layer of its own: no boon rank is taken from the level-up hands');
   assert.deepEqual(press(s, 0), [TownEv.Dear], `the next rank costs ${META[armoury].cost(1)}`);
   standAt(s, 0, metaPlace(treasury));
   const gold = s.gold;
@@ -86,8 +91,8 @@ test('the town\'s places are built up with renown, take hold at once, and refuse
 });
 
 test('a run sets out with what the town has built: armoured heroes, gold in the purse', () => {
-  const s = town(0, [2, 3]);
-  assert.equal(s.players[0].ranks[ARMOURY_UPGRADE], 2);
+  const s = town(0, ranks({ armoury: 2, treasury: 3 }));
+  assert.equal(s.road!.metaMul[1], 0.78);
   assert.equal(s.gold, 3 * TREASURY_GOLD);
 });
 
@@ -110,7 +115,7 @@ test('a hero joining a run under way comes at the party\'s level, with that many
   joinParty(s, 2, 120, 120);
   assert.equal(s.players[2].level, 7, 'the average, rounded down');
   assert.equal(s.players[2].pending, 6);
-  assert.equal(s.players[2].ranks[ARMOURY_UPGRADE], 1);
+  assert.equal(s.road!.metaMul[1], 0.89);
   const solo = town();
   solo.players[0].level = 1;
   joinParty(solo, 1, 100, 100);
@@ -142,18 +147,59 @@ test('a run saved in the town keeps what the town did', () => {
 });
 
 test('renown and the town\'s ranks are kept in the profile between runs', () => {
-  assert.ok(renownFor({ cleared: 5, bosses: 1, kills: 3000, won: false }) > renownFor({ cleared: 2, bosses: 0, kills: 900, won: false }));
-  assert.ok(renownFor({ cleared: 15, bosses: 5, kills: 0, won: true }) > renownFor({ cleared: 15, bosses: 5, kills: 0, won: false }));
+  const e = (cleared: number, bosses: number, kills: number, won = false, setOut = true) => renownFor({ cleared, bosses, kills, won, setOut });
+  assert.ok(e(5, 1, 3000) > e(2, 0, 900));
+  assert.ok(e(15, 5, 0, true) > e(15, 5, 0, false));
+  assert.equal(e(0, 0, 0, false, false), 0, 'a run quit in the town earns nothing');
+  assert.ok(e(0, 0, 250) >= 20, 'a run that dies on the first level still earns a start towards a rank');
   const store = new Map<string, string>();
   const kv = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); } };
   assert.equal(loadProfile(kv).status, 'none');
-  const p = withRun(newProfile(), 75, [1, 2]);
+  const p = withRun(newProfile(), 75, ranks({ armoury: 1, forge: 2 }));
   assert.ok(saveProfile(kv, p));
   const back = loadProfile(kv);
   assert.equal(back.status, 'ok');
   assert.equal(back.profile.renown, 75);
-  assert.deepEqual(metaRanks(back.profile), [1, 2]);
+  assert.deepEqual(metaRanks(back.profile), ranks({ armoury: 1, forge: 2 }));
   store.set(PROFILE_KEY, JSON.stringify({ v: 99, renown: 5, meta: {} }));
   assert.equal(loadProfile(kv).status, 'newer');
   assert.equal(loadProfile(kv).writable, false);
+});
+
+test('the town\'s places make heroes hit harder, take less and run faster, and begin a level higher', () => {
+  const none = town(), built = town(0, ranks({ armoury: 4, forge: 5, stables: 3, academy: 4 }));
+  assert.deepEqual(none.road!.metaMul, [1, 1, 1]);
+  const [dmg, taken, speed] = metaMultipliers(built.road!.meta);
+  assert.ok(Math.abs(dmg - 1.7) < 1e-9 && Math.abs(taken - 0.56) < 1e-9 && Math.abs(speed - 1.21) < 1e-9, `${dmg} ${taken} ${speed}`);
+  assert.equal(built.players[0].level, 5, 'the Academy: level 5 to begin, with four level-ups waiting');
+  assert.equal(built.players[0].pending, 4);
+  // and it shows in a fight: a hit on a built hero is smaller, a hero's swing is bigger
+  const mob = (s: GameState) => {
+    const e = s.players[0].ent;
+    s.ents.x[e] = s.ents.px[e] = 300; s.ents.y[e] = s.ents.py[e] = 100;
+  };
+  mob(none); mob(built);
+  const dmgTo = (s: GameState): number => {
+    const e = s.players[0].ent, before = s.ents.hp[e];
+    s.road!.town = false; s.tick = 400;
+    const m = allocEntity(s.ents, Kind.Mob, MobType.Orc, 312, 100, MOBS[MobType.Orc].hp);
+    s.ents.flags[m] = 1;
+    for (let t = 0; t < 400 && s.ents.hp[e] === before; t++) step(s, [0, 1, 2, 3].map(createInputFrame));
+    return before - s.ents.hp[e];
+  };
+  const a = dmgTo(none), b = dmgTo(built);
+  assert.ok(a > 0 && b > 0 && Math.abs(b / a - 0.56) < 0.05, `an orc's first hit: ${a} on an unbuilt hero, ${b} on a built one`);
+});
+
+test('the renown budget model buys one rank of each place in turn, and everything for the full price', () => {
+  assert.deepEqual(metaForRenown(0), META.map(() => 0));
+  let spent = 0;
+  const cost = (r: number[]) => r.reduce((a, k, i) => { let c = 0; for (let j = 0; j < k; j++) c += META[i].cost(j); return a + c; }, 0);
+  for (const r of [50, 150, 400, 800, 1500]) {
+    const ranks = metaForRenown(r);
+    assert.ok(cost(ranks) <= r, `${r} renown buys at most ${r} (${cost(ranks)})`);
+    assert.ok(cost(ranks) > spent, 'more renown buys more');
+    spent = cost(ranks);
+  }
+  assert.deepEqual(metaForRenown(META_TOTAL), META.map((m) => m.maxRank));
 });

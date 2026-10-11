@@ -17,6 +17,8 @@ export interface Swing {
   /** Finisher: also cuts a straight wave this long down the facing line (0 = none). */
   wave: number;
   waveWidth: number;
+  /** A cone of flame instead of a slash (the Flamethrower): the same arc hits, drawn as a breath of fire. */
+  flame?: boolean;
   /** Point-blank area burst instead of an arc: hits everything within `range` all around, no facing, no lunge (the cleric). */
   aoe?: boolean;
   /** An aoe's inner ring: within this fraction of `range` each hit does `innerMul` times the damage (the cleric's aura grinds harder up close). */
@@ -64,6 +66,9 @@ export interface RainDef {
   /** How far ahead of the archer the centre lands. */
   reach: number;
 }
+
+/** A patch of ground (sim/patches.ts): foes inside take `damage` and are stunned `stun` ticks every `every` ticks, for `ticks`; `once` springs it on the first foe (a trap). `look` is how it is drawn (0 caltrops, 1 spikes, 2 a trap). */
+export interface PatchDef { radius: number; ticks: number; damage: number; stun: number; every: number; once?: boolean; look: number }
 
 export interface ClassDef {
   name: string;
@@ -137,6 +142,35 @@ export interface ClassDef {
   hideCooldown?: number;
   /** The archer's edge: a shot's damage grows with the distance it flew, up to 1 + this at full range (absent = flat). */
   longShot?: number;
+  /** The big swing is a spin (Whirlwind): it lasts `ticks`, hits everything round the hero with `special` every `every` ticks, walks at `move` of the speed, and drains `drain` stamina a tick. */
+  spin?: { ticks: number; every: number; move: number; drain: number };
+  /** A charge that ends in a slam: where the dodge stops, everything within `radius` takes `damage`, is shoved and stunned `stun` ticks (Shield Rush). */
+  dashSlam?: { radius: number; damage: number; knock: number; stun: number };
+  /** The basic attack is a bolt that jumps (the mage's Chain Bolt): at the nearest foe within `range`, then on to the nearest unhit foe within `hop` of the last, `hops` more times, each hit `falloff` of the one before. */
+  chain?: { range: number; hops: number; hop: number; damage: number; falloff: number; cooldown: number };
+  /** The big swing marks a spot `reach` px ahead and, `delay` ticks later, a blast of `radius` and `damage` lands on it (the mage's Meteor). */
+  meteor?: { reach: number; delay: number; radius: number; damage: number; knock: number };
+  /** The big swing is an instant bolt `length` long down the aim line that stuns what it hits and arcs on to `arcs` more (the mage's Lightning Strike). */
+  bolt?: { length: number; width: number; damage: number; stun: number; arcs: number; /** The element it is drawn as (default lightning). */ element?: number; /** Hit points it mends in every hero on the line (the cleric's Judgment Beam). */ heal?: number };
+  /** The basic attack is a healing bolt (the cleric's Healing Bolt): at the most wounded ally in front within `range` (mending `heal`), else the nearest foe (`damage`). */
+  mend?: { range: number; damage: number; heal: number; cooldown: number };
+  /** A dodge shields the heroes within `radius` for `ticks`: they take `mul` of the damage (the cleric's Aegis Roll). */
+  dashAegis?: { radius: number; ticks: number; mul: number };
+  /** A strike after a dodge hits `riposte` times as hard, once (the rogue's Rapier). */
+  riposte?: number;
+  /** The basic attack is drawn like a bow (the archer's Charged Shot): hold to draw up to `ticks`, release (after `min`) to loose a piercing shot down the aim line, `damage` x up to `max`, `length` and `width` of it, `cooldown` after. */
+  charge?: { ticks: number; min: number; max: number; length: number; width: number; damage: number; cooldown: number };
+  /** The dodge blinks behind the nearest foe within `range` and leaves the hero hidden (the rogue's Shadow Step); with none it blinks a short way instead. */
+  dashStep?: { range: number };
+  /** The dodge leaves a patch of ground where it began (caltrops, a snare): see sim/patches.ts. */
+  dashPatch?: PatchDef;
+  /** The dodge leaps back, away from where the hero faces, and looses `count` arrows forward over `spread` turns (the archer's Backflip Shot). */
+  dashBack?: boolean;
+  dashVolley?: { count: number; spread: number };
+  /** The dodge sets this totem (an index into TOTEMS) down where it began (the shaman's Spirit Step). */
+  dashPlant?: number;
+  /** A charge freezes the foes it touches for this many ticks (the mage's Ice Slide). */
+  dashStun?: number;
   /** What the dodge does; absent = a plain invulnerable roll. Upgrades tune `dashPower` / `dashRadius`. */
   dashKind?: 'charge' | 'teleport' | 'heal';
   /** teleport: distance; heal: hp restored. */

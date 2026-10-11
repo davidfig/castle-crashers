@@ -36,7 +36,7 @@ function pickRole(p: SlotPlan, d: Dice): number {
   if (c.behavior === Behavior.Melee) {
     const brute = c.hp >= 40;
     const r = d.f();
-    return r < (brute ? 0.92 : 0.7) ? Behavior.Melee : r < (brute ? 0.96 : 0.84) ? Behavior.Ranged : Behavior.Caster;
+    return r < (brute ? 0.92 : 0.6) ? Behavior.Melee : r < (brute ? 0.96 : 0.8) ? Behavior.Ranged : Behavior.Caster;
   }
   if (c.behavior === Behavior.Ranged) { const r = d.f(); return r < 0.78 ? Behavior.Ranged : r < 0.9 ? Behavior.Melee : Behavior.Caster; }
   if (c.behavior === Behavior.Caster) return d.chance(0.8) ? Behavior.Caster : Behavior.Melee;
@@ -52,7 +52,7 @@ function baseStats(p: SlotPlan, role: number, d: Dice): MobDef {
   const M = (lo: number, hi: number): number => d.range(1 - (1 - lo) * K, 1 + (hi - 1) * K);
   const m: MobDef = { ...c, special: undefined, charge: undefined, shot: undefined, onDeath: undefined, shield: false, shieldHp: undefined };
   // drop every power the hand-made enemy had
-  for (const k of ['armored', 'slowOnHit', 'weave', 'regen', 'pack', 'revive', 'retreat', 'launch', 'poisonOnHit', 'rootOnHit', 'witherOnHit', 'hop', 'thorns', 'evade', 'burrow', 'drain', 'trail', 'flame', 'berserk', 'aura', 'surrender', 'swarm', 'lunge', 'backstep', 'onHit', 'elemAura'] as const) delete (m as unknown as Record<string, unknown>)[k];
+  for (const k of ['armored', 'slowOnHit', 'weave', 'regen', 'pack', 'revive', 'retreat', 'launch', 'poisonOnHit', 'rootOnHit', 'witherOnHit', 'hop', 'sprint', 'thorns', 'evade', 'burrow', 'drain', 'trail', 'flame', 'berserk', 'aura', 'surrender', 'swarm', 'lunge', 'backstep', 'onHit', 'elemAura'] as const) delete (m as unknown as Record<string, unknown>)[k];
   const fromMelee = c.behavior === Behavior.Melee;
   m.behavior = role;
 

@@ -92,7 +92,7 @@ Uses a per-player **offer stream**, seeded by `(runSeed, playerSlot, levelNumber
 
 ## Streamed encounters (implemented)
 
-The level is **planned** at the start (`planLevel(seed)`: a cheap list of ~26 encounters with position, size, shape and progress, a pure function of the seed) but **spawned lazily**: `streamLevel` spawns an encounter once the camera is within ~520 px of it, i.e. out of sight. Each encounter has its own random stream (`1000 + index`), so its contents don't depend on when it streams in; only its size does, via the party-size scale at that moment (see [03](03-gameplay-combat.md)). Streaming starts after 2 s (`STREAM_DELAY_TICKS` = 120) so players who join right away are counted, and holds back if the 4,096-entity budget is nearly full. A side benefit: only the encounters near the camera exist, so the opening has a few hundred enemies instead of ~2,200.
+The level is **planned** at the start (`planLevel(seed)`: a cheap list of ~26 encounters with position, size, shape and progress, a pure function of the seed) but **spawned lazily**: `streamLevel` spawns an encounter once the screen's right edge is within `STREAM_AHEAD` (300 px) of it, i.e. out of sight. Each encounter has its own random stream (`1000 + index`), so its contents don't depend on when it streams in; only its size does, via the party-size scale at that moment (see [03](03-gameplay-combat.md)). Streaming starts after 2 s (`STREAM_DELAY_TICKS` = 120) so players who join right away are counted, and holds back if the 4,096-entity budget is nearly full. A side benefit: only the encounters near the camera exist, so the opening has a few hundred enemies instead of ~2,200.
 
 ## Battlefield layout (implemented v0)
 

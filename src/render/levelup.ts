@@ -1,6 +1,6 @@
 // The level-up panel, drawn in the sky band at the top of the screen (docs/06-ui.md). Each player has a fixed lane,
 // a quarter of the width, so up to four can choose at once without covering the action or each other. Reads state only.
-import { cardFor, OFFER_SIZE, rarityOf, UPGRADES } from '../data/upgrades';
+import { cardFor, cardIcon, OFFER_SIZE, rarityOf, UPGRADES } from '../data/upgrades';
 import { heroOffer } from '../sim/offers';
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
@@ -40,13 +40,13 @@ export function drawLevelUp(b: Batcher, S: Sprites, s: GameState, keys: string[]
       const up = offer[k];
       if (up === undefined) continue;
       const def = UPGRADES[up];
-      const card = cardFor(def, p.classId);
+      const card = cardFor(def, p.classId, p.loadout);
       const cx = x0 + 3 + k * (CARD_W + 1), cy = LANE_Y + 13;
       drawCard(b, S, cx, cy, CARD_W, 50, TIER_BORDER[rarityOf(def)], k === p.cursor);
       drawText(b, S, String(k + 1), cx + 4, cy + 4, hex(0xffd35a), 1, false);
       if (def.evolve) drawText(b, S, 'FUSION', cx + 4, cy + 11, hex(0xffd35a), 1, false);
       else if (p.ranks[up] > 0) drawText(b, S, `R${p.ranks[up]}`, cx + 4, cy + 11, hex(0x93a0bc), 1, false);
-      drawIcon(b, S, def.icon, cx + CARD_W - 19, cy + 3, 1);
+      drawIcon(b, S, cardIcon(def, p.loadout), cx + CARD_W - 19, cy + 3, 1);
       drawText(b, S, card.name, cx + 4, cy + 21, hex(0xffffff), 1, false);
       card.text.forEach((t, j) => drawText(b, S, t, cx + 4, cy + 29 + j * 6, hex(0xa8b4d8), 1, false));
       // the tags that pull more of the same toward you (docs/04): the first two that fit

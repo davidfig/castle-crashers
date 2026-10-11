@@ -20,9 +20,13 @@ export function classStand(classId: number): { x: number; y: number } {
 }
 /** A meta place (data/meta.ts): along the bottom of the town. */
 export function metaPlace(i: number): { x: number; y: number } {
-  return { x: 200 + i * 130, y: 200 };
+  return { x: 70 + i * 92, y: 200 };
+}
+/** The trainer, where a hero opens their class's tree (data/trees): at the right of the town, off the other places' rows. */
+export function trainerSpot(): { x: number; y: number } {
+  return { x: 540, y: 110 };
 }
 /** The shrine where the party sets the road's heat (data/heat.ts). */
 export function heatShrine(): { x: number; y: number } {
-  return { x: 200 + META.length * 130, y: 200 };
+  return { x: 70 + META.length * 92, y: 200 };
 }

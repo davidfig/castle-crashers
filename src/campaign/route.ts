@@ -30,7 +30,7 @@ export const DEPTH_START = 0.55;
 export const DEPTH_END = 2.2;
 /** Damage enemies deal, ramped the same way: a hero's armour and health grow along the road too. */
 export const DAMAGE_START = 0.8;
-export const DAMAGE_END = 2.3;
+export const DAMAGE_END = 2.15;
 export function depthDamage(level: number, total: number): number {
   if (total <= 1) return 1;
   return DAMAGE_START + (DAMAGE_END - DAMAGE_START) * Math.min(1, level / (total - 1));

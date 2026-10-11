@@ -315,29 +315,35 @@ function drawDestination(b: Batcher, S: Sprites, sc: Scenery, pi: number, camXf:
   if (!d) return;
   const set = S.landmarks[d.landmark];
   const n = set.body.length;
-  const i = Math.min(n - 1, Math.floor(progress * n));
+  // grow continuously: the width slides geometrically between the two nearest sprite sizes, and the nearest sprite is scaled to it
+  const t = Math.min(1, Math.max(0, progress)) * (n - 1), lo = Math.floor(t), hi = Math.min(n - 1, lo + 1);
+  const i = Math.round(t);
+  const wLo = set.body[lo].w, wHi = set.body[hi].w;
+  const s = (wLo * (wHi / wLo) ** (t - lo)) / set.body[i].w;
   const body = set.body[i];
+  const bw = body.w * s, bh = body.h * s;
   const cx = Math.round(VIEW_W * (d.x0 + (d.x1 - d.x0) * progress) - camXf * k) + ox;
   const fade = sc.weight(pi, camXf + cx - ox, 0.5);
   if (fade <= 0.01) return;
-  const x = cx - (body.w >> 1), y = GROUND_TOP - Math.round(d.lift0 + (d.lift1 - d.lift0) * progress) - body.h + oy;
+  const x = cx - bw / 2, y = GROUND_TOP - Math.round(d.lift0 + (d.lift1 - d.lift0) * progress) - bh + oy;
   const clarity = Math.min(1, Math.max(0, progress)); // 0 far and hazy, 1 near and sharp
   const night = mood.stars;
   const haze = 0.62 * (1 - clarity) ** 1.5 + 0.08;
   const horizon = mood.sky[mood.sky.length - 1];
-  b.drawScaled(S.disc, cx - body.w, y + body.h * 0.2 - body.w * 0.5, body.w * 2, body.w, hex(d.aura, (0.06 + 0.12 * clarity) * (0.6 + night) * fade));
+  b.drawScaled(S.disc, cx - bw, y + bh * 0.2 - bw * 0.5, bw * 2, bw, hex(d.aura, (0.06 + 0.12 * clarity) * (0.6 + night) * fade));
 
   // the rocky peak it stands on, hanging from the castle's base and running down behind the ground
   const crag = set.crag[i];
-  const cragY = y + body.h - 3; // the wall sinks a little into the rock
-  const cragX = cx - (crag.w >> 1);
+  const cw = crag.w * s, ch = crag.h * s;
+  const cragY = y + bh - 3 * s; // the wall sinks a little into the rock
+  const cragX = cx - cw / 2;
   const lit = shade(mood.tint, 0xffffff, 1, Math.round(255 * fade));
-  b.draw(crag, cragX, cragY, false, lit);
-  b.draw(set.cragMask[i], cragX, cragY, false, hex(horizon, haze * fade));
+  b.drawScaled(crag, cragX, cragY, cw, ch, lit);
+  b.drawScaled(set.cragMask[i], cragX, cragY, cw, ch, hex(horizon, haze * fade));
 
-  b.draw(body, x, y, false, lit);
-  b.draw(set.glow[i], x, y, false, rgba(255, 255, 255, Math.round(255 * fade * Math.min(1, (0.25 + 0.5 * clarity + night) * clarity + 0.15))));
-  b.draw(set.mask[i], x, y, false, hex(horizon, haze * fade));
+  b.drawScaled(body, x, y, bw, bh, lit);
+  b.drawScaled(set.glow[i], x, y, bw, bh, rgba(255, 255, 255, Math.round(255 * fade * Math.min(1, (0.25 + 0.5 * clarity + night) * clarity + 0.15))));
+  b.drawScaled(set.mask[i], x, y, bw, bh, hex(horizon, haze * fade));
 }
 
 /**

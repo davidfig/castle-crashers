@@ -28,6 +28,8 @@ Y-sorted by ground-plane `y` (depth) for entities, with layers:
 7. World-space UI anchored to characters (see [06](06-ui.md))
 8. Screen-space overlay (damage flash, transitions)
 
+**Props stand in depth order too** (`render/standing.ts`). Anything that stands on the field is drawn among the characters by the field y where it touches the ground, so a hero who walks behind a signpost, a town stand's hero, a stall, a booth, a chest, a shrine, a totem's pillar or a road scene's figure is hidden by it, and one who walks in front of it hides it. Each frame the standing parts are gathered (`standingStore`, `standingForkSigns`, `standingTown`, ..., the chest and shrine pass, the totems), sorted, and merged into the characters' bucket sort (`StandingList.drawUpTo` before each character, `drawRest` after). A prop's own small writing (a signpost's words, a price, a name under a stand) goes with it. What lies flat (shadows, glows, a totem's or a running shrine's rings, the stones between a crossroads' roads) is drawn before the characters, and what must always be read (the panel over a ware, a button hint, a note, the renown counter) after them. A new prop that stands goes in the list, never in a ground or label pass.
+
 ## Sprite batcher
 
 The core of the renderer. One dynamic vertex buffer, one draw call per (texture, blend mode) batch.

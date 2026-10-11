@@ -63,6 +63,8 @@ export class InputManager {
   private menuSound = false;
   private menuMusic = false;
   private menuCont = false;
+  /** The device that made the last menu press ("kb0", "kb1", "pad2"...): the one that starts a run takes player 1 (`claim`). */
+  menuSource: string | null = null;
   private padMenuPrev = new Map<number, number>();
   /** Keys / pad buttons held when the slots were reset (the press that confirmed a menu): they do nothing until released, so they are not the player's first action. */
   private heldKeys = new Set<string>();
@@ -95,6 +97,11 @@ export class InputManager {
   private noteMenuKey(code: string): void {
     if (code === 'Escape') { this.menuBack = true; this.quitRequested = true; return; }
     if (code === 'KeyC') this.menuCont = true; // the title's "continue the saved run" (it is also any key)
+    if (!/^(Shift|Control|Alt|Meta|Caps)/.test(code)) {
+      // which keyboard player's keys these are (the first scheme's when it is nobody's in particular)
+      const k = SCHEMES.findIndex((sc) => Object.values(sc).includes(code));
+      this.menuSource = `kb${Math.max(0, k)}`;
+    }
     if (!/^(Shift|Control|Alt|Meta|Caps)/.test(code)) this.menuAny = true;
     if (code === 'KeyA' || code === 'ArrowLeft') this.menuLeft = true;
     else if (code === 'KeyD' || code === 'ArrowRight') this.menuRight = true;
@@ -113,7 +120,7 @@ export class InputManager {
       if (fresh & 1) this.menuLeft = true;
       if (fresh & 2) this.menuRight = true;
       if (fresh & 4) this.menuOk = true;
-      if (fresh & 8) this.menuAny = true;
+      if (fresh & 8) { this.menuAny = true; this.menuSource = `pad${p.index}`; }
       if (fresh & 16) this.menuBack = true;
       if (fresh & 32) this.menuSound = true;
       if (fresh & 64) this.menuMusic = true;
@@ -313,6 +320,14 @@ export class InputManager {
       p.buttons.forEach((bt, i) => { if (bt.pressed || bt.value > 0.3) s.add(i); });
       this.heldPad.set(p.index, s);
     }
+  }
+
+  /** Binds device `id` (a `menuSource`) to slot `k`, as its first press would: the press that started a run makes its device player 1. */
+  claim(k: number, id: string | null): void {
+    if (!id || this.slots.includes(id)) return;
+    if (id.startsWith('pad')) this.syncGamepads();
+    if (!this.sources.some((src) => src.id === id)) return;
+    this.slots[k] = id;
   }
 
   /** A device holds slot `k`. */

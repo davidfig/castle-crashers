@@ -319,6 +319,8 @@ export interface MobDef {
   witherOnHit?: number;
   /** Hops toward its target: every `every` ticks (once the hero is `minDist` away) it springs forward at `speed` px/tick. */
   hop?: { every: number; speed: number; minDist: number };
+  /** Bursts of speed: for `ticks` of every `every` (out of step from mob to mob), once the hero is `minDist` away, it runs at `mul` times its speed, fast enough to catch a running hero. */
+  sprint?: { every: number; ticks: number; mul: number; minDist: number };
   /** Its venomous skin: whoever hits it is poisoned for this many ticks. */
   thorns?: number;
   /** Chance (0..1) that a blow glances off without touching it. */

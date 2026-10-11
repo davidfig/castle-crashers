@@ -4,15 +4,17 @@
 // a save holds it and every client agrees.
 import { CLASSES } from '../data/classes';
 import { HEAT_MAX } from '../data/heat';
-import { META, META_INDEX, TREASURY_GOLD } from '../data/meta';
-import { classStand, heatShrine, metaPlace, TOWN_REACH_X, TOWN_REACH_Y } from '../data/town';
+import { META, metaMultipliers } from '../data/meta';
+import { classStand, heatShrine, metaPlace, TOWN_REACH_X, TOWN_REACH_Y, trainerSpot } from '../data/town';
+import { TREES } from '../data/trees';
+import { openTree } from './treeUi';
 import { emit, Ev } from './events';
 import { TownEv } from './gen/road';
 import { Btn, type InputFrame } from './input';
 import { applyMeta, resetHero, type GameState } from './state';
 
 /** What hero `k` stands beside in the town: a class's stand, a place, the heat shrine, or nothing. */
-export function townSpot(s: GameState, k: number): { kind: 'class' | 'meta' | 'heat'; i: number } | undefined {
+export function townSpot(s: GameState, k: number): { kind: 'class' | 'meta' | 'heat' | 'tree'; i: number } | undefined {
   const p = s.players[k];
   if (!p.active || p.downed) return undefined;
   const x = s.ents.x[p.ent], y = s.ents.y[p.ent];
@@ -20,6 +22,7 @@ export function townSpot(s: GameState, k: number): { kind: 'class' | 'meta' | 'h
   for (let i = 0; i < CLASSES.length; i++) if (near(classStand(i))) return { kind: 'class', i };
   for (let i = 0; i < META.length; i++) if (near(metaPlace(i))) return { kind: 'meta', i };
   if (near(heatShrine())) return { kind: 'heat', i: 0 };
+  if (near(trainerSpot())) return { kind: 'tree', i: 0 };
   return undefined;
 }
 
@@ -32,7 +35,8 @@ function build(s: GameState, k: number, i: number): void {
   if (r.renown < cost) { emit(s.events, Ev.Town, x, y, TownEv.Dear, i, k); return; }
   r.renown -= cost;
   r.meta[i] = rank + 1;
-  if (i === META_INDEX.treasury) s.gold += TREASURY_GOLD;
+  r.metaMul = metaMultipliers(r.meta);
+  if ('gold' in m.gives) s.gold += m.gives.gold;
   for (let j = 0; j < s.players.length; j++) if (s.players[j].active) applyMeta(s, j);
   emit(s.events, Ev.Town, x, y, TownEv.Built, i, k);
 }
@@ -41,7 +45,7 @@ function build(s: GameState, k: number, i: number): void {
 export function townTrade(s: GameState, inputs: readonly InputFrame[]): void {
   for (let k = 0; k < s.players.length; k++) {
     const p = s.players[k];
-    if (!p.active || p.panel || !(inputs[k].buttons & ~p.rawPrev & Btn.Interact)) continue;
+    if (!p.active || p.panel || p.treeOpen || !(inputs[k].buttons & ~p.rawPrev & Btn.Interact)) continue;
     const at = townSpot(s, k);
     if (!at) continue;
     const x = s.ents.x[p.ent], y = s.ents.y[p.ent];
@@ -49,6 +53,7 @@ export function townTrade(s: GameState, inputs: readonly InputFrame[]): void {
       if (p.classId !== at.i) resetHero(s, k, at.i);
       emit(s.events, Ev.Town, x, y, TownEv.Class, at.i, k);
     } else if (at.kind === 'meta') build(s, k, at.i);
+    else if (at.kind === 'tree') { if (!(TREES[p.classId] && openTree(s, k, inputs[k].buttons))) emit(s.events, Ev.Town, x, y, TownEv.Dear, 0, k); }
     else {
       s.heat = s.road!.heat = (s.heat + 1) % (HEAT_MAX + 1);
       emit(s.events, Ev.Town, x, y, TownEv.Heat, s.heat, k);

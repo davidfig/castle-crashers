@@ -340,6 +340,7 @@ function abilities(type: number): string[] {
   if (d.rootOnHit) a.push('root');
   if (d.witherOnHit) a.push('wither');
   if (d.hop) a.push('hop');
+  if (d.sprint) a.push('sprint');
   if (d.thorns) a.push('thorns');
   if (d.evade) a.push('evade');
   if (d.burrow) a.push('burrow');

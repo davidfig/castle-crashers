@@ -1,4 +1,5 @@
 // Drawing the shaman's totems and the row of actions over the shaman (docs/18-shaman-and-totems.md). Reads state only.
+import type { StandingList } from './standing';
 import { HERDS, TOTEMS } from '../data/totems';
 import { hex, type Batcher } from '../platform/gl/batcher';
 import { FIELD_Y0 } from './background';
@@ -36,7 +37,7 @@ function pillar(b: Batcher, S: Sprites, x: number, y: number, color: number, acc
  * The planted totems, drawn before the creatures so heroes stand in front. A burning or mending ring sits on the ground at its radius and flashes
  * on each pulse; a Stone's reach is a faint dotted ring; a cannon shows a small ring (its range is long). Every totem has a health bar once hurt.
  */
-export function drawTotems(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, alpha: number): void {
+export function drawTotems(b: Batcher, S: Sprites, s: GameState, camX: number, oy: number, alpha: number, list?: StandingList): void {
   const e = s.ents;
   for (let i = 0; i < e.highWater; i++) {
     if (!e.alive[i] || e.kind[i] !== Kind.Totem) continue;
@@ -47,6 +48,7 @@ export function drawTotems(b: Batcher, S: Sprites, s: GameState, camX: number, o
     const flash = sinceBeat < FLASH ? 1 - sinceBeat / FLASH : 0;
     const fading = e.rem[i] < 120 && (s.tick >> 2) % 2 === 0 ? 0.45 : 1; // the last two seconds blink
     const owner = PLAYER_COLORS[e.by[i]] ?? 0xffffff;
+    // its reach, flat on the ground
     if (k.role === 'damage' || k.role === 'heal') {
       const r = k.radius + flash * 3;
       b.drawScaled(S.disc, Math.round(sx - r), Math.round(sy - r * 0.85), r * 2, r * 1.7, hex(k.color, (0.1 + 0.16 * flash) * fading));
@@ -58,12 +60,16 @@ export function drawTotems(b: Batcher, S: Sprites, s: GameState, camX: number, o
       ring(b, S, sx, sy, 12 + flash * 5, 14, hex(k.color, (0.6 + 0.3 * flash) * fading));
     }
     ring(b, S, sx, sy, 7, 10, hex(owner, 0.8 * fading));
-    pillar(b, S, sx, sy, k.color, k.accent, e.rem[i] > k.ttl - 6 ? 6 - (k.ttl - e.rem[i]) : 0, fading, e.hurt[i] > 0 && (s.tick & 2) === 0);
-    if (e.hp[i] < e.maxhp[i] - 0.5) {
-      const w = 14, f = Math.max(0, e.hp[i] / e.maxhp[i]);
-      b.drawScaled(S.px, Math.round(sx - w / 2) - 1, Math.round(sy - 27), w + 2, 4, hex(0x000000, 0.8));
-      b.drawScaled(S.px, Math.round(sx - w / 2), Math.round(sy - 26), Math.round(w * f), 2, hex(f > 0.35 ? 0x4fd05a : 0xe0503a));
-    }
+    // the pillar itself stands among the characters (or straight away, with no list)
+    const stand = (): void => {
+      pillar(b, S, sx, sy, k.color, k.accent, e.rem[i] > k.ttl - 6 ? 6 - (k.ttl - e.rem[i]) : 0, fading, e.hurt[i] > 0 && (s.tick & 2) === 0);
+      if (e.hp[i] < e.maxhp[i] - 0.5) {
+        const w = 14, f = Math.max(0, e.hp[i] / e.maxhp[i]);
+        b.drawScaled(S.px, Math.round(sx - w / 2) - 1, Math.round(sy - 27), w + 2, 4, hex(0x000000, 0.8));
+        b.drawScaled(S.px, Math.round(sx - w / 2), Math.round(sy - 26), Math.round(w * f), 2, hex(f > 0.35 ? 0x4fd05a : 0xe0503a));
+      }
+    };
+    if (list) list.push(lerp(e.py[i], e.y[i], alpha), stand); else stand();
   }
 }
 
@@ -78,7 +84,7 @@ export function drawBag(b: Batcher, S: Sprites, s: GameState, sx: number, top: n
   const def = CLASSES[p.classId].totems;
   if (!def) return;
   const alt = (p.prevButtons & Btn.Alt) !== 0;
-  const acts = bank(p.classId, alt);
+  const acts = bank(p.classId, alt, p.loadout);
   const SZ = 9, GAP = 1, n = acts.length;
   const x0 = Math.round(sx - (n * (SZ + GAP) - GAP) / 2), y0 = Math.round(top);
   if (alt) b.drawScaled(S.px, x0 - 1, y0 - 3, n * (SZ + GAP) + 1, 1, hex(0xffffff, 0.9));

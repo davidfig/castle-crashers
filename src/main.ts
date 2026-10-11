@@ -33,9 +33,10 @@ import { Phase, joinParty, leaveParty, resetHero } from './sim/state';
 import { Kind, allocEntity } from './sim/entities';
 import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
-import { layoutRoad, roadBiomes, roadJump, roadMusicBiome, stageBounds, type RoadLayout } from './sim/gen/road';
+import { campShown, layoutRoad, roadBiomes, roadJump, roadMusicBiome, stageBounds, type RoadLayout } from './sim/gen/road';
 import { clearRunSave, describeRunSave, loadRunSave, makeRunSave, writeRunSave, type RunSave } from './campaign/runSave';
-import { loadProfile, metaRanks, saveProfile, withRun, type Profile } from './campaign/profile';
+import { loadProfile, metaRanks, saveProfile, treeSaves, withRun, type Profile } from './campaign/profile';
+import { treesToProfile } from './data/trees';
 import { renownFor } from './data/meta';
 import { restore } from './sim/snapshot';
 import { drawResumeHold, type ResumeView } from './render/resumeHud';
@@ -53,6 +54,7 @@ import { Ev, EV_STRIDE } from './sim/events';
 import { runEndScreen, type Screen } from './campaign/view';
 import { drawScreen } from './render/menu';
 import { titleToggles, titleToggleRects } from './render/titleArt';
+import { rerollTitle } from './render/titleLayout';
 import { Barks } from './render/barks';
 import { RoadCast } from './render/roadCast';
 import type { SimBeat } from './sim/gen/level';
@@ -258,7 +260,7 @@ function newSim(): ReturnType<typeof createSim> {
   setLevelsPlayed(0);
   const s = demo
     ? createSim(cfg.seed, undefined, { heat: runHeat, offerSeed: cfg.seed })
-    : createSim(cfg.seed, undefined, { road: { total: route.total, renown: profile.renown, meta: metaRanks(profile), beat: cfg.reservedBeat }, heat: runHeat, offerSeed: cfg.seed });
+    : createSim(cfg.seed, undefined, { road: { total: route.total, renown: profile.renown, meta: metaRanks(profile), trees: treeSaves(profile), beat: cfg.reservedBeat }, heat: runHeat, offerSeed: cfg.seed });
   // Dev aid: ?class=shaman (or an index) plays slot 0 as that class.
   if (__DEV__ && params.has('class')) {
     const want = params.get('class')!;
@@ -281,6 +283,8 @@ function newSim(): ReturnType<typeof createSim> {
   }
   if (demo) setUpDemo(s);
   if (__DEV__ && params.has('gold')) s.gold = Number(params.get('gold')) || 0;
+  // Dev aid: ?renown=N sets the renown to spend in the town (to try the class trees).
+  if (__DEV__ && params.has('renown') && s.road) s.road.renown = Number(params.get('renown')) || 0;
   return s;
 }
 /** Dev aid: ?calm=1 keeps the road empty (no encounters, no packs), so a camp, a crossroads or a panel can be looked at in peace. */
@@ -319,7 +323,7 @@ const AUTOSAVE_TICKS = 600;
 let lastSaveTick = -Infinity;
 let lastCalm = -2;
 let savedChoices = 0;
-function titleScreen(): Screen { return { kind: 'title', cont: savedRun ? describeRunSave(savedRun) : undefined }; }
+function titleScreen(): Screen { rerollTitle(); return { kind: 'title', cont: savedRun ? describeRunSave(savedRun) : undefined }; }
 /** Saves the run being played, if it can be continued later (a run on the one road, still going). */
 function saveRun(): void {
   if (mode !== 'run' || !sim.road || sim.phase !== Phase.Playing || demo) return;
@@ -457,6 +461,7 @@ function beginSim(): void {
 /** A new run: it opens in the starting town, where the party is chosen by walking in (data/town.ts). */
 function startRoadRun(): void {
   input.reset();
+  input.claim(0, input.menuSource); // the device whose press started the run plays the first hero at once
   startRun(devConfig((Date.now() & 0xffffffff) >>> 0));
 }
 
@@ -471,8 +476,8 @@ function finishRun(): void {
   screen = runEndScreen(sum, cfg.chapter);
   if (sim.road && screen.kind === 'text') {
     // renown for the run, kept in the profile for the town to spend
-    const earned = renownFor({ cleared: sum.cleared, bosses: sim.road.bosses, kills: sum.kills, won: sum.outcome === 'won' });
-    keepProfile(withRun(profile, sim.road.renown + earned, sim.road.meta));
+    const earned = renownFor({ cleared: sum.cleared, bosses: sim.road.bosses, kills: sum.kills, won: sum.outcome === 'won', setOut: !sim.road.town });
+    keepProfile(withRun(profile, sim.road.renown + earned, sim.road.meta, sim.road.trees));
     screen.body.push({ text: `Renown earned: ${earned}  (${profile.renown} to spend in the town)`, tone: 'gold' });
   }
   mode = 'summary';
@@ -489,7 +494,7 @@ function followRoad(): void {
   const r = sim.road!;
   if (tutorialAfterTown && !r.town) { tutorialAfterTown = false; tutorial = createTutorial(); sim.tutorialHold = true; }
   // the town spent renown (or built a place): keep it, whatever becomes of the run
-  if (r.renown !== profile.renown || metaRanks(profile).some((v, i) => v !== r.meta[i])) keepProfile(withRun(profile, r.renown, r.meta));
+  if (r.renown !== profile.renown || metaRanks(profile).some((v, i) => v !== r.meta[i]) || JSON.stringify(profile.trees ?? null) !== JSON.stringify(treesToProfile(r.trees))) keepProfile(withRun(profile, r.renown, r.meta, r.trees));
   if (r.choices.length !== paintedChoices) { paintedChoices = r.choices.length; applyScenery(cfg.seed, route.total, r); }
   if (sim.sceneIndex !== roadScene) { roadScene = sim.sceneIndex; cast.reset(sim); } // the next road scene along the way
   if (r.level !== route.index) { route.index = r.level; route.plan = levelPlan(cfg.seed, r.level, route.total); cfg = { ...cfg, chapter: route.plan.chapter }; }
@@ -653,9 +658,9 @@ startLoop({
       endPrompt: routed ? 'ATTACK TO CONTINUE' : undefined,
       hideEndBanner: false,
       levelKeys: sim.players.map((_, k) => input.levelHint(k)),
-      storeHints: sim.road?.town ? sim.players.map((_, k) => input.interactHint(k)) : route.store ? sim.players.map((_, k) => (nearWare(sim, k) >= 0 || nearOffer(sim, k) >= 0 || nearGift(sim, k) >= 0 ? input.interactHint(k) : '')) : undefined,
-      questView: route.store ? questView() : undefined,
-      storeView: route.store ? storeView() : undefined,
+      storeHints: sim.road?.town ? sim.players.map((_, k) => input.interactHint(k)) : campShown(sim) ? sim.players.map((_, k) => (nearWare(sim, k) >= 0 || nearOffer(sim, k) >= 0 || nearGift(sim, k) >= 0 ? input.interactHint(k) : '')) : undefined,
+      questView: campShown(sim) ? questView() : undefined, // (from the moment the camp is near, so its people are in place before the party arrives)
+      storeView: campShown(sim) ? storeView() : undefined,
       routeLabel: sim.road?.town ? `THE TOWN  ${route.total} LEVELS AHEAD` : route.total > 1 ? (route.store ? `STORE  LEVEL ${route.index + 1} OF ${route.total}` : `LEVEL ${route.index + 1} OF ${route.total}`) : undefined,
     });
     cast.drawBubbles(renderer.batcher, sprites, sim, cam, alpha);

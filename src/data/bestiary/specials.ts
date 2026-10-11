@@ -30,6 +30,8 @@ export interface SkillCtx {
   power?: number;
 }
 
+/** Heroes outrun walkers, so what hurts them is what is thrown, dropped and laid in their way: an ordinary monster's skills come round this much sooner. */
+const SKILL_CD_MUL = 0.8;
 const lerp = (a: number, b: number, u: number): number => a + (b - a) * u;
 
 /** The ordinary patterns, weighted: scatter stays the commonest. */
@@ -57,6 +59,7 @@ const SHAPES: readonly number[] = [ProjStyle.Orb, ProjStyle.Spike, ProjStyle.Com
 /** An ordinary monster's skill. `windup` and `cooldown` are its own. */
 export function makeSpecial(kind: SpecialKind, d: Dice, u: number, c: SkillCtx): Special {
   const sp = baseSpecial(kind, d, u, c);
+  sp.cooldown = Math.round(sp.cooldown * SKILL_CD_MUL);
   const el = c.element ?? 0;
   if (el && ELEMENTAL_KINDS.has(kind)) {
     sp.element = el;
