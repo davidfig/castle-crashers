@@ -1,7 +1,7 @@
 // Shared tab bar for the art pages: the current page is lit, every other page is one click away.
 // Each page loads it with <script src="/art/nav.js"></script>; it also drops the page's own old row of links.
 (() => {
-  const PAGES = [['/art/heroes.html', 'Heroes'], ['/art/mobs.html', 'Monsters'], ['/art/walk.html', 'Level walk'], ['/art/screens.html', 'Screens']];
+  const PAGES = [['/art/heroes.html', 'Heroes'], ['/art/mobs.html', 'Monsters'], ['/art/walk.html', 'Road walk'], ['/art/screens.html', 'Screens']];
   const here = location.pathname === '/art' || location.pathname === '/art/' || location.pathname === '/art/index.html' ? '/art/heroes.html' : location.pathname;
   const css = document.createElement('style');
   css.textContent = `

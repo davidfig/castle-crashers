@@ -4,7 +4,7 @@
 //   /art/screens.html   the game's own screens, drawn by the real renderer
 //   /art/mobs.html      the monster roller: roll a seed's generated cast with stats and powers
 //   /art/heroes.html    the hero roller: a seed's four players, each in every class, animated
-//   /art/walk.html      the level walk: a whole level of the road, scenery, weather and road-scene stops, with no monsters
+//   /art/walk.html      the road walk: the whole run's road, scenery, weather, camps, crossroads and road-scene stops, with no monsters
 // Everything rebuilds on save and live-reloads the art pages. Builds are retried when they fail (files caught mid-write),
 // the last good bundle keeps being served while a build is broken, and no error in a build, watcher or request can kill the process.
 import { createServer } from 'node:http';
@@ -84,7 +84,7 @@ const heroes = bundle('heroes', (p) => '/art/' + p.split(sep).pop(), {
   loader: { '.png': 'dataurl' }, define: { __DEV__: 'true' },
 }, { onBuilt: notify, watchDirs: [join(ROOT, 'src'), ART], accept: notNoise });
 
-// The level walk runs a real level of a seed's road with the monsters taken out, so it is a bundle of art/walk.ts as well.
+// The road walk runs a seed's whole road with the monsters taken out, so it is a bundle of art/walk.ts as well.
 const walk = bundle('walk', (p) => '/art/' + p.split(sep).pop(), {
   entryPoints: [join(ART, 'walk.ts')],
   bundle: true, outfile: join(ART, 'walk.js'), sourcemap: 'inline', target: 'es2022', format: 'esm',
