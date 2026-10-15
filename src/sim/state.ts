@@ -407,12 +407,12 @@ export interface SimOptions {
   /** The whole run as one road (docs/21-the-road.md): `total` levels with a camp after each but the last, planned from the run's seed
    *  (the sim's `seed`) as the party nears them. The per-level options (boss, scale, mix, damage, opener) then come from the road. It
    *  starts in the town, with the profile's renown to spend and the lasting upgrades bought so far (data/meta.ts, by index). */
-  road?: { total: number; renown?: number; meta?: readonly number[]; /** The class trees' owned nodes, active branches and equipped skill (data/trees). */ trees?: readonly TreeSave[]; /** A story beat the first level stages (docs/12, R1: the cookfire). */ beat?: SimBeat; /** The horde's size and the bosses' health (defaults `ROAD_HORDE`, `ROAD_BOSS_HP`): tuning knobs for the balance probe. */ horde?: number; bossHp?: number; hard?: number };
+  road?: { total: number; renown?: number; meta?: readonly number[]; /** The class trees' owned nodes, active branches and equipped skill (data/trees). */ trees?: readonly TreeSave[]; /** A story beat the first level stages (docs/12, R1: the cookfire). */ beat?: SimBeat; /** The horde's size and the bosses' health (defaults `ROAD_HORDE`, `ROAD_BOSS_HP`): tuning knobs for the balance probe. */ horde?: number; bossHp?: number; hard?: number; /** Stage the midpoint scene (R5, docs/12-story.md) on this road. */ midpoint?: boolean };
 }
 
 export function createSim(seed: number, beat?: SimBeat, opts: SimOptions = {}): GameState {
   const heat = Math.max(0, Math.min(HEAT_MAX, Math.floor(opts.heat ?? 0)));
-  const road = opts.road ? createRoad(seed, opts.road.total, heat, opts.road.renown ?? 0, opts.road.meta ?? [], opts.road.beat, opts.road.horde, opts.road.bossHp, opts.road.trees, opts.road.hard) : null;
+  const road = opts.road ? createRoad(seed, opts.road.total, heat, opts.road.renown ?? 0, opts.road.meta ?? [], opts.road.beat, opts.road.horde, opts.road.bossHp, opts.road.trees, opts.road.hard, opts.road.midpoint) : null;
   const length = road ? road.layout.length : (opts.length ?? WORLD_W);
   const plan = road ? [] : planLevel(seed, beat, { boss: opts.boss, scale: (opts.scale ?? 1) * heatHorde(heat), scene: opts.scene, heat, opener: opts.opener, length });
   const s: GameState = {

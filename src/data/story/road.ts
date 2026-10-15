@@ -13,6 +13,7 @@
 // The story font draws no accents or curly quotes: plain ASCII only.
 import type { NpcName } from '../../render/npcArt';
 import { generateScript } from './roadGen';
+import { MIDPOINT_SCENE } from './midpoint';
 
 export interface RoadFigure {
   npc: NpcName;
@@ -41,6 +42,8 @@ export interface RoadScene {
   lines: RoadScript;
   /** Alternate conversations for later hearings, same cast. */
   variants: readonly RoadScript[];
+  /** Told once, as `lines`, however often it is met (the midpoint scene). */
+  once?: boolean;
 }
 
 const KING = 'king', HERALD = 'herald', CAPTAIN = 'captain', REGISTRAR = 'registrar', ELDER = 'elder';
@@ -59,6 +62,7 @@ function idHash(id: string): number {
  * `forced` (dev aid, ?variant=N) picks one directly: 0 the first-time script, k the k-th variant, and -k the k-th generated one.
  */
 export function scriptFor(sc: RoadScene, heard: number, forced?: number): RoadScript {
+  if (sc.once) return sc.lines;
   if (forced !== undefined) {
     if (forced < 0) return generateScript(sc, -forced);
     return forced === 0 || sc.variants.length === 0 ? sc.lines : sc.variants[(forced - 1) % sc.variants.length];
@@ -975,7 +979,7 @@ export const ROAD_SCENES: readonly RoadScene[] = [
   },
 ];
 
-export const SCENE_BY_ID: Readonly<Record<string, RoadScene>> = Object.fromEntries(ROAD_SCENES.map((c) => [c.id, c]));
+export const SCENE_BY_ID: Readonly<Record<string, RoadScene>> = Object.fromEntries([...ROAD_SCENES, MIDPOINT_SCENE].map((c) => [c.id, c]));
 
 /** The scene on a level of the road: none on a boss level. */
 export function roadSceneFor(chapter: number, levelInBiome: number, boss: boolean): RoadScene | undefined {

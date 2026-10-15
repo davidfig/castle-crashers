@@ -5,8 +5,10 @@
 import type { Batcher } from '../platform/gl/batcher';
 import { hex } from '../platform/gl/batcher';
 import type { Sprites } from './art';
+import { drawGore, GORE_KINDS } from './roadGore';
 
-export type PropKind = 'tent' | 'pavilion' | 'banner' | 'throne' | 'chair' | 'stool' | 'table' | 'fire' | 'logseat' | 'crate' | 'barrel' | 'lantern' | 'rug';
+export type PropKind = 'tent' | 'pavilion' | 'banner' | 'throne' | 'chair' | 'stool' | 'table' | 'fire' | 'logseat' | 'crate' | 'barrel' | 'lantern' | 'rug'
+  | 'blood' | 'body' | 'cart' | 'pot' | 'tally' | 'prints';
 
 export interface Prop {
   kind: PropKind;
@@ -19,10 +21,12 @@ export interface Prop {
   col?: number;
   /** What lies on a table: a scroll, a ledger, a map, or mugs. */
   item?: 'scroll' | 'ledger' | 'map' | 'mugs';
+  /** Which of a kind (the midpoint's gore, render/roadGore.ts): a puddle's size, a body's creature. */
+  variant?: number;
 }
 
-type Mood = 'court' | 'desk' | 'camp' | 'hearth';
-const MOOD: Record<string, Mood> = { c1a: 'court', c1b: 'desk', c2a: 'camp', c2b: 'court', c3a: 'desk', c3b: 'hearth', c4a: 'court', c4b: 'camp', c5a: 'court', c5b: 'hearth' };
+type Mood = 'court' | 'desk' | 'camp' | 'hearth' | 'aftermath';
+const MOOD: Record<string, Mood> = { c1a: 'court', c1b: 'desk', c2a: 'camp', c2b: 'court', c3a: 'desk', c3b: 'hearth', c4a: 'court', c4b: 'camp', c5a: 'court', c5b: 'hearth', r5: 'aftermath' };
 /** The cloth of each chapter: the Crown's red at first, fading to ash grey and mourning black by the reckoning. */
 const CLOTH = [0xb8402e, 0xa05a30, 0x6a7a8a, 0x5a4a6a, 0x3a3a46];
 const CLOTH_B = [0xe8dcc0, 0xd8c890, 0xc8ccd2, 0xb8aac8, 0x8a8a96];
@@ -31,6 +35,7 @@ const CLOTH_B = [0xe8dcc0, 0xd8c890, 0xc8ccd2, 0xb8aac8, 0x8a8a96];
 export function propsFor(id: string, ch: number): Prop[] {
   const col = CLOTH[Math.min(CLOTH.length, Math.max(1, ch)) - 1];
   switch (MOOD[id] ?? 'camp') {
+    case 'aftermath': return AFTERMATH;
     case 'court': return [
       { kind: 'pavilion', dx: 4, dy: -16, col },
       { kind: 'rug', dx: 4, dy: -4, col },
@@ -75,8 +80,29 @@ export function propsFor(id: string, ch: number): Prop[] {
 /** Half-width the prop occupies on screen (for off-screen culling). */
 export const PROP_REACH = 40;
 
+/**
+ * The midpoint scene's ground (data/story/midpoint.ts): puddles first (deep in the sort, so they lie under everything), then the fallen,
+ * the tipped cart and the spilled supper, the hunters' tally board and banner, and the clerk's table. A lot of it, on purpose.
+ */
+const AFTERMATH: Prop[] = [
+  { kind: 'blood', dx: -120, dy: -50, variant: 3 }, { kind: 'blood', dx: -40, dy: -48, variant: 1 }, { kind: 'blood', dx: 36, dy: -46, variant: 2 },
+  { kind: 'blood', dx: 118, dy: -44, variant: 0 }, { kind: 'blood', dx: -76, dy: -36, variant: 2 }, { kind: 'blood', dx: 80, dy: -34, variant: 3 },
+  { kind: 'prints', dx: -10, dy: -30 },
+  { kind: 'cart', dx: -150, dy: -12 },
+  { kind: 'body', dx: -112, dy: -6, col: 0x5a9a3a, variant: 0 }, { kind: 'body', dx: -88, dy: 6, col: 0x6a8a3a, variant: 1, flip: true },
+  { kind: 'body', dx: -62, dy: -2, col: 0xb88a5a, variant: 2 }, { kind: 'body', dx: -52, dy: 12, col: 0x5a9a3a, variant: 0, flip: true },
+  { kind: 'pot', dx: -34, dy: 20 },
+  { kind: 'table', dx: 52, dy: -14, item: 'ledger' },
+  { kind: 'banner', dx: 104, dy: -20, col: 0x20202a },
+  { kind: 'tally', dx: 126, dy: -6 },
+  { kind: 'body', dx: 100, dy: 14, col: 0x6a8a3a, variant: 1 }, { kind: 'body', dx: 134, dy: 18, col: 0xb88a5a, variant: 2, flip: true },
+  { kind: 'body', dx: 8, dy: 22, col: 0x5a9a3a, variant: 0, flip: true }, { kind: 'body', dx: 160, dy: 4, col: 0x5a9a3a, variant: 0 },
+  { kind: 'crate', dx: 80, dy: 24 }, { kind: 'blood', dx: 14, dy: 26, variant: 1 },
+];
+
 /** Draws a prop with its base centre at screen (sx, sy). */
 export function drawProp(b: Batcher, S: Sprites, p: Prop, sx: number, sy: number, tick: number): void {
+  if (GORE_KINDS.includes(p.kind)) { drawGore(b, S, p, sx, sy); return; }
   const px = (x: number, y: number, w: number, h: number, color: number, a = 1): void => b.drawScaled(S.px, sx + x, sy + y, w, h, hex(color, a));
   const dir = p.flip ? -1 : 1;
   const cloth = p.col ?? 0xb8402e;

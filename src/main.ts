@@ -58,6 +58,7 @@ import { titleToggles, titleToggleRects } from './render/titleArt';
 import { rerollTitle } from './render/titleLayout';
 import { Barks } from './render/barks';
 import { RoadCast } from './render/roadCast';
+import { timesHeard } from './data/story/roadMemory';
 import type { SimBeat } from './sim/gen/level';
 
 function fail(msg: string): never {
@@ -259,11 +260,17 @@ function routeTotal(): number {
 let runHeat = Math.max(0, Math.min(HEAT_MAX, Math.floor(Number(params.get('heat'))) || 0));
 
 /** The run's sim: its one road (or, for `?demo=`, a field of its own), with the dev aids asked for in the URL. */
+/**
+ * Whether this run's road stages the midpoint scene (R5, docs/12-story.md): until it has been heard. This stands in for the Ledger's
+ * "R5 pending" while the Ledger is not read on the road (docs/21-the-road.md, "The story needs rethinking"); swap it when that lands.
+ * Dev aid: ?midpoint=1 stages it every time.
+ */
+function midpointDue(): boolean { return (__DEV__ && params.has('midpoint')) || timesHeard('r5') === 0; }
 function newSim(): ReturnType<typeof createSim> {
   setLevelsPlayed(0);
   const s = demo
     ? createSim(cfg.seed, undefined, { heat: runHeat, offerSeed: cfg.seed })
-    : createSim(cfg.seed, undefined, { road: { total: route.total, renown: profile.renown, meta: metaRanks(profile), trees: treeSaves(profile), beat: cfg.reservedBeat }, heat: runHeat, offerSeed: cfg.seed });
+    : createSim(cfg.seed, undefined, { road: { total: route.total, renown: profile.renown, meta: metaRanks(profile), trees: treeSaves(profile), beat: cfg.reservedBeat, midpoint: midpointDue() }, heat: runHeat, offerSeed: cfg.seed });
   // Dev aid: ?class=shaman (or an index) plays slot 0 as that class.
   if (__DEV__ && params.has('class')) {
     const want = params.get('class')!;
