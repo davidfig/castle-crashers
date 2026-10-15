@@ -74,6 +74,8 @@ export class RoadCast {
   script: RoadScript = [];
   /** Dev aid (?variant=N): 0 the first-time script, k the k-th variant. */
   forced: number | undefined;
+  /** The scenes heard since the run began (the Ledger's beats, campaign/roadRun.ts). Cleared by the game when a run starts. */
+  readonly heard = new Set<string>();
   /** This hearing has been counted (so the next meeting plays another conversation). */
   private counted = false;
   /** Figures, sorted by depth (field y) so the renderer can weave them in among the creatures. */
@@ -165,7 +167,7 @@ export class RoadCast {
     this.listening = near && this.calm;
     if (this.done) return;
     if (!this.listening) { this.age = 0; this.heroSlot = -1; return; } // walked off, or a fight broke out: the step begins again later
-    if (!this.counted) { this.counted = true; if (this.forced === undefined) markHeard(sc.id); }
+    if (!this.counted) { this.counted = true; if (this.forced === undefined) markHeard(sc.id); this.heard.add(sc.id); }
     // a hero's step needs someone to speak it; with nobody on their feet it is skipped
     const b = this.beats[this.beat];
     if ('react' in b && this.heroSlot < 0 && !this.pickHero(s, b.react)) { this.advance(); return; }

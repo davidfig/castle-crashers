@@ -133,7 +133,7 @@ export function sceneAt(runSeed: number, k: number, lp: LevelPlan, midpoint = fa
   const inBiome = k % LEVELS_PER_BIOME;
   if (lp.boss || inBiome >= LEVELS_PER_BIOME - 1) return undefined;
   // the midpoint (docs/12-story.md, R5) takes the first scene slot of its chapter's region, whatever the odds
-  if (midpoint && lp.chapter === MIDPOINT_CHAPTER && inBiome === 0) return MIDPOINT_SCENE;
+  if (midpoint && stageOf(k) === MIDPOINT_CHAPTER - 1 && inBiome === 0) return MIDPOINT_SCENE;
   const r = createRng((runSeed ^ Math.imul(stageOf(k) + 1, 0x3c6ef372)) >>> 0, Stream.campaign + 14);
   const held: boolean[] = [];
   for (let i = 0; i < LEVELS_PER_BIOME - 1; i++) held.push(rngFloat(r) < SCENE_ODDS);
@@ -167,6 +167,8 @@ export interface RoadState {
   layout: RoadLayout;
   /** The road stages the midpoint scene (R5, docs/12-story.md) in its chapter's first scene slot. */
   midpoint: boolean;
+  /** The chapter the whole road is told in (the Ledger's, docs/12-story.md), or 0 for each region's own (dev runs, the balance probe). */
+  chapter: number;
   /** How many levels have been planned so far (their encounters are in `GameState.plan`). */
   planned: number;
   /** Where the camera's centre is: the level, and the calm place it is in (an index into `layout.calm`, or -1). */
@@ -232,7 +234,10 @@ export function roadBiomes(runSeed: number, total: number, choices: readonly num
 }
 
 /** The plan of level `k` of this road. */
-export function roadLevel(r: RoadState, k: number): LevelPlan { return levelPlan(r.runSeed, k, r.total, r.biomes[stageOf(k)]); }
+export function roadLevel(r: RoadState, k: number): LevelPlan { return withChapter(levelPlan(r.runSeed, k, r.total, r.biomes[stageOf(k)]), r.chapter); }
+
+/** A level's plan told in the run's chapter, when the run has one (the campaign's, docs/12-story.md): its scenes, its mercy, its wording. 0: the region's own. */
+function withChapter(lp: LevelPlan, chapter: number): LevelPlan { return chapter > 0 ? { ...lp, chapter } : lp; }
 
 /**
  * The encounters of level `k`'s field, without its road scene's marker (the road places the scene itself, on ground of its own). A level
@@ -278,13 +283,13 @@ function reach(c: ClumpPlan): [number, number] {
  * Lays out a road of `total` levels: each level's field, cut at its road scene (if any), with a camp after most levels (`campAfter`), and
  * the gaps that keep every calm place out of the horde's reach. A pure function of the run's seed.
  */
-export function layoutRoad(runSeed: number, total: number, biomes: readonly number[] = roadBiomes(runSeed, total, []), midpoint = false): RoadLayout {
+export function layoutRoad(runSeed: number, total: number, biomes: readonly number[] = roadBiomes(runSeed, total, []), midpoint = false, chapter = 0): RoadLayout {
   const levels: LevelLay[] = [], calm: Calm[] = [];
   // the road begins in the town: a calm place a screen wide, and the first level keeps clear of it like any other
   calm.push({ kind: 'town', level: 0, from: 0, to: TOWN_W });
   let calmEnd = TOWN_W, gap = CLEAR_AFTER, length = WORLD_W;
   for (let k = 0; k < total; k++) {
-    const lp = levelPlan(runSeed, k, total, biomes[stageOf(k)]);
+    const lp = withChapter(levelPlan(runSeed, k, total, biomes[stageOf(k)]), chapter);
     const shape = levelShape(runSeed, lp, k, midpoint);
     const scene = levelScene(runSeed, lp, k, midpoint);
     const cuts = scene ? [0, scene.x, WORLD_W] : [0, WORLD_W];
@@ -560,18 +565,18 @@ export function commitFork(s: GameState, fork: Calm, side: number): void {
   const r = s.road!;
   r.choices.push(side);
   r.biomes = roadBiomes(r.runSeed, r.total, r.choices);
-  r.layout = layoutRoad(r.runSeed, r.total, r.biomes, r.midpoint);
+  r.layout = layoutRoad(r.runSeed, r.total, r.biomes, r.midpoint, r.chapter);
   s.worldW = r.layout.length;
   s.exitX = s.worldW - 70;
   emit(s.events, Ev.Fork, fork.commit!, WORLD_H / 2, side, r.biomes[fork.stage!], fork.stage!);
 }
 
 /** A fresh road's state (level 0, nothing planned yet: the first upkeep plans it). */
-export function createRoad(runSeed: number, total: number, heat: number, renown = 0, meta: readonly number[] = [], beat?: SimBeat, horde = ROAD_HORDE, bossHp = ROAD_BOSS_HP, trees?: readonly TreeSave[], hard = ROAD_HARD, midpoint = false): RoadState {
+export function createRoad(runSeed: number, total: number, heat: number, renown = 0, meta: readonly number[] = [], beat?: SimBeat, horde = ROAD_HORDE, bossHp = ROAD_BOSS_HP, trees?: readonly TreeSave[], hard = ROAD_HARD, midpoint = false, chapter = 0): RoadState {
   const n = Math.max(1, total);
   const biomes = roadBiomes(runSeed, n, []);
   return {
-    runSeed, total: n, heat, layout: layoutRoad(runSeed, n, biomes, midpoint), midpoint, planned: 0, level: 0, calm: -1, camp: false, since: -1, choices: [], biomes,
+    runSeed, total: n, heat, layout: layoutRoad(runSeed, n, biomes, midpoint, chapter), midpoint, chapter, planned: 0, level: 0, calm: -1, camp: false, since: -1, choices: [], biomes,
     town: true, renown, meta: META.map((_, i) => meta[i] ?? 0), metaMul: metaMultipliers(meta), trees: trees ? cloneTreeSaves(trees) : newTreeSaves(), treeGated: !!trees, bosses: 0, beat: beat ? { ...beat } : null, trigLevel: -1, trigLocal: 0, horde, bossHp, hard,
   };
 }

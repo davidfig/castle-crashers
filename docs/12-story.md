@@ -114,7 +114,7 @@ Tone: quiet.
   - **Heroes react** in class voices as road scenes do (`ROAD_REACTIONS`).
   - **No mechanical effect.** Nothing in the scene changes the rules, rewards or the Ledger's counts beyond marking R5 seen. The party's first public choice stays the Elder (R7).
   - **Built.** `data/story/midpoint.ts` (the scene `r5`, told once, `once: true`), `render/roadGore.ts` and the `aftermath` set in `render/roadProps.ts` (puddles, the fallen of three kinds, the tipped cart, the spilled pot, the tally board, red footprints), staged by the existing `RoadCast`. `layoutRoad` / `sceneAt` take a `midpoint` flag (stored in `RoadState.midpoint`, so it is saved) that puts `r5` in the first scene slot of chapter III's region (level 6 of 15), whatever the odds. Tests: `sim/midpoint.test.ts`. Dev: `?midpoint=1&seed=5&levels=15&at=6&calm=1`.
-  - **Not built yet:** the Ledger is not read on the road (see [21](21-the-road.md), "The story needs rethinking"), so `midpointDue()` in `main.ts` stands in for "R5 pending": the scene is staged until it has been heard once in this browser (`roadMemory`). Music does not drop out inside it yet. The scene does not yet mark R5 seen in the Ledger.
+  - **Gated by the Ledger (built).** `midpointDue()` in `main.ts` is true when `pendingBeat(ledger)` is R5 (or `?midpoint=1` in dev). A run that heard the scene reports it (`RoadCast.heard`), and R5 is marked seen; a run that walked past leaves it pending and counts a miss. Not built yet: the music does not drop out inside the scene, and a page reload mid-run forgets what was heard.
 - **Exit:** the **Elder milestone Writ** (R7: "the Elder knew the Registrar's name").
 
 ### IV — Complicity

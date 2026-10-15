@@ -204,6 +204,9 @@ Everything costs 1,980 renown. A run earns `renownFor` = 4 per level cleared, 15
 
 ## The story needs rethinking (to do)
 
+**Decided: the story advances across runs.** The Ledger (`campaign/ledger.ts`, kept in `localStorage`) holds the campaign's chapter, and a run is told in that chapter along the whole road (`RoadState.chapter`, `SimOptions.road.chapter`: its road scenes, its mercy from chapter II, its barks), not in each region's own. The beat the Ledger has pending is staged in the run (R1 at the first level, R5 as the midpoint scene), and a finished run reports what played (`campaign/roadRun.ts`: `summarizeRoadRun`, then `applyRunSummary`); a run that never left the town, and a dev run (`?seed=N`), tell it nothing. Beats with no scene yet play on a win (milestones only on a win), and the old hub beats (R6, R8, R10) play once the party sets out from the town: interim stubs to replace as each gets a scene. A run with no chapter (`chapter: 0`: dev runs, `pnpm sim`) is told region by region as before. Still to do: the Quiet Regions walk (R9), the other beats' scenes, per-run staging of the boss milestones.
+
+
 The story beats stay, but how they are delivered has to be worked out again for this kind of run. [12](12-story.md) was written for runs of separate levels started from a hub with a Writ board, and some of it no longer fits: no run revisits an earlier run's road (so the Quiet Regions walk, R9, goes or changes), the hub becomes the town at the start of the road, and the per-level chapter wording, road scenes and reserved beats must find their place on one continuous road with forks. Until that rework, keep the beats working where they are (reserved beats on spine regions, road scenes as scene stretches) and avoid building anything new on the old hub.
 
 ## Open

@@ -42,6 +42,10 @@ import { renownFor } from './data/meta';
 import { restore } from './sim/snapshot';
 import { drawResumeHold, type ResumeView } from './render/resumeHud';
 import { summarizeEnd } from './campaign/run';
+import { applyRunSummary } from './campaign/summary';
+import { pendingBeat, type Ledger } from './campaign/ledger';
+import { loadLedger, saveLedger } from './campaign/storage';
+import { runChapter, summarizeRoadRun } from './campaign/roadRun';
 import { createTutorial, markTutorialSeen, tutorialSeen, tutorialView, updateTutorial, type Tutorial } from './campaign/tutorial';
 import { drawTutorial } from './render/tutorialHud';
 import { levelPlan, LEVELS_PER_BIOME, ROUTE_LEVELS, type LevelPlan } from './campaign/route';
@@ -58,7 +62,6 @@ import { titleToggles, titleToggleRects } from './render/titleArt';
 import { rerollTitle } from './render/titleLayout';
 import { Barks } from './render/barks';
 import { RoadCast } from './render/roadCast';
-import { timesHeard } from './data/story/roadMemory';
 import type { SimBeat } from './sim/gen/level';
 
 function fail(msg: string): never {
@@ -211,6 +214,11 @@ const runSaveStore = await openIdbStore(typeof indexedDB === 'undefined' ? undef
 // What carries over between runs: renown and the town's lasting upgrades (campaign/profile.ts). Written whenever the town spends renown, and at the end of a run.
 const profileLoad = loadProfile(runStore);
 let profile: Profile = profileLoad.profile;
+// The Ledger: the campaign across runs (docs/12-story.md). Its chapter tells every region of a run, and the beat it has pending is staged
+// in that run; a finished run reports what played (campaign/roadRun.ts). Dev runs (?seed=N) never touch it.
+const ledgerLoad = loadLedger(runStore, () => (Date.now() & 0xffffffff) >>> 0);
+let ledger: Ledger = ledgerLoad.ledger;
+function keepLedger(next: Ledger): void { ledger = next; if (ledgerLoad.writable) saveLedger(runStore, ledger); }
 function keepProfile(next: Profile): void { profile = next; if (profileLoad.writable) saveProfile(runStore, profile); }
 type Mode = 'title' | 'run' | 'summary';
 let mode: Mode = 'title';
@@ -260,17 +268,13 @@ function routeTotal(): number {
 let runHeat = Math.max(0, Math.min(HEAT_MAX, Math.floor(Number(params.get('heat'))) || 0));
 
 /** The run's sim: its one road (or, for `?demo=`, a field of its own), with the dev aids asked for in the URL. */
-/**
- * Whether this run's road stages the midpoint scene (R5, docs/12-story.md): until it has been heard. This stands in for the Ledger's
- * "R5 pending" while the Ledger is not read on the road (docs/21-the-road.md, "The story needs rethinking"); swap it when that lands.
- * Dev aid: ?midpoint=1 stages it every time.
- */
-function midpointDue(): boolean { return (__DEV__ && params.has('midpoint')) || timesHeard('r5') === 0; }
+/** Whether this run's road stages the midpoint scene (R5, docs/12-story.md): when the Ledger has it pending. Dev aid: ?midpoint=1 stages it every time. */
+function midpointDue(): boolean { return (__DEV__ && params.has('midpoint')) || (!devRun && pendingBeat(ledger)?.id === 'R5'); }
 function newSim(): ReturnType<typeof createSim> {
   setLevelsPlayed(0);
   const s = demo
     ? createSim(cfg.seed, undefined, { heat: runHeat, offerSeed: cfg.seed })
-    : createSim(cfg.seed, undefined, { road: { total: route.total, renown: profile.renown, meta: metaRanks(profile), trees: treeSaves(profile), beat: cfg.reservedBeat, midpoint: midpointDue() }, heat: runHeat, offerSeed: cfg.seed });
+    : createSim(cfg.seed, undefined, { road: { total: route.total, renown: profile.renown, meta: metaRanks(profile), trees: treeSaves(profile), beat: cfg.reservedBeat, midpoint: midpointDue(), chapter: devRun ? undefined : runChapter(ledger) }, heat: runHeat, offerSeed: cfg.seed });
   // Dev aid: ?class=shaman (or an index) plays slot 0 as that class.
   if (__DEV__ && params.has('class')) {
     const want = params.get('class')!;
@@ -366,7 +370,8 @@ function continueRun(): void {
   applyScenery(seed, total, restored.road ?? undefined);
   paintedChoices = restored.road?.choices.length ?? 0;
   const plan = levelPlan(seed, save.level, total);
-  cfg = { seed, chapter: plan.chapter };
+  cfg = { seed, chapter: restored.road?.chapter || plan.chapter };
+  cast.heard.clear();
   route = { index: save.level, total, plan, store: false };
   sim = restored;
   roadScene = -1;
@@ -435,7 +440,8 @@ function startRun(c: RunConfig): void {
   const at = __DEV__ ? Math.max(0, Math.min(total - 1, Number(params.get('at') ?? 0) || 0)) : 0;
   const plan = levelPlan(c.seed, at, total);
   // the first level of a real run stages the cookfire camp (docs/12, R1): the story told in the field
-  cfg = { ...c, chapter: plan.chapter, reservedBeat: at === 0 && !devRun ? { id: 'R1' } : c.reservedBeat };
+  cfg = { ...c, chapter: devRun ? plan.chapter : runChapter(ledger), reservedBeat: at === 0 && !devRun ? (pendingBeat(ledger)?.id === 'R1' ? { id: 'R1' } : undefined) : c.reservedBeat };
+  cast.heard.clear();
   route = { index: at, total, plan, store: false };
   tutorialAfterTown = false;
   sim = newSim();
@@ -483,6 +489,8 @@ function restart(): void {
 function finishRun(): void {
   if (sim.road) { clearRunSave(runSaveStore); savedRun = undefined; } // the run is over: nothing to continue
   const sum = summarizeEnd(sim, retreated, route.index, route.total);
+  // the Ledger hears what played (a run that never left the town, and a dev run, tell it nothing)
+  if (sim.road && !devRun && !sim.road.town) keepLedger(applyRunSummary(ledger, summarizeRoadRun(sim, pendingBeat(ledger), retreated, cast.heard)));
   screen = runEndScreen(sum, cfg.chapter);
   if (sim.road && screen.kind === 'text') {
     // renown for the run, kept in the profile for the town to spend
@@ -507,7 +515,7 @@ function followRoad(): void {
   if (r.renown !== profile.renown || metaRanks(profile).some((v, i) => v !== r.meta[i]) || JSON.stringify(profile.trees ?? null) !== JSON.stringify(treesToProfile(r.trees))) keepProfile(withRun(profile, r.renown, r.meta, r.trees));
   if (r.choices.length !== paintedChoices) { paintedChoices = r.choices.length; applyScenery(cfg.seed, route.total, r); }
   if (sim.sceneIndex !== roadScene) { roadScene = sim.sceneIndex; cast.reset(sim); } // the next road scene along the way
-  if (r.level !== route.index) { route.index = r.level; route.plan = levelPlan(cfg.seed, r.level, route.total); cfg = { ...cfg, chapter: route.plan.chapter }; }
+  if (r.level !== route.index) { route.index = r.level; route.plan = levelPlan(cfg.seed, r.level, route.total); cfg = { ...cfg, chapter: r.chapter || route.plan.chapter }; }
   route.store = r.camp;
 }
 
