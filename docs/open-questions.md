@@ -4,10 +4,10 @@ Track undecided items here. When resolved, move to an ADR in [decisions](decisio
 
 ## Identity
 - [x] **Game title.** *The Final Tally: Per Head.* "The Final Tally" is the Chapter V name for the campaign's end; "Per Head" is how the bounty is paid. Cheerful on day one, damning after the turn. Set in `src/data/title.ts` and `public/index.html`. (The repo and the dev docs still say "castle crashers", the game that inspired it, and that is not the title.)
-- [ ] Tone: goofy-cartoon (Castle Crashers) vs. grim-ish (Dead Cells)? Affects art and humor.
+- [x] **Tone: goofy-cartoon** (Castle Crashers), not grim. Art and humor stay bright; the story's drift to quiet in [12](12-story.md) is unchanged (visuals get emptier, not grimmer).
 
 ## Story (see [12](12-story.md))
-- [ ] Hard midpoint reveal (Chapter III) vs. a continuous slow drift.
+- [x] **Hard midpoint reveal (Chapter III)**, skippable, gated on Ledger state, in a new scene full of gore left by other hunters. See [12](12-story.md#iii--the-ledger-midpoint-turn).
 - [ ] How much should mercy cost before it feels like a punishment?
 - [ ] Is an accidental AoE kill of a Surrendered mob fair? How is it surfaced?
 - [ ] Minimum ordinary Writs per chapter before its milestone appears (starting targets: 2 / 3 / 3 / 3).
@@ -20,10 +20,10 @@ Track undecided items here. When resolved, move to an ADR in [decisions](decisio
 - [x] ECS storage: struct-of-arrays typed arrays (hordes).
 - [ ] Atlas: single vs. multiple; max texture size target.
 - [ ] Audio formats/tooling (ogg vs mp3 vs wav).
-- [ ] Save storage: `localStorage` vs. IndexedDB from the start. (The run save is proposed as IndexedDB with a localStorage fallback in [21](21-the-road.md); the sim snapshot exists, but no IndexedDB code does yet. Small flags such as the tutorial and road memory already use `localStorage`.)
+- [x] **Save storage: IndexedDB.** The run save moves off `localStorage` (`campaign/runSave.ts` is still on it). Open detail: the last save is written as the page closes (`pagehide`), where only a synchronous write is sure to finish, so [21](21-the-road.md)'s "localStorage, uncompressed" reasoning needs an answer (e.g. a synchronous localStorage mirror of the latest save, or rely on the 10 s autosave). Small flags (tutorial, road memory) stay in `localStorage`.
 
 ## Gameplay
-- [ ] **Friendly fire policy.** Off, on, or modifier?
+- [x] **Friendly fire: off.** Heroes never hurt each other; difficulty can be added later by other means.
 - [ ] Number of active ability slots (proposed 4) and whether resource systems differ per class or share a model.
 - [ ] Per-player time dilation while swap ring open: on, off, or option?
 - [ ] Do players pick any class every run, or are classes also gated by meta unlocks?
@@ -33,7 +33,7 @@ Track undecided items here. When resolved, move to an ADR in [decisions](decisio
 - [ ] Do class tree nodes grant raw stats at all, or only expand offer pools/options? (Draft answer in [22](22-class-trees.md): pools and options only.) Also open there: the 2-of-3 branch focus cap, whether achievements carry across same-class characters.
 - [ ] Shaman and totems: bag reset rule, whether mobs can kill totems, hold-to-lob, per-kind vs total cap, pool size. See [18](18-shaman-and-totems.md#open-questions).
 - [ ] Run length target (25–40 min is a guess).
-- [ ] Death penalty detail: anything kept besides renown & codex?
+- [x] **No death penalty.** Nothing extra is lost on a death; difficulty can be added later.
 
 ## Content
 - [ ] Biome list and theming (Forest, Keep, Crypt, Frozen Pass, Volcano, Sky Citadel?).

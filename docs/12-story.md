@@ -104,6 +104,7 @@ Tone: quiet.
 - A cleared settlement contains the **paperwork**: the Writ quotas pre-date any "threat". The map shows the cities' expansion over the territories that the "monsters" came from. The bounty was never a response; it was a plan.
 - An **Elder** asks the party to stop. This is structured like a boss encounter (arena, staging) but the Elder fights only defensively, if at all. Whether the party kills the Elder or lets them walk is the first big, public choice.
 - The party fractures. Class stances now shift openly in the hub.
+- **Midpoint reveal (decided).** A hard reveal, not a slow drift (Chapters I and II stay the setup). It is **skippable like everything else**: no modal, the party can walk past it. It is **gated on Ledger state**, not on a fixed point in the road. It is a **new, purpose-made scene**, not a reuse of an existing road scene: the party comes upon a place **other hunters** have already been through, with a lot of gore (the Crown's bounty has many takers, not only this party). The gore stays in the game's cartoon art language (the visuals get emptier, not grimmer, principle 5) but is plentiful and unmistakable. Still to design: the exact Ledger threshold, the scene's place on the road (it must be a calm place, see [21](21-the-road.md)), and how gore is drawn in the cartoon style.
 - **Exit:** the **Elder milestone Writ** (R7: "the Elder knew the Registrar's name").
 
 ### IV — Complicity
