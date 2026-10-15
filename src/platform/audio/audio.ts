@@ -122,7 +122,7 @@ export class Audio {
         const d = noise.getChannelData(0);
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
         const mbus = ac.createGain();
-        mbus.gain.value = this.musicOn ? MUSIC_VOLUME : 0;
+        mbus.gain.value = this.musicOn && !this.hushed ? MUSIC_VOLUME : 0;
         mbus.connect(bus);
         this.music = new Music(ac, mbus);
         this.mbus = mbus; this.ac = ac; this.bus = bus; this.noise = noise;
@@ -139,7 +139,19 @@ export class Audio {
   setMusic(on: boolean): void {
     this.musicOn = on;
     writeFlag(MUSIC_KEY, on);
-    if (this.mbus && this.ac) this.mbus.gain.setTargetAtTime(on ? MUSIC_VOLUME : 0, this.ac.currentTime, 0.05);
+    this.applyMusicGain(0.05);
+  }
+
+  /** The music falls silent (slowly) while a story place asks for quiet, and returns when it does not. Not remembered. */
+  private hushed = false;
+  hush(on: boolean): void {
+    if (on === this.hushed) return;
+    this.hushed = on;
+    this.applyMusicGain(on ? 1.2 : 0.8);
+  }
+
+  private applyMusicGain(timeConstant: number): void {
+    if (this.mbus && this.ac) this.mbus.gain.setTargetAtTime(this.musicOn && !this.hushed ? MUSIC_VOLUME : 0, this.ac.currentTime, timeConstant);
   }
 
   /** A musical phrase for a moment worth marking (the run is won or lost). */

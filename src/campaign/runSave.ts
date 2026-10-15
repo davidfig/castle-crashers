@@ -40,6 +40,8 @@ export interface RunSave {
   config: RunConfigSave;
   /** Choices made on the road (forks, docs/21 step 5): the road ahead is a function of the seed and these. */
   choices: number[];
+  /** The story scenes heard on this run so far (ids), for the Ledger when it ends (campaign/roadRun.ts). */
+  heard: string[];
   /** Where the party was: the level, and the heroes. */
   level: number;
   heroes: SavedHero[];
@@ -48,9 +50,9 @@ export interface RunSave {
 }
 
 /** A save of the run being played. */
-export function makeRunSave(s: GameState, config: RunConfigSave, now: number, choices: readonly number[] = []): RunSave {
+export function makeRunSave(s: GameState, config: RunConfigSave, now: number, choices: readonly number[] = [], heard: Iterable<string> = []): RunSave {
   const heroes = s.players.flatMap((p, slot) => (p.active ? [{ slot, classId: p.classId, level: p.level }] : []));
-  return { v: RUN_SAVE_VERSION, gen: GEN_VERSION, savedAt: now, config: { ...config }, choices: [...choices], level: s.road?.level ?? 0, heroes, sim: snapshot(s) };
+  return { v: RUN_SAVE_VERSION, gen: GEN_VERSION, savedAt: now, config: { ...config }, choices: [...choices], heard: [...heard], level: s.road?.level ?? 0, heroes, sim: snapshot(s) };
 }
 
 const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
@@ -76,6 +78,7 @@ export function parseRunSave(raw: unknown): RunSave | 'newer' | undefined {
     savedAt: typeof raw.savedAt === 'number' ? raw.savedAt : 0,
     config: { seed: c.seed, total: c.total, heat: c.heat },
     choices: Array.isArray(raw.choices) ? raw.choices.filter((x): x is number => int(x, 0)) : [],
+    heard: Array.isArray(raw.heard) ? raw.heard.filter((x): x is string => typeof x === 'string') : [],
     level: int(raw.level, 0) ? raw.level : 0,
     heroes,
     sim: raw.sim,

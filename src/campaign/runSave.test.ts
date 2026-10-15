@@ -97,3 +97,12 @@ test('a saved hero nobody takes up leaves the run; a newcomer in the slot starts
   for (let t = 0; t < 300; t++) { botInput(s, 0, f[0]); botInput(s, 1, f[1]); step(s, f); s.events.n = 0; }
   assert.ok(s.players[1].active);
 });
+
+test('the scenes heard so far are saved with the run, and a save from before they were is read as none', () => {
+  const store = new Memory(), s = roadRun(60);
+  assert.ok(writeRunSave(store, makeRunSave(s, config, 1000, [], new Set(['r5', 'c3b']))));
+  assert.deepEqual(loadRunSave(store).save!.heard, ['r5', 'c3b']);
+  const old = JSON.parse(store.getItem(RUN_SAVE_KEY)!);
+  delete old.heard;
+  assert.deepEqual((parseRunSave(old) as { heard: string[] }).heard, []);
+});

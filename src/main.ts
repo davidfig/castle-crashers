@@ -269,6 +269,8 @@ let runHeat = Math.max(0, Math.min(HEAT_MAX, Math.floor(Number(params.get('heat'
 
 /** The run's sim: its one road (or, for `?demo=`, a field of its own), with the dev aids asked for in the URL. */
 /** Whether this run's road stages the midpoint scene (R5, docs/12-story.md): when the Ledger has it pending. Dev aid: ?midpoint=1 stages it every time. */
+/** How close (px along the road) a hero must be to the midpoint scene for the music to fall silent. */
+const MIDPOINT_HUSH = 360;
 function midpointDue(): boolean { return (__DEV__ && params.has('midpoint')) || (!devRun && pendingBeat(ledger)?.id === 'R5'); }
 function newSim(): ReturnType<typeof createSim> {
   setLevelsPlayed(0);
@@ -341,7 +343,7 @@ function titleScreen(): Screen { rerollTitle(); return { kind: 'title', cont: sa
 /** Saves the run being played, if it can be continued later (a run on the one road, still going). */
 function saveRun(): void {
   if (mode !== 'run' || !sim.road || sim.phase !== Phase.Playing || demo) return;
-  const save = makeRunSave(sim, { seed: cfg.seed, total: route.total, heat: runHeat }, Date.now(), sim.road.choices);
+  const save = makeRunSave(sim, { seed: cfg.seed, total: route.total, heat: runHeat }, Date.now(), sim.road.choices, cast.heard);
   if (writeRunSave(runSaveStore, save)) savedRun = save;
   lastSaveTick = sim.tick;
 }
@@ -372,6 +374,7 @@ function continueRun(): void {
   const plan = levelPlan(seed, save.level, total);
   cfg = { seed, chapter: restored.road?.chapter || plan.chapter };
   cast.heard.clear();
+  for (const id of save.heard) cast.heard.add(id);
   route = { index: save.level, total, plan, store: false };
   sim = restored;
   roadScene = -1;
@@ -649,6 +652,7 @@ startLoop({
     // The music turns to the next level's biome at the peddler, halfway through a camp (roadMusicBiome).
     const musicBiome = sim.road ? roadMusicBiome(sim) : sim.biome;
     audio.updateMusic(rawDt, { biome: mode === 'run' ? musicBiome : 0, ...danger });
+    audio.hush(mode === 'run' && cast.scene?.id === 'r5' && cast.near(sim, MIDPOINT_HUSH)); // the midpoint scene has no music (docs/12-story.md)
     if (mode !== 'run') {
       renderer.begin();
       titleToggles.sound = audio.soundOn; titleToggles.music = audio.musicOn;

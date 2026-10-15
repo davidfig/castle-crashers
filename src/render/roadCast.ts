@@ -119,6 +119,12 @@ export class RoadCast {
       .sort((a, b) => a.y - b.y);
   }
 
+  /** A hero stands within `range` px of the scene (the midpoint asks the music for quiet while the party is in it). */
+  near(s: GameState, range: number): boolean {
+    if (!this.scene) return false;
+    return s.players.some((p) => p.active && Math.abs(s.ents.x[p.ent] - this.x) < range);
+  }
+
   /** A hero is hearing the scene right now. */
   hearing(): boolean { return this.current() !== undefined; }
 
