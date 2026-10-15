@@ -34,7 +34,8 @@ import { Kind, allocEntity } from './sim/entities';
 import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
 import { MOBS, MobType } from './data/mobs';
 import { campShown, layoutRoad, roadBiomes, roadJump, roadMusicBiome, stageBounds, type RoadLayout } from './sim/gen/road';
-import { clearRunSave, describeRunSave, loadRunSave, makeRunSave, writeRunSave, type RunSave } from './campaign/runSave';
+import { clearRunSave, describeRunSave, loadRunSave, makeRunSave, RUN_SAVE_BACKUP, RUN_SAVE_KEY, writeRunSave, type RunSave } from './campaign/runSave';
+import { openIdbStore } from './campaign/idbStore';
 import { loadProfile, metaRanks, saveProfile, treeSaves, withRun, type Profile } from './campaign/profile';
 import { treesToProfile } from './data/trees';
 import { renownFor } from './data/meta';
@@ -204,6 +205,8 @@ function pilotFor(k: number): Pilot {
 const devRun = params.has('seed') || (__DEV__ && demo !== null);
 
 const runStore = browserStore();
+// The run in progress lives in IndexedDB (campaign/idbStore.ts), read into memory here so saving stays synchronous; a save left in localStorage by an older build moves across.
+const runSaveStore = await openIdbStore(typeof indexedDB === 'undefined' ? undefined : indexedDB, [RUN_SAVE_KEY, RUN_SAVE_BACKUP], runStore);
 // What carries over between runs: renown and the town's lasting upgrades (campaign/profile.ts). Written whenever the town spends renown, and at the end of a run.
 const profileLoad = loadProfile(runStore);
 let profile: Profile = profileLoad.profile;
@@ -317,7 +320,7 @@ function browserStore(): Storage | undefined { try { return localStorage; } catc
 // ---- The run in progress is saved as it goes (docs/21-the-road.md, step 4): on the one road only, every few seconds, on reaching a calm
 // place, when the page closes and on Save and quit (Escape, or a pad's Back). Continue (C / Y on the title) rebuilds everything from the seed,
 // restores the sim and holds the field frozen until the players have taken up their heroes.
-let savedRun: RunSave | undefined = (() => { const r = loadRunSave(runStore); return r.status === 'ok' ? r.save : undefined; })();
+let savedRun: RunSave | undefined = (() => { const r = loadRunSave(runSaveStore); return r.status === 'ok' ? r.save : undefined; })();
 /** Ticks between autosaves (10 s of play). */
 const AUTOSAVE_TICKS = 600;
 let lastSaveTick = -Infinity;
@@ -328,7 +331,7 @@ function titleScreen(): Screen { rerollTitle(); return { kind: 'title', cont: sa
 function saveRun(): void {
   if (mode !== 'run' || !sim.road || sim.phase !== Phase.Playing || demo) return;
   const save = makeRunSave(sim, { seed: cfg.seed, total: route.total, heat: runHeat }, Date.now(), sim.road.choices);
-  if (writeRunSave(runStore, save)) savedRun = save;
+  if (writeRunSave(runSaveStore, save)) savedRun = save;
   lastSaveTick = sim.tick;
 }
 window.addEventListener('pagehide', saveRun);
@@ -471,7 +474,7 @@ function restart(): void {
 }
 
 function finishRun(): void {
-  if (sim.road) { clearRunSave(runStore); savedRun = undefined; } // the run is over: nothing to continue
+  if (sim.road) { clearRunSave(runSaveStore); savedRun = undefined; } // the run is over: nothing to continue
   const sum = summarizeEnd(sim, retreated, route.index, route.total);
   screen = runEndScreen(sum, cfg.chapter);
   if (sim.road && screen.kind === 'text') {

@@ -20,7 +20,7 @@ Track undecided items here. When resolved, move to an ADR in [decisions](decisio
 - [x] ECS storage: struct-of-arrays typed arrays (hordes).
 - [ ] Atlas: single vs. multiple; max texture size target.
 - [ ] Audio formats/tooling (ogg vs mp3 vs wav).
-- [x] **Save storage: IndexedDB.** The run save moves off `localStorage` (`campaign/runSave.ts` is still on it). Open detail: the last save is written as the page closes (`pagehide`), where only a synchronous write is sure to finish, so [21](21-the-road.md)'s "localStorage, uncompressed" reasoning needs an answer (e.g. a synchronous localStorage mirror of the latest save, or rely on the 10 s autosave). Small flags (tutorial, road memory) stay in `localStorage`.
+- [x] **Save storage: IndexedDB.** Done for the run save (`campaign/idbStore.ts`, an in-memory copy written behind to the database; see [21](21-the-road.md)). Small flags (profile, tutorial, road memory) stay in `localStorage`.
 
 ## Gameplay
 - [x] **Friendly fire: off.** Heroes never hurt each other; difficulty can be added later by other means.
