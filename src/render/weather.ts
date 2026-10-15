@@ -94,7 +94,7 @@ function drawFogBanks(b: Batcher, S: Sprites, mood: BlendedMood, camX: number, o
     const x = mod((i * FOG_LOOP) / FOG_WISPS + ((h >>> 8) % 80) + tick * 0.14 - camX * 1.2, FOG_LOOP) - 420;
     if (x > VIEW_W) continue;
     const y = 96 + ((h >>> 16) % 230);
-    b.draw(f, Math.round(x), y + oy, (h & 0x100) !== 0, tinted(color, mood.tint, 0.4 * level));
+    b.drawSoft(f, x, y + oy, (h & 0x100) !== 0, tinted(color, mood.tint, 0.4 * level));
   }
 }
 
@@ -147,7 +147,7 @@ function drawSnowfall(b: Batcher, S: Sprites, mood: BlendedMood, w: WeatherDef, 
     const span = VIEW_W + 40;
     const x = mod(((h >>> 12) % span) - camX * (0.3 + 0.5 * d) + tick * wind * (0.5 + d) + Math.sin(tick * 0.03 + i) * (2 + 3 * d), span) - 20;
     const size = d > 0.7 ? 2 : 1;
-    b.drawScaled(S.px, Math.round(x), Math.round(y), size, size, tinted(SNOW_COLORS[(h >>> 20) % SNOW_COLORS.length], mood.tint, 0.55 + 0.4 * d));
+    b.drawSoftRect(S.px, x, y, size, size, tinted(SNOW_COLORS[(h >>> 20) % SNOW_COLORS.length], mood.tint, 0.55 + 0.4 * d));
   }
 }
 
@@ -174,7 +174,7 @@ function drawSandstorm(b: Batcher, S: Sprites, mood: BlendedMood, w: WeatherDef,
     const f = S.fogLarge[h % S.fogLarge.length];
     const x = mod((i * FOG_LOOP) / 12 + ((h >>> 8) % 80) + dir * tick * 1.5 - camX * 1.3, FOG_LOOP) - 420;
     if (x > VIEW_W) continue;
-    b.draw(f, Math.round(x), 90 + ((h >>> 16) % 240) + oy, (h & 0x100) !== 0, tinted(0xa87438, mood.tint, 0.5 * L));
+    b.drawSoft(f, x, 90 + ((h >>> 16) % 240) + oy, (h & 0x100) !== 0, tinted(0xa87438, mood.tint, 0.5 * L));
   }
   // grains
   const g = Math.round(SAND_GRAINS * level), span = VIEW_W + 120;
@@ -183,9 +183,9 @@ function drawSandstorm(b: Batcher, S: Sprites, mood: BlendedMood, w: WeatherDef,
     const v = (5 + d * 7) * gust;
     const x = mod(((h >>> 8) % span) + dir * tick * v - camX * (0.3 + 0.4 * d), span) - 60;
     if (x < -8 || x > VIEW_W) continue;
-    const y = 100 + ((h >>> 18) % 250) + Math.round(Math.sin(tick * 0.08 + i) * 1.5);
+    const y = 100 + ((h >>> 18) % 250) + Math.sin(tick * 0.08 + i) * 1.5;
     const len = 3 + Math.round(d * 7);
-    b.drawScaled(S.px, dir > 0 ? Math.round(x) - len : Math.round(x), y + oy, len, d > 0.6 ? 2 : 1, tinted(SAND_COLORS[(h >>> 10) % SAND_COLORS.length], mood.tint, (0.5 + 0.45 * d) * Math.min(1, L * 1.2)));
+    b.drawSoftRect(S.px, dir > 0 ? x - len : x, y + oy, len, d > 0.6 ? 2 : 1, tinted(SAND_COLORS[(h >>> 10) % SAND_COLORS.length], mood.tint, (0.5 + 0.45 * d) * Math.min(1, L * 1.2)));
   }
 }
 

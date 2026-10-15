@@ -231,7 +231,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   // --- ground, then the hill's crest in front of the climbers
   drawGround(b, S, scenery, camX + road, oy, ft);
   drawCrest(b, S, scenery, camX + road, oy);
-  drawFog(b, S, scenery, camX + road, oy, ft);
+  drawFog(b, S, scenery, camXf + shx + road, oy, ft);
   if (s.road) drawForkGround(b, S, s, camX, oy); // (the stones between a crossroads' roads lie flat)
   // what stands on the field is gathered here and drawn among the characters, by where each touches the ground (render/standing.ts)
   standing.clear();
@@ -735,7 +735,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
 
   // --- foreground ridge along the bottom of the field
   drawRidge(b, S, scenery, camX + road, oy, ft);
-  drawAmbient(b, S, scenery, camX + road, oy, ft);
+  drawAmbient(b, S, scenery, camXf + shx + road, oy, ft);
 
   // --- launched bodies: tumbling mobs knocked out of the pack
   for (let i = 0; i < fx.nb; i++) {
@@ -800,7 +800,7 @@ export function drawFrame(b: Batcher, S: Sprites, s: GameState, fx: Fx, camXf: n
   }
   b.clearClip();
 
-  drawWeather(b, S, getWorld()!.sky, mood, camX + road, oy, ft);
+  drawWeather(b, S, getWorld()!.sky, mood, camXf + shx + road, oy, ft);
 
   drawBoonPops(b, S, fx, camX, oy);
   drawMercy(b, S, s, camX, alpha, oy);

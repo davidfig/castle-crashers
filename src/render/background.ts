@@ -601,7 +601,7 @@ export function drawFog(b: Batcher, S: Sprites, sc: Scenery, camX: number, oy: n
         const w = sc.weight(pi, camX + x + (f.w >> 1), flatNoise(i, Math.round(layer.k * 100), 19));
         if (w <= 0.01) continue;
         const y = layer.y0 + ((h >>> 16) % Math.max(1, layer.y1 - layer.y0));
-        b.draw(f, Math.round(x), y + oy, (h & 0x100) !== 0, shade(layer.color, mood.tint, 1, Math.round(layer.alpha * burn * w * 255)));
+        b.drawSoft(f, x, y + oy, (h & 0x100) !== 0, shade(layer.color, mood.tint, 1, Math.round(layer.alpha * burn * w * 255)));
       }
     }
   }
@@ -629,7 +629,7 @@ export function drawAmbient(b: Batcher, S: Sprites, sc: Scenery, camX: number, o
       if (w <= 0.01) continue;
       const y = a.y0 + ((((h >>> 16) % rangeY) + tick * vy * k + Math.cos(tick * 0.03 + i) * a.wobble * 0.5) % rangeY + rangeY) % rangeY;
       const flip = ((tick >> 4) + i) & 1; // tumbling
-      b.drawScaled(S.px, Math.round(x), Math.round(y) + oy, flip ? a.h : a.w, flip ? a.w : a.h, shade(a.colors[(h >>> 4) % a.colors.length], mood.tint, 1, Math.round(a.alpha * 255 * w)));
+      b.drawSoftRect(S.px, x, y + oy, flip ? a.h : a.w, flip ? a.w : a.h, shade(a.colors[(h >>> 4) % a.colors.length], mood.tint, 1, Math.round(a.alpha * 255 * w)));
     }
   }
 }

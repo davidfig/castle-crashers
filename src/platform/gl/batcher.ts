@@ -1,4 +1,4 @@
-// Instanced sprite batcher: one draw call per flush, 44 bytes per sprite.
+// Instanced sprite batcher: one draw call per flush, 48 bytes per sprite.
 import { createProgram } from './gl';
 
 export interface Frame {
@@ -15,15 +15,31 @@ layout(location=2) in vec4 a_uv;     // u0, v0, u1, v1
 layout(location=3) in vec4 a_tint;
 layout(location=4) in float a_flash;
 layout(location=5) in float a_rot;   // radians, about the sprite centre
+layout(location=6) in float a_soft;  // 0 = snapped to whole pixels, 1 = sprite at a fractional position, 2 = solid rect at a fractional position
 uniform vec2 u_view;
 out vec2 v_uv;
 out vec4 v_tint;
 out float v_flash;
+out vec2 v_local;
+flat out vec2 v_size;
+flat out vec4 v_uvr;
+flat out float v_soft;
 void main() {
-  vec2 h = a_rect.zw * 0.5;
-  vec2 q = (a_corner - 0.5) * a_rect.zw;
-  float c = cos(a_rot), s = sin(a_rot);
-  vec2 p = a_rect.xy + h + vec2(q.x * c - q.y * s, q.x * s + q.y * c);
+  vec2 p;
+  if (a_soft > 0.5) {
+    // a quad one pixel bigger than the sprite, snapped to the grid; the fragment shader resamples the sprite at its fractional offset
+    p = floor(a_rect.xy) + a_corner * (a_rect.zw + 1.0);
+    v_local = p - a_rect.xy;
+  } else {
+    vec2 h = a_rect.zw * 0.5;
+    vec2 q = (a_corner - 0.5) * a_rect.zw;
+    float c = cos(a_rot), s = sin(a_rot);
+    p = a_rect.xy + h + vec2(q.x * c - q.y * s, q.x * s + q.y * c);
+    v_local = vec2(0.0);
+  }
+  v_size = a_rect.zw;
+  v_uvr = a_uv;
+  v_soft = a_soft;
   gl_Position = vec4(p.x / u_view.x * 2.0 - 1.0, 1.0 - p.y / u_view.y * 2.0, 0.0, 1.0);
   v_uv = mix(a_uv.xy, a_uv.zw, a_corner);
   v_tint = a_tint;
@@ -36,16 +52,42 @@ uniform sampler2D u_tex;
 in vec2 v_uv;
 in vec4 v_tint;
 in float v_flash;
+in vec2 v_local;
+flat in vec2 v_size;
+flat in vec4 v_uvr;
+flat in float v_soft;
 out vec4 o;
 void main() {
-  vec4 c = texture(u_tex, v_uv);
+  vec4 c;
+  if (v_soft > 1.5) {
+    // a solid rect: its colour is the frame's, its alpha how much of this pixel the rect covers
+    vec2 lo = max(v_local - 0.5, 0.0), hi = min(v_local + 0.5, v_size);
+    vec2 cov = max(hi - lo, 0.0);
+    c = texture(u_tex, (v_uvr.xy + v_uvr.zw) * 0.5);
+    c.a *= cov.x * cov.y;
+  } else if (v_soft > 0.5) {
+    // the four texels around this pixel's centre, blended by where the centre falls between them (premultiplied, so edges stay clean)
+    vec2 t = v_local - 0.5, i0 = floor(t), f = t - i0;
+    vec2 stepUV = (v_uvr.zw - v_uvr.xy) / v_size;
+    vec4 acc = vec4(0.0);
+    for (int k = 0; k < 4; k++) {
+      vec2 d = vec2(float(k & 1), float(k >> 1)), i = i0 + d;
+      if (i.x < 0.0 || i.y < 0.0 || i.x >= v_size.x || i.y >= v_size.y) continue;
+      vec2 wv = mix(1.0 - f, f, d);
+      vec4 tx = texture(u_tex, v_uvr.xy + (i + 0.5) * stepUV);
+      acc += vec4(tx.rgb * tx.a, tx.a) * (wv.x * wv.y);
+    }
+    c = vec4(acc.a > 0.0 ? acc.rgb / acc.a : vec3(0.0), acc.a);
+  } else {
+    c = texture(u_tex, v_uv);
+  }
   if (c.a < 0.01) discard;
   c *= v_tint;
   c.rgb = v_flash < 0.0 ? v_tint.rgb : mix(c.rgb, vec3(1.0), v_flash); // flash -1: a flat silhouette in the tint colour
   o = c;
 }`;
 
-const FLOATS = 11;
+const FLOATS = 12;
 const MAX_SPRITES = 16384;
 
 export class Batcher {
@@ -93,6 +135,9 @@ export class Batcher {
     gl.enableVertexAttribArray(5);
     gl.vertexAttribPointer(5, 1, gl.FLOAT, false, stride, 40);
     gl.vertexAttribDivisor(5, 1);
+    gl.enableVertexAttribArray(6);
+    gl.vertexAttribPointer(6, 1, gl.FLOAT, false, stride, 44);
+    gl.vertexAttribDivisor(6, 1);
     gl.bindVertexArray(null);
   }
 
@@ -119,6 +164,7 @@ export class Batcher {
     this.u32[o + 8] = tint;
     d[o + 9] = flash;
     d[o + 10] = rot;
+    d[o + 11] = 0;
     this.n++;
   }
 
@@ -138,6 +184,50 @@ export class Batcher {
     this.u32[o + 8] = tint;
     d[o + 9] = flash;
     d[o + 10] = rot;
+    d[o + 11] = 0;
+    this.n++;
+  }
+
+  /**
+   * Draw a frame with its top-left at a fractional view position: it is resampled between the pixels, so slow drift moves
+   * smoothly instead of stepping a whole pixel at a time (clouds of fog, wisps). Softens the sprite's edges a little.
+   */
+  drawSoft(f: Frame, x: number, y: number, flip = false, tint = 0xffffffff): void {
+    if (this.n === MAX_SPRITES) this.flush();
+    const o = this.n * FLOATS;
+    const d = this.data;
+    d[o] = x;
+    d[o + 1] = y;
+    d[o + 2] = f.w;
+    d[o + 3] = f.h;
+    d[o + 4] = flip ? f.u1 : f.u0;
+    d[o + 5] = f.v0;
+    d[o + 6] = flip ? f.u0 : f.u1;
+    d[o + 7] = f.v1;
+    this.u32[o + 8] = tint;
+    d[o + 9] = 0;
+    d[o + 10] = 0;
+    d[o + 11] = 1;
+    this.n++;
+  }
+
+  /** A solid rectangle at a fractional position: the pixels at its edges are partly covered, so a speck drifts smoothly. */
+  drawSoftRect(f: Frame, x: number, y: number, w: number, h: number, tint = 0xffffffff): void {
+    if (this.n === MAX_SPRITES) this.flush();
+    const o = this.n * FLOATS;
+    const d = this.data;
+    d[o] = x;
+    d[o + 1] = y;
+    d[o + 2] = w;
+    d[o + 3] = h;
+    d[o + 4] = f.u0;
+    d[o + 5] = f.v0;
+    d[o + 6] = f.u1;
+    d[o + 7] = f.v1;
+    this.u32[o + 8] = tint;
+    d[o + 9] = 0;
+    d[o + 10] = 0;
+    d[o + 11] = 2;
     this.n++;
   }
 
