@@ -20,10 +20,10 @@
 // lies behind is unchanged by it.
 import { levelPlan, LEVELS_PER_BIOME, stageBiome, type LevelPlan } from '../../campaign/route';
 import { BIOME_COUNT } from '../../data/roster';
-import { createRng, rngInt, Stream } from '../../engine/rng';
+import { createRng, rngFloat, rngInt, Stream } from '../../engine/rng';
 import { emit, Ev } from '../events';
 import { heatHorde } from '../../data/heat';
-import { roadSceneFor, roadSceneT } from '../../data/story/road';
+import { roadSceneFor, roadSceneT, type RoadScene } from '../../data/story/road';
 import { giftsFor } from '../../data/gifts';
 import { questOffers } from '../../data/quests';
 import { Kind, NpcMode } from '../entities';
@@ -98,6 +98,44 @@ export interface Calm {
   stage?: number;
   options?: number[];
   commit?: number;
+}
+
+/** From the end of one level's last encounter to the start of the next when no camp lies between (a crowd's spread each side, and room to breathe). */
+export const JOIN_GAP = 2 * CROWD_SPREAD + 100;
+
+/**
+ * Whether a camp follows level `k` (the rhythm of the road, drawn from the seed alone: not from the biomes the party picks). The last level
+ * ends the road and a region's boss level always opens onto its camp (and the crossroads); of a region's other levels each has a camp after
+ * it about two times in three, but never none at all, so no region runs its fights end to end without a rest before the boss.
+ */
+export function campAfter(runSeed: number, k: number, total: number): boolean {
+  if (k >= total - 1) return false;
+  const inBiome = k % LEVELS_PER_BIOME;
+  if (inBiome === LEVELS_PER_BIOME - 1) return true;
+  const r = createRng((runSeed ^ Math.imul(stageOf(k) + 1, 0x7f4a7c15)) >>> 0, Stream.campaign + 13);
+  const camps: boolean[] = [];
+  for (let i = 0; i < LEVELS_PER_BIOME - 1; i++) camps.push(rngInt(r, 3) > 0);
+  if (!camps.some((c) => c)) camps[rngInt(r, camps.length)] = true;
+  return camps[inBiome];
+}
+
+/** The chance that a region's non-boss level holds a road scene (`sceneAt`). */
+export const SCENE_ODDS = 0.65;
+
+/**
+ * The road scene level `k` stages, if any (drawn from the seed alone, like `campAfter`). Each non-boss level of a region may or may not hold
+ * a scene, and a region can have none. A chapter's scenes are told in order (the first carries its beat, the second follows on it), and a
+ * level that holds no scene does not use one up: the scenes a region does stage are its chapter's first, then its second, so skipping
+ * one never moves the story on past what was told.
+ */
+export function sceneAt(runSeed: number, k: number, lp: LevelPlan): RoadScene | undefined {
+  const inBiome = k % LEVELS_PER_BIOME;
+  if (lp.boss || inBiome >= LEVELS_PER_BIOME - 1) return undefined;
+  const r = createRng((runSeed ^ Math.imul(stageOf(k) + 1, 0x3c6ef372)) >>> 0, Stream.campaign + 14);
+  const held: boolean[] = [];
+  for (let i = 0; i < LEVELS_PER_BIOME - 1; i++) held.push(rngFloat(r) < SCENE_ODDS);
+  if (!held[inBiome]) return undefined;
+  return roadSceneFor(lp.chapter, held.slice(0, inBiome).filter(Boolean).length, false);
 }
 
 /** Where one level lies on the road: each stretch of its own plan (from, to, in its local coordinates) is moved along by `dx`. */
@@ -196,8 +234,8 @@ export function roadLevel(r: RoadState, k: number): LevelPlan { return levelPlan
  * with a road scene keeps the encounters it had as a field of its own, the ones its scene's clearing left (`SCENE_CLEARING`): the road
  * grows to give the scene room, but how much horde the level holds is as it was tuned.
  */
-function levelEncounters(lp: LevelPlan, k: number, opts: { scale?: number; heat?: number; beat?: SimBeat } = {}): ClumpPlan[] {
-  const sc = roadSceneFor(lp.chapter, k % LEVELS_PER_BIOME, lp.boss);
+function levelEncounters(runSeed: number, lp: LevelPlan, k: number, opts: { scale?: number; heat?: number; beat?: SimBeat } = {}): ClumpPlan[] {
+  const sc = sceneAt(runSeed, k, lp);
   const scene = sc ? { id: sc.id, t: roadSceneT(lp.seed) } : undefined;
   const plan = planLevel(lp.seed, opts.beat, { boss: lp.boss, scale: opts.scale, heat: opts.heat, opener: k === 0, length: WORLD_W, scene }).filter((c) => c.scene === undefined);
   // The last crowd before a calm place (the road scene in the middle of the level, or the camp after it) holds the party with a gate until it
@@ -216,13 +254,13 @@ function levelEncounters(lp: LevelPlan, k: number, opts: { scale?: number; heat?
 }
 
 /** Where level `k`'s field would place its encounters (a pure function of its seed: the positions do not depend on the horde's size). */
-function levelShape(lp: LevelPlan, k: number): ClumpPlan[] {
-  return levelEncounters(lp, k);
+function levelShape(runSeed: number, lp: LevelPlan, k: number): ClumpPlan[] {
+  return levelEncounters(runSeed, lp, k);
 }
 
 /** The road scene level `k` stages (if any), and where in its field (local x). */
-function levelScene(lp: LevelPlan, k: number): { id: string; x: number } | undefined {
-  const sc = roadSceneFor(lp.chapter, k % LEVELS_PER_BIOME, lp.boss);
+function levelScene(runSeed: number, lp: LevelPlan, k: number): { id: string; x: number } | undefined {
+  const sc = sceneAt(runSeed, k, lp);
   return sc ? { id: sc.id, x: 760 + roadSceneT(lp.seed) * (WORLD_W - 1100) } : undefined;
 }
 
@@ -232,18 +270,18 @@ function reach(c: ClumpPlan): [number, number] {
 }
 
 /**
- * Lays out a road of `total` levels: each level's field, cut at its road scene (if any), with a camp after each level but the last, and
+ * Lays out a road of `total` levels: each level's field, cut at its road scene (if any), with a camp after most levels (`campAfter`), and
  * the gaps that keep every calm place out of the horde's reach. A pure function of the run's seed.
  */
 export function layoutRoad(runSeed: number, total: number, biomes: readonly number[] = roadBiomes(runSeed, total, [])): RoadLayout {
   const levels: LevelLay[] = [], calm: Calm[] = [];
   // the road begins in the town: a calm place a screen wide, and the first level keeps clear of it like any other
   calm.push({ kind: 'town', level: 0, from: 0, to: TOWN_W });
-  let calmEnd = TOWN_W, length = WORLD_W;
+  let calmEnd = TOWN_W, gap = CLEAR_AFTER, length = WORLD_W;
   for (let k = 0; k < total; k++) {
     const lp = levelPlan(runSeed, k, total, biomes[stageOf(k)]);
-    const shape = levelShape(lp, k);
-    const scene = levelScene(lp, k);
+    const shape = levelShape(runSeed, lp, k);
+    const scene = levelScene(runSeed, lp, k);
     const cuts = scene ? [0, scene.x, WORLD_W] : [0, WORLD_W];
     const lay: LevelLay = { slices: [], start: calmEnd === -Infinity ? -Infinity : calmEnd, end: Infinity };
     for (let i = 0; i + 1 < cuts.length; i++) {
@@ -252,12 +290,18 @@ export function layoutRoad(runSeed: number, total: number, biomes: readonly numb
       const lo = inside.length ? Math.min(...inside.map((c) => reach(c)[0])) : from;
       const hi = inside.length ? Math.max(...inside.map((c) => reach(c)[1])) : to;
       // the first stretch of the road keeps its own place; every other starts where the calm place before it lets it
-      const dx = calmEnd === -Infinity ? 0 : calmEnd + CLEAR_AFTER - lo;
+      const dx = calmEnd === -Infinity ? 0 : calmEnd + gap - lo;
       lay.slices.push({ from, to, dx });
       length = dx + WORLD_W;
       const last = i + 2 === cuts.length;
       if (last && k === total - 1) break; // the end of the road
       const at = dx + hi + CLEAR_BEFORE;
+      if (last && !campAfter(runSeed, k, total)) {
+        // no camp here: the next level's field follows this one's on the same road, a breath further on
+        calmEnd = dx + hi;
+        gap = JOIN_GAP;
+        continue;
+      }
       if (!last) {
         // a road scene: its figures stand SCENE_BEFORE into its ground, and it lets the party go SCENE_RELEASE past them
         calm.push({ kind: 'scene', level: k, from: at, to: at + SCENE_BEFORE + SCENE_RELEASE, scene: scene!.id, x: at + SCENE_BEFORE });
@@ -271,6 +315,7 @@ export function layoutRoad(runSeed: number, total: number, biomes: readonly numb
         }
       }
       calmEnd = calm[calm.length - 1].to;
+      gap = CLEAR_AFTER;
     }
     levels.push(lay);
   }
@@ -373,7 +418,7 @@ function planRoadLevel(s: GameState, k: number): void {
   const lay = r.layout.levels[k];
   const base = s.plan.length;
   // (a staged beat adds an encounter of its own and moves no other, so the layout, made without it, still holds)
-  const plan = levelEncounters(lp, k, { scale: lp.scale * heatHorde(r.heat) * r.horde, heat: r.heat, beat: k === 0 ? r.beat ?? undefined : undefined });
+  const plan = levelEncounters(r.runSeed, lp, k, { scale: lp.scale * heatHorde(r.heat) * r.horde, heat: r.heat, beat: k === 0 ? r.beat ?? undefined : undefined });
   const scene = r.layout.calm.find((c) => c.kind === 'scene' && c.level === k);
   let sceneAt = scene ? plan.findIndex((c) => levelToRoad(lay, c.x) > scene.x!) : -1;
   if (scene && sceneAt < 0) sceneAt = plan.length;

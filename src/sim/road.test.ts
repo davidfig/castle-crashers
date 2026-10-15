@@ -9,7 +9,7 @@ import { allocEntity, BYSTANDER, Kind, SURRENDERED } from './entities';
 import { activatePlayer } from './state';
 import { planLevel } from './gen/level';
 import { roadSceneFor, roadSceneT } from '../data/story/road';
-import { CLEAR_AFTER, CLEAR_BEFORE, commitFork, forkChoice, forkOptions, layoutRoad, levelToRoad, roadBiomes, roadJump, roadLevel, roadPart, stageBounds, stageOf, type Calm } from './gen/road';
+import { campAfter, sceneAt, CLEAR_AFTER, CLEAR_BEFORE, commitFork, forkChoice, forkOptions, layoutRoad, levelToRoad, roadBiomes, roadJump, roadLevel, roadPart, stageBounds, stageOf, type Calm } from './gen/road';
 import { createInputFrame } from './input';
 import { restore, snapshot } from './snapshot';
 import { createSim, Phase, type GameState } from './state';
@@ -30,7 +30,7 @@ test('every encounter keeps clear of every calm place: far enough past one to st
     const s = plannedRoad(seed, ROUTE_LEVELS);
     const calm = s.road!.layout.calm;
     assert.ok(calm.some((c) => c.kind === 'scene'), `seed ${seed}: the road has road scenes on it`);
-    assert.equal(calm.filter((c) => c.kind === 'camp').length, ROUTE_LEVELS - 1);
+    assert.equal(calm.filter((c) => c.kind === 'camp').length, Array.from({ length: ROUTE_LEVELS }, (_, k) => k).filter((k) => campAfter(seed, k, ROUTE_LEVELS)).length);
     for (const c of s.plan) {
       if (c.scene) continue;
       for (const p of calm) {
@@ -71,7 +71,7 @@ test('each level on the road is the level it would have been on its own, cut at 
   for (let k = 0; k < 6; k++) {
     const lp = levelPlan(12, k, 6, s.road!.biomes[stageOf(k)]);
     // its own field, the encounters its road scene's clearing left (the road grows for the scene, the horde is as tuned)
-    const sc = roadSceneFor(lp.chapter, k % 3, lp.boss);
+    const sc = sceneAt(12, k, lp);
     const own = planLevel(lp.seed, undefined, { boss: lp.boss, scale: lp.scale, heat: 0, opener: k === 0, length: WORLD_W, scene: sc ? { id: sc.id, t: roadSceneT(lp.seed) } : undefined }).filter((c) => !c.scene);
     const mine = s.plan.filter((c) => c.seed === lp.seed && !c.scene);
     const lay = s.road!.layout.levels[k];
@@ -127,7 +127,7 @@ const run = walkRoad(4, 4, 120_000);
 test('a simulated player walks the whole road in one sim, through every level, scene and camp, and wins at the last boss', () => {
   assert.ok(run.won, `the run was won (last part ${JSON.stringify(run.parts.at(-1))})`);
   const camps = run.parts.filter((p) => p.calm === 'camp').map((p) => p.level);
-  assert.deepEqual(camps, [0, 1, 2]);
+  assert.deepEqual(camps, [0, 1, 2].filter((k) => campAfter(4, k, 4)));
   assert.ok(run.parts.some((p) => p.calm === 'fork'), 'it came through the crossroads');
   assert.equal(run.s.road!.choices.length, 1, 'and chose its road there');
   assert.ok(run.parts.some((p) => p.level === 3), 'the first boss did not end the run: the road went on past its lair');
@@ -158,7 +158,7 @@ test('a road scene is let go only once its figures are out of sight behind the s
 });
 
 test('a straggler that follows the party into a calm place walks off the way it came', () => {
-  const s = createSim(6, undefined, { road: { total: 2 } });
+  const s = createSim(6, undefined, { road: { total: 4 } });
   const camp = s.road!.layout.calm.find((c) => c.kind === 'camp')!;
   s.camX = s.prevCamX = s.camMax = s.trigCamX = camp.from - VIEW_W / 2 - 30;
   const pe = s.players[0].ent;
@@ -380,7 +380,17 @@ test('the last crowd before every calm place holds the party with a gate: nobody
 });
 
 test('progress made while the director is held back near a calm place is banked, and paid out as packs once the party has moved on', () => {
-  const s = createSim(23, undefined, { road: { total: 3 } });
+  // a seed whose road has a scene in its first level and, in a level before the boss's, a stretch long enough to walk clear of every calm place
+  const stretch = (seed: number) => {
+    const lay = layoutRoad(seed, 4), calm = lay.calm;
+    for (let i = 1; i + 1 < calm.length; i++) {
+      if (roadPart(lay, (calm[i].to + calm[i + 1].from) / 2).level < 2 && calm[i + 1].from - calm[i].to > VIEW_W + 500) return i;
+    }
+    return -1;
+  };
+  let seed = 23;
+  while (!layoutRoad(seed, 4).calm.some((c) => c.kind === 'scene' && c.level === 0) || stretch(seed) < 0) seed++;
+  const s = createSim(seed, undefined, { road: { total: 4 } });
   s.road!.town = false;
   s.tick = 300;
   const scene = s.road!.layout.calm.find((c) => c.kind === 'scene')!;
@@ -388,13 +398,33 @@ test('progress made while the director is held back near a calm place is banked,
   for (let x = scene.from - 700; x < scene.from - 300; x += 40) centreAt(s, x);
   assert.ok(s.packDebt > 0, `the held-back progress is banked (${s.packDebt})`);
   assert.ok(s.flankDebt > 0);
-  // in the widest stretch where no calm place is near the screen, the debt is paid out as the party walks
+  // on a long stretch where no calm place is near the screen, the debt is paid out as the party walks
   const owed = s.packDebt;
-  const calm = s.road!.layout.calm;
-  let best = 0;
-  for (let i = 1; i + 1 < calm.length; i++) if (calm[i + 1].from - calm[i].to > calm[best + 1 < calm.length ? best + 1 : 0].from - calm[best].to) best = i;
+  const calm = s.road!.layout.calm, best = stretch(seed);
   const lo = calm[best].to + VIEW_W / 2, hi = calm[best + 1].from - VIEW_W / 2 - 100;
   assert.ok(hi > lo, 'there is a stretch clear of calm places');
-  for (let x = lo; x < Math.min(hi, lo + 300); x += 20) centreAt(s, x);
-  assert.ok(s.packDebt < owed, 'and it is paid out once the party has moved on');
+  let peak = owed;
+  for (let x = lo; x < hi; x += 20) { centreAt(s, x); peak = Math.max(peak, s.packDebt); }
+  assert.ok(s.packDebt < peak, 'and it is paid out once the party has moved on');
+});
+
+test('road scenes are drawn from the seed, a region may have none, and a skipped scene never moves the story on', () => {
+  const counts = new Set<number>();
+  for (let seed = 1; seed <= 60; seed++) {
+    const total = ROUTE_LEVELS;
+    const ids: string[][] = [];
+    for (let k = 0; k < total; k++) {
+      const lp = levelPlan(seed, k, total);
+      const sc = sceneAt(seed, k, lp);
+      if (k % 3 === 2) assert.equal(sc, undefined, 'no scene on a boss level');
+      (ids[stageOf(k)] ??= []);
+      if (sc) { assert.equal(sc.chapter, lp.chapter); ids[stageOf(k)].push(sc.id); }
+    }
+    ids.forEach((region, st) => {
+      counts.add(region.length);
+      // what a region stages is its chapter's scenes from the first, in order, none passed over
+      assert.deepEqual(region, ['a', 'b'].slice(0, region.length).map((x) => `c${st + 1}${x}`), `seed ${seed} region ${st}`);
+    });
+  }
+  assert.deepEqual([...counts].sort(), [0, 1, 2], 'regions have no scene, one or both');
 });

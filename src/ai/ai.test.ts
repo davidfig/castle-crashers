@@ -5,6 +5,7 @@ import { MobType } from '../data/mobs';
 import { allocEntity, freeEntity, Kind, SURRENDERED } from '../sim/entities';
 import { createInputFrame } from '../sim/input';
 import { createSim, type GameState } from '../sim/state';
+import { campAfter } from '../sim/gen/road';
 import { step } from '../sim/step';
 import { Attribution } from './attribution';
 import { cardScore } from './cards';
@@ -214,10 +215,11 @@ test('a route is a pure function of its options, and levels, stores and carry al
   assert.deepEqual(a, b);
   assert.equal(a.outcome, 'won');
   assert.equal(a.levelsCleared, 2);
-  assert.equal(a.stores.length, 1, 'one store between two levels');
+  const camp = campAfter(opts.seed, 0, opts.levels) ? 1 : 0; // (the road's rhythm is drawn from the seed: a camp between two levels only sometimes)
+  assert.equal(a.stores.length, camp, 'a store between two levels exactly when the road has a camp there');
   assert.ok(a.levels[0].kills > 100 && a.levels[1].kills > 100);
   assert.ok(a.heroes[0].level >= 3, 'the hero grew over the route');
-  assert.ok(a.stores[0].ticks > 300, 'the party walked the store');
+  if (camp) assert.ok(a.stores[0].ticks > 300, 'the party walked the store');
   const sum = summarize([a, b]);
   assert.equal(sum.wins, 2);
   assert.equal(sum.levels.length, 2);

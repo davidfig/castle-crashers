@@ -983,10 +983,10 @@ export function roadSceneFor(chapter: number, levelInBiome: number, boss: boolea
   return ROAD_SCENES.find((c) => c.chapter === chapter && c.level === levelInBiome);
 }
 
-/** How far along the field (0..1) the scene stands: a function of the level seed alone, clear of the staged beats (0.3) and of the final stand (the clearing ahead of it must not reach the wall at the end). */
+/** How far along the field (0..1) the scene stands: a function of the level seed alone, clear of the staged beats (up to 0.32) and of the final stand (the clearing ahead of it must not reach the wall at the end). */
 export function roadSceneT(seed: number): number {
   const h = Math.imul(seed ^ 0x51ed270b, 0x85ebca6b) >>> 0;
-  return 0.46 + (h % 11) / 100;
+  return 0.46 + (h % 15) / 100;
 }
 
 /**

@@ -40,7 +40,7 @@ function eventCount(s: GameState, type: number): number {
   return n;
 }
 
-test('a staged beat is placed in every seed, at a fixed spot, and leaves every other encounter alone', () => {
+test('a staged beat is placed in every seed, and leaves every other encounter alone', () => {
   for (let seed = 1; seed <= 200; seed++) {
     const base = planLevel(seed);
     const plan = planLevel(seed, R1);
@@ -54,10 +54,16 @@ test('a staged beat is placed in every seed, at a fixed spot, and leaves every o
   }
 });
 
-test('the beat does not depend on the seed for its place, and moves earlier after repeated misses', () => {
+test('the beat stands in its stretch of the field (drawn from the level seed, the same each time), and moves earlier after repeated misses', () => {
   const x = (seed: number, early?: boolean) => planLevel(seed, { id: 'R1', early }).find((c) => c.beat)!.x;
-  assert.equal(x(1), x(2));
-  assert.ok(x(1, true) < x(1));
+  const xs = new Set<number>();
+  for (let seed = 1; seed <= 50; seed++) {
+    xs.add(x(seed));
+    assert.equal(x(seed), x(seed));
+    assert.ok(x(seed) >= 760 + 0.2 * 1700 - 1 && x(seed) <= 760 + 0.32 * 1700 + 1, `seed ${seed}: ${x(seed)}`);
+    assert.ok(x(seed, true) < x(seed));
+  }
+  assert.ok(xs.size > 5, 'and it is not always in the same place');
 });
 
 test('beats the battlefield cannot stage are ignored, and no beat means no camp', () => {
@@ -120,4 +126,19 @@ test('the beat is part of the state hash and the run stays deterministic', () =>
   const a = createSim(9, R1), b = createSim(9, R1);
   b.beatPlayedTick = 5;
   assert.notEqual(hashState(a), hashState(b));
+});
+
+test('fields differ in shape: uneven gaps, walls that begin at a different crowd, a mini-boss that stands somewhere in the second half, all in order along x', () => {
+  const walls = new Set<string>(), minis = new Set<number>(), gaps = new Set<number>();
+  for (let seed = 1; seed <= 80; seed++) {
+    const plan = planLevel(seed);
+    assert.ok(plan.every((c, i) => i === 0 || c.x >= plan[i - 1].x), `seed ${seed}: crowds in order along the field`);
+    const crowds = plan.filter((c) => c.rid! < 24);
+    walls.add(crowds.map((c) => (c.line ? 1 : 0)).join(''));
+    gaps.add(Math.round(crowds[1].x - crowds[0].x));
+    const mini = plan.find((c) => c.elite)!;
+    assert.ok(mini.x >= 760 + 0.52 * 1700 - 1 && mini.x <= 760 + 0.7 * 1700 + 1, `seed ${seed}: mini-boss at ${mini.x}`);
+    minis.add(Math.round(mini.x));
+  }
+  assert.ok(walls.size >= 3 && minis.size > 20 && gaps.size > 20, `${walls.size} wall patterns, ${minis.size} mini-boss spots, ${gaps.size} first gaps`);
 });

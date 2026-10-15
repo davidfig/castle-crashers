@@ -127,7 +127,7 @@ test('lines stay up long enough to read, scaled to their length', () => {
 test('a scene stands in the middle of the field, clear of the staged beats and the final stand', () => {
   for (let s = 0; s < 500; s++) {
     const t = roadSceneT(s);
-    assert.ok(t >= 0.46 && t <= 0.56, `${t}`);
+    assert.ok(t >= 0.46 && t <= 0.601, `${t}`);
     assert.equal(roadSceneT(s), t);
   }
 });

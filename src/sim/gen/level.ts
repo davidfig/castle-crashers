@@ -71,8 +71,18 @@ export interface SimBeat {
 /** Beats the battlefield can stage itself. The rest are not placed (the campaign layer decides what to do about them). */
 export const STAGED_BEATS: readonly string[] = ['R1', 'R3'];
 /** How far along the field (0..1, same scale as an encounter's `t`) a staged beat stands. */
-const BEAT_T = 0.3;
 const BEAT_T_EARLY = 0.12;
+/** A staged beat stands between 0.2 and 0.32 of the field (a function of the level's seed): clear of the road scene (from 0.46) and of the mid-field mini-boss. */
+function beatT(seed: number): number {
+  const h = Math.imul(seed ^ 0x2f6b9c13, 0x9e3779b1) >>> 0;
+  return 0.2 + (h % 13) / 100;
+}
+/** Where crowds fall along a field and which of them are walls are drawn per level (`SHAPE_STREAM`), apart from the crowds' own streams. */
+const SHAPE_STREAM = 3500;
+/** How uneven the gaps between crowds are: each gap is its even share times a draw from this range (so the field has thick stretches and thin ones). */
+const GAP_MIN = 0.5, GAP_MAX = 1.5;
+/** The mid-field mini-boss stands somewhere in this part of the field (0..1), a function of the level's seed. */
+const MINI_FROM = 0.52, MINI_TO = 0.7;
 const BEAT_STREAM = 5000;
 
 /** Encounters are spawned this far past the right edge of the screen, i.e. out of sight (a crowd's spread, `CROWD_SPREAD`, still keeps them
@@ -113,18 +123,24 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
   const len = opts.length ?? WORLD_W;
   const span = len - 1100;
   const clumps = Math.max(2, Math.round((24 * span) / (WORLD_W - 1100)));
+  // the gaps between crowds are uneven, and the walls (every fourth crowd) begin at a different crowd on each field; the field's first and last crowd stay where they were
+  const shape = createRng(seed, SHAPE_STREAM);
+  const phase = rngInt(shape, 4);
+  const along: number[] = [0];
+  for (let c = 1; c < clumps; c++) along.push(along[c - 1] + rngRange(shape, GAP_MIN, GAP_MAX));
   for (let c = 0; c < clumps; c++) {
-    const t = c / (clumps - 1);
+    const t = along[c] / along[clumps - 1];
     const x = 760 + t * span + rngRange(r, -40, 40);
     const ramp = opts.opener ? OPENER_RAMP[c] ?? 1 : 1;
     const size = Math.floor((16 + t * 26 + rngRange(r, 0, 10)) * (opts.scale ?? 1) * ramp);
-    const line = c % 4 === 3;
+    const line = (c + phase) % 4 === 3;
     const y = rngRange(r, 8, WORLD_H - 8); // anywhere from the very top to the very bottom
     plan.push({ x, y, size, line, t, gate: line, rid: c });
   }
   // Final stand: a wall across the field, then the boss with its retinue at the very end.
   plan.push({ x: len - 440, y: WORLD_H / 2, size: Math.floor(38 * (opts.scale ?? 1)), line: true, t: 1, rid: clumps });
   if (opts.boss !== false) plan.push({ x: len - 250, y: WORLD_H / 2, size: 0, line: false, t: 1, boss: true, rid: clumps + 1 });
+  plan.sort((a, b) => a.x - b.x); // (the final stand stands among the last crowds, and uneven gaps and the jitter can put neighbours out of order; the field streams in order along x, each crowd keeping its own `rid`)
   if (opts.scene) {
     // A clearing in the road: no crowd within earshot of the scene. Later encounters keep their own streams (`rid`), so nothing else changes.
     const x = 760 + opts.scene.t * span;
@@ -135,14 +151,14 @@ export function planLevel(seed: number, beat?: SimBeat, opts: PlanOptions = {}):
   }
   if (beat && STAGED_BEATS.includes(beat.id)) {
     // Placed at a fixed point of the field (there is one route), never rolled; the other encounters keep their own streams.
-    const t = beat.early ? BEAT_T_EARLY : BEAT_T;
+    const t = beat.early ? BEAT_T_EARLY : beatT(seed);
     const x = 760 + t * span;
     let at = 0;
     while (at < plan.length && plan[at].x <= x) at++;
     plan.splice(at, 0, { x, y: WORLD_H / 2 + 10, size: 0, line: false, t, beat: beat.id, rid: BEAT_STREAM });
   }
   // Mini-bosses: one around the middle of every field, and (with heat) a second later on. Placed after everything else, in a spot the scene and the beat have not cleared for themselves.
-  const minis: number[] = [0.5];
+  const minis: number[] = [MINI_FROM + (MINI_TO - MINI_FROM) * rngFloat(createRng(seed, ELITE_STREAM + 1))];
   if (rngFloat(createRng(seed, ELITE_STREAM)) < heatElites(opts.heat ?? 0)) minis.push(0.78);
   for (const t of minis) {
     const x = 760 + t * span;
