@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node tools/dev.mjs",
+    "dev:server": "pnpm --dir ../server-geometry dev",
     "kill": "pkill -f \"node tools/[d]ev.mjs\" && echo \"dev servers stopped\" || echo \"no dev servers running\"",
     "build": "node tools/build.mjs",
     "typecheck": "tsc --noEmit",
@@ -17,5 +18,8 @@
     "@types/node": "^26.6.4",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "server-geometry-client": "link:../server-geometry/client"
   }
 }

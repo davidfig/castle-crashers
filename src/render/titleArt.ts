@@ -166,8 +166,8 @@ export function titleToggleRects(): { sound: { x: number; y: number; w: number; 
   };
 }
 
-/** The title. `cont`: a saved run can be continued (shown above the prompt, with where it was). */
-export function drawTitle(b: Batcher, S: Sprites, tick: number, cont?: string): void {
+/** The title. `cont`: a saved run can be continued (shown above the prompt, with where it was). `online`: the lobby server is there to play on (docs/08). */
+export function drawTitle(b: Batcher, S: Sprites, tick: number, cont?: string, online?: boolean): void {
   if (!(tick > 0)) tick = 0; // a first frame can arrive with a NaN or negative tick; the animation indices below need a non-negative one
   const L = titleLayout();
   sky(b, S, tick, L);
@@ -198,6 +198,12 @@ export function drawTitle(b: Batcher, S: Sprites, tick: number, cont?: string): 
     const w = storyWidth(line) + 24, x = Math.round((VIEW_W - w) / 2);
     b.drawScaled(S.px, x, VIEW_H - 54, w, 18, hex(0x000000, 0.7));
     drawStory(b, S, line, x + 12, VIEW_H - 50, GLASS.Y);
+  }
+  if (online) {
+    const line = 'O: play online with friends';
+    const w = storyWidth(line) + 24, x = Math.round((VIEW_W - w) / 2), y = cont ? VIEW_H - 76 : VIEW_H - 54;
+    b.drawScaled(S.px, x, y, w, 18, hex(0x000000, 0.7));
+    drawStory(b, S, line, x + 12, y + 4, GLASS.Y);
   }
   if (promptOn(tick)) {
     const w = storyWidth(prompt) + 24, x = Math.round((VIEW_W - w) / 2);

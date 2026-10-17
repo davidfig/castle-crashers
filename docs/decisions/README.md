@@ -28,3 +28,4 @@ What gets easier, what gets harder.
 | [0003](0003-non-blocking-ui.md) | UI never blocks gameplay during a run | Accepted |
 | [0004](0004-float-sim-and-characters.md) | Float (double) sim with discipline; renown per character | Accepted |
 | [0005](0005-horde-scale-battlefield.md) | Horde-scale battlefield presentation | Accepted |
+| [0006](0006-online-through-server-geometry.md) | Online play through server-geometry, host-authoritative | Accepted |

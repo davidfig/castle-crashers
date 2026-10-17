@@ -28,7 +28,7 @@ import { FrameStats } from './platform/perf';
 import { botInput } from './sim/bot';
 import { Pilot } from './ai/pilot';
 import { resolveSkill } from './ai/skill';
-import { Btn } from './sim/input';
+import { Btn, type InputFrame } from './sim/input';
 import { Phase, joinParty, leaveParty, resetHero } from './sim/state';
 import { Kind, allocEntity } from './sim/entities';
 import { demoSpecial, demoStandoff, parseDemo } from './data/skillDemo';
@@ -63,6 +63,11 @@ import { rerollTitle } from './render/titleLayout';
 import { Barks } from './render/barks';
 import { RoadCast } from './render/roadCast';
 import type { SimBeat } from './sim/gen/level';
+import { OnlineLobby } from './platform/net/onlineLobby';
+import { HostLink } from './platform/net/hostLink';
+import { GuestLink } from './platform/net/guestLink';
+import { serverUrl, type RoomClient } from './platform/net/lobby';
+import type { StartInfo } from './platform/net/wire';
 
 function fail(msg: string): never {
   const el = document.getElementById('err');
@@ -98,8 +103,9 @@ let lastPhase: number = Phase.Playing;
 for (const type of ['keydown', 'pointerdown'] as const) window.addEventListener(type, (e) => {
   audio.unlock();
   const k = e as KeyboardEvent;
-  if (type !== 'keydown' || k.repeat) return;
-  if (k.code === 'KeyM') { audio.setMusic(!audio.musicOn); titleKeyHandled = true; } // N / M work anywhere; on the title they must not also start the game
+  if (type !== 'keydown' || k.repeat || mode === 'online') return; // (the online lobby types friend codes, M and N among them)
+  if (k.code === 'KeyO' && mode === 'title' && serverUrl()) { titleKeyHandled = true; openLobby(); } // O on the title: play online (docs/08)
+  else if (k.code === 'KeyM') { audio.setMusic(!audio.musicOn); titleKeyHandled = true; } // N / M work anywhere; on the title they must not also start the game
   else if (k.code === 'KeyN') { audio.setSound(!audio.soundOn); titleKeyHandled = true; }
 });
 
@@ -220,7 +226,7 @@ const ledgerLoad = loadLedger(runStore, () => (Date.now() & 0xffffffff) >>> 0);
 let ledger: Ledger = ledgerLoad.ledger;
 function keepLedger(next: Ledger): void { ledger = next; if (ledgerLoad.writable) saveLedger(runStore, ledger); }
 function keepProfile(next: Profile): void { profile = next; if (profileLoad.writable) saveProfile(runStore, profile); }
-type Mode = 'title' | 'run' | 'summary';
+type Mode = 'title' | 'run' | 'summary' | 'online';
 let mode: Mode = 'title';
 let cfg: RunConfig = devConfig(seed);
 let retreated = false;
@@ -339,10 +345,10 @@ const AUTOSAVE_TICKS = 600;
 let lastSaveTick = -Infinity;
 let lastCalm = -2;
 let savedChoices = 0;
-function titleScreen(): Screen { rerollTitle(); return { kind: 'title', cont: savedRun ? describeRunSave(savedRun) : undefined }; }
+function titleScreen(): Screen { rerollTitle(); return { kind: 'title', cont: savedRun ? describeRunSave(savedRun) : undefined, online: serverUrl() !== null }; }
 /** Saves the run being played, if it can be continued later (a run on the one road, still going). */
 function saveRun(): void {
-  if (mode !== 'run' || !sim.road || sim.phase !== Phase.Playing || demo) return;
+  if (mode !== 'run' || !sim.road || sim.phase !== Phase.Playing || demo || online?.role === 'guest') return; // (a guest follows the host's run, which is the host's to save)
   const save = makeRunSave(sim, { seed: cfg.seed, total: route.total, heat: runHeat }, Date.now(), sim.road.choices, cast.heard);
   if (writeRunSave(runSaveStore, save)) savedRun = save;
   lastSaveTick = sim.tick;
@@ -422,6 +428,7 @@ function resumeView(): ResumeView {
 /** Save and quit: back to the title, the run kept to continue. */
 function saveAndQuit(): void {
   saveRun();
+  leaveOnline(); // a host going ends the run for the guests; the saved run can be continued alone
   resume = null;
   tutorial = null;
   input.reset();
@@ -457,7 +464,7 @@ function startRun(c: RunConfig): void {
   savedChoices = 0;
   beginSim();
   // A new player's first field opens with the controls tutorial (once the party has left the town). Dev: ?tutorial=1 plays it on any run, ?tutorial=0 never.
-  const wantTutorial = __DEV__ && params.has('tutorial') ? params.get('tutorial') !== '0' : !devRun && !tutorialSeen(browserStore());
+  const wantTutorial = online ? false : __DEV__ && params.has('tutorial') ? params.get('tutorial') !== '0' : !devRun && !tutorialSeen(browserStore());
   if (wantTutorial && at === 0) {
     if (sim.road?.town) tutorialAfterTown = true;
     else { tutorial = createTutorial(); sim.tutorialHold = true; }
@@ -466,7 +473,7 @@ function startRun(c: RunConfig): void {
 }
 
 /** Common to every run's start (new or continued): fresh effects, barks and end state. */
-function beginSim(): void {
+function beginSim(sync = true): void {
   tutorial = null;
   fx = new Fx();
   input.restartRequested = false; input.quitRequested = false;
@@ -474,7 +481,7 @@ function beginSim(): void {
   endTicks = 0;
   barks.reset();
   cast.reset(sim);
-  input.sample().forEach((f, k) => { sim.players[k].rawPrev = f.buttons; }); // a button still held from the title is not a trade
+  if (sync) input.sample().forEach((f, k) => { sim.players[k].rawPrev = f.buttons; }); // a button still held from the title is not a trade (a guest's sim is the host's: it is not touched)
 }
 
 /** A new run: it opens in the starting town, where the party is chosen by walking in (data/town.ts). */
@@ -490,12 +497,13 @@ function restart(): void {
 }
 
 function finishRun(): void {
-  if (sim.road) { clearRunSave(runSaveStore); savedRun = undefined; } // the run is over: nothing to continue
+  const guest = online?.role === 'guest'; // a guest's own saved run, Ledger and renown are not touched by the host's run
+  if (sim.road && !guest) { clearRunSave(runSaveStore); savedRun = undefined; } // the run is over: nothing to continue
   const sum = summarizeEnd(sim, retreated, route.index, route.total);
   // the Ledger hears what played (a run that never left the town, and a dev run, tell it nothing)
-  if (sim.road && !devRun && !sim.road.town) keepLedger(applyRunSummary(ledger, summarizeRoadRun(sim, pendingBeat(ledger), retreated, cast.heard)));
+  if (sim.road && !devRun && !sim.road.town && !guest) keepLedger(applyRunSummary(ledger, summarizeRoadRun(sim, pendingBeat(ledger), retreated, cast.heard)));
   screen = runEndScreen(sum, cfg.chapter);
-  if (sim.road && screen.kind === 'text') {
+  if (sim.road && screen.kind === 'text' && !guest) {
     // renown for the run, kept in the profile for the town to spend
     const earned = renownFor({ cleared: sum.cleared, bosses: sim.road.bosses, kills: sum.kills, won: sum.outcome === 'won', setOut: !sim.road.town });
     keepProfile(withRun(profile, sim.road.renown + earned, sim.road.meta, sim.road.trees));
@@ -515,7 +523,7 @@ function followRoad(): void {
   const r = sim.road!;
   if (tutorialAfterTown && !r.town) { tutorialAfterTown = false; tutorial = createTutorial(); sim.tutorialHold = true; }
   // the town spent renown (or built a place): keep it, whatever becomes of the run
-  if (r.renown !== profile.renown || metaRanks(profile).some((v, i) => v !== r.meta[i]) || JSON.stringify(profile.trees ?? null) !== JSON.stringify(treesToProfile(r.trees))) keepProfile(withRun(profile, r.renown, r.meta, r.trees));
+  if (online?.role !== 'guest' && (r.renown !== profile.renown || metaRanks(profile).some((v, i) => v !== r.meta[i]) || JSON.stringify(profile.trees ?? null) !== JSON.stringify(treesToProfile(r.trees)))) keepProfile(withRun(profile, r.renown, r.meta, r.trees));
   if (r.choices.length !== paintedChoices) { paintedChoices = r.choices.length; applyScenery(cfg.seed, route.total, r); }
   if (sim.sceneIndex !== roadScene) { roadScene = sim.sceneIndex; cast.reset(sim); } // the next road scene along the way
   if (r.level !== route.index) { route.index = r.level; route.plan = levelPlan(cfg.seed, r.level, route.total); cfg = { ...cfg, chapter: r.chapter || route.plan.chapter }; }
@@ -574,16 +582,112 @@ function storeView(): StoreView {
   };
 }
 
+// ---- Online play (docs/08-multiplayer.md): the shared lobby server (../server-geometry) keeps the rooms and relays; the host's browser runs the
+// one sim and the guests step a copy of it from the frames the host used (platform/net). Nothing about a run is decided anywhere else.
+let online: HostLink | GuestLink | null = null;
+let lobby: OnlineLobby | null = null;
+let onlineInfo: StartInfo | null = null;
+/** A guest has its first sim (the host's snapshot has arrived and the run is on screen). */
+let guestJoined = false;
+
+/** The online lobby (O on the title). `note` says why we are back in it (the host left, the room is gone). */
+function openLobby(note = ''): void {
+  lobby?.close();
+  lobby = new OnlineLobby(
+    (slots) => ({ seed: (Date.now() & 0xffffffff) >>> 0, total: routeTotal(), heat: runHeat, slots }),
+    beginOnline,
+    () => { lobby = null; mode = 'title'; screen = titleScreen(); },
+    note,
+  );
+  mode = 'online';
+  screen = lobby.view();
+}
+
+/** The host started the run: the host builds it, a guest waits for the host's snapshot of it. */
+function beginOnline(room: RoomClient, info: StartInfo): void {
+  onlineInfo = info;
+  guestJoined = false;
+  room.onHostLeft = () => { leaveOnline(); openLobby('The host left, so the run is over.'); };
+  room.onError = (why) => { leaveOnline(); openLobby(why); };
+  input.reset();
+  input.claim(0, input.menuSource); // the device that is playing here holds this browser's one player
+  if (room.isHost) {
+    online = new HostLink(room, info, () => sim);
+    runHeat = info.heat;
+    startRun(devConfig(info.seed));
+    lobby = null;
+  } else {
+    online = new GuestLink(room, info, () => (guestJoined ? sim : null), joinFromSnapshot);
+  }
+}
+
+/** A guest's sim from the host's snapshot: the first one brings the run up (art, scenery, route), later ones put a drifted copy right. */
+function joinFromSnapshot(text: string): ReturnType<typeof createSim> | null {
+  const info = onlineInfo;
+  let restored: ReturnType<typeof restore>;
+  try { restored = restore(text); } catch (err) { console.warn('The host\'s run could not be restored:', err); return null; }
+  if (!info) return null;
+  if (!guestJoined) {
+    seed = info.seed;
+    runHeat = info.heat;
+    applyCast(seed);
+    applyFolk(seed);
+    applyParty(seed);
+    applyScenery(seed, info.total, restored.road ?? undefined);
+    paintedChoices = restored.road?.choices.length ?? 0;
+    const level = restored.road?.level ?? 0;
+    const plan = levelPlan(seed, level, info.total);
+    cfg = { seed, chapter: restored.road?.chapter || plan.chapter };
+    cast.heard.clear();
+    route = { index: level, total: info.total, plan, store: false };
+    tutorialAfterTown = false;
+    resume = null;
+    sim = restored;
+    roadScene = -1;
+    beginSim(false);
+    guestJoined = true;
+    lobby = null;
+    mode = 'run';
+  } else {
+    sim = restored;
+    roadScene = -1;
+  }
+  if (sim.road) followRoad();
+  return restored;
+}
+
+/** Gives up the seat: a host going ends the room's run, a guest just leaves. */
+function leaveOnline(): void {
+  const o = online;
+  online = null;
+  guestJoined = false;
+  lobby?.close();
+  lobby = null;
+  if (!o) return;
+  if (o.role === 'host') o.room.send({ t: 'end' });
+  o.room.leave();
+}
+
+/** Which of the local devices' slots a hint is for: online this browser has one player, wherever its hero sits in the party. */
+const hintSlot = (k: number): number => (online ? (k === online.mySlot ? 0 : -1) : k);
+
 function menuUpdate(): void {
   const { ok, any, sound, music, cont } = input.consumeMenu();
   if (sound) audio.setSound(!audio.soundOn);
   if (music) audio.setMusic(!audio.musicOn);
   if (any) audio.unlock(); // a pad press is not a user gesture to the browser, but costs nothing to try
-  if (mode === 'summary' && ok) { mode = 'title'; screen = titleScreen(); }
+  if (mode === 'online') {
+    lobby?.update(performance.now());
+    if (online?.role === 'guest' && !guestJoined) online.play(input.sample()[0], advance); // (asks the host for the run until it arrives)
+    if (lobby) screen = lobby.view();
+  }
+  else if (mode === 'summary' && ok) { leaveOnline(); mode = 'title'; screen = titleScreen(); }
   else if (mode === 'title' && cont && savedRun) continueRun();
   else if (mode === 'title' && any && !titleKeyHandled) startRoadRun();
   titleKeyHandled = false;
 }
+
+window.addEventListener('keydown', (e) => { if (mode === 'online' && !e.repeat) lobby?.key(e.code); });
 
 if (devRun) {
   const c = devConfig(seed);
@@ -592,42 +696,59 @@ if (devRun) {
   startRun(c);
 } else { mode = 'title'; screen = titleScreen(); }
 
+/** One tick of the run: the sim steps with `frames`, then everything that follows the road, saves and trades hangs off it. */
+function advance(frames: InputFrame[]): void {
+  const evFrom = sim.events.n;
+  step(sim, frames);
+  if (online?.role === 'host') online.after(sim);
+  if (sim.road) followRoad();
+  if (sim.road && sim.phase === Phase.Playing) {
+    const calm = sim.road.calm;
+    if (sim.tick - lastSaveTick >= AUTOSAVE_TICKS || (calm >= 0 && calm !== lastCalm) || sim.road.choices.length !== savedChoices) { saveRun(); savedChoices = sim.road.choices.length; }
+    lastCalm = calm;
+  }
+  if (tutorial) { updateTutorial(tutorial, sim, frames); if (tutorial.over) endTutorial(); }
+  // The goods on the ground and the quest-givers: the sim trades (sim/shop.ts); here only the words shown after a press.
+  if (route.store) {
+    noteTrades(evFrom);
+    if (frameTick > shopNoteUntil) { shopNote = undefined; giftNote = undefined; }
+    if (frameTick > questNoteUntil) questNote = undefined;
+  }
+}
+
 startLoop({
   tickRate: TICK_RATE,
   timeScale: () => (__DEV__ ? ((window as unknown as { __ts?: number }).__ts ?? 1) : 1),
+  stepHidden: () => online !== null, // an online run goes on in a hidden tab, and a guest waiting for it keeps asking (platform/loop.ts)
   update() {
     frameTick++;
     if (mode !== 'run') { menuUpdate(); return; }
     if (resume) { resumeUpdate(); return; } // a continued run holds until the players are back
-    if (input.quitRequested) { input.quitRequested = false; if (sim.road && sim.phase === Phase.Playing) { saveAndQuit(); return; } }
+    if (input.quitRequested) {
+      input.quitRequested = false;
+      if (online?.role === 'guest') { leaveOnline(); input.reset(); mode = 'title'; screen = titleScreen(); return; } // a guest just walks away
+      if (sim.road && sim.phase === Phase.Playing) { saveAndQuit(); return; }
+    }
     if (input.restartRequested) {
-      if (devRun) { restart(); return; }
-      retreated = true; // abandoning the road is a retreat
-      finishRun();
-      return;
+      if (online?.role === 'guest') input.restartRequested = false; // the retreat is the host's to call
+      else {
+        if (devRun) { restart(); return; }
+        retreated = true; // abandoning the road is a retreat
+        finishRun();
+        return;
+      }
     }
     const frames = input.sample();
-    for (const k of botSlots) {
-      if (pilotSkill) pilotFor(k).drive(sim, frames[k], route.store ? { allDone: [...pilots.values()].every((q) => q.storeDone && sim.players[q.slot].pending === 0) } : undefined);
-      else botInput(sim, k, frames[k]);
-      if (k > 0 && sim.tick === 3) frames[k].buttons |= Btn.Join;
-    }
-    if (demo) refillDemoHero();
-    if (calmRoad) { sim.spawnTimer = sim.flankTimer = 1e9; sim.nextClump = sim.plan.length; }
-    const evFrom = sim.events.n;
-    step(sim, frames);
-    if (sim.road) followRoad();
-    if (sim.road && sim.phase === Phase.Playing) {
-      const calm = sim.road.calm;
-      if (sim.tick - lastSaveTick >= AUTOSAVE_TICKS || (calm >= 0 && calm !== lastCalm) || sim.road.choices.length !== savedChoices) { saveRun(); savedChoices = sim.road.choices.length; }
-      lastCalm = calm;
-    }
-    if (tutorial) { updateTutorial(tutorial, sim, frames); if (tutorial.over) endTutorial(); }
-    // The goods on the ground and the quest-givers: the sim trades (sim/shop.ts); here only the words shown after a press.
-    if (route.store) {
-      noteTrades(evFrom);
-      if (frameTick > shopNoteUntil) { shopNote = undefined; giftNote = undefined; }
-      if (frameTick > questNoteUntil) questNote = undefined;
+    if (online?.role === 'guest') online.play(frames[0], advance); // this player's input goes to the host; the sim steps with the frames the host used
+    else {
+      for (const k of botSlots) {
+        if (pilotSkill) pilotFor(k).drive(sim, frames[k], route.store ? { allDone: [...pilots.values()].every((q) => q.storeDone && sim.players[q.slot].pending === 0) } : undefined);
+        else botInput(sim, k, frames[k]);
+        if (k > 0 && sim.tick === 3) frames[k].buttons |= Btn.Join;
+      }
+      if (demo) refillDemoHero();
+      if (calmRoad) { sim.spawnTimer = sim.flankTimer = 1e9; sim.nextClump = sim.plan.length; }
+      advance(online?.role === 'host' ? online.frames(sim, frames[0]) : frames);
     }
     if (sim.phase === Phase.Playing) return;
     if (devRun && route.total === 1) return; // an entered seed of one level: the banner stays until R
@@ -679,8 +800,8 @@ startLoop({
       cast,
       endPrompt: routed ? 'ATTACK TO CONTINUE' : undefined,
       hideEndBanner: false,
-      levelKeys: sim.players.map((_, k) => input.levelHint(k)),
-      storeHints: sim.road?.town ? sim.players.map((_, k) => input.interactHint(k)) : campShown(sim) ? sim.players.map((_, k) => (nearWare(sim, k) >= 0 || nearOffer(sim, k) >= 0 || nearGift(sim, k) >= 0 ? input.interactHint(k) : '')) : undefined,
+      levelKeys: sim.players.map((_, k) => input.levelHint(hintSlot(k))),
+      storeHints: sim.road?.town ? sim.players.map((_, k) => input.interactHint(hintSlot(k))) : campShown(sim) ? sim.players.map((_, k) => (nearWare(sim, k) >= 0 || nearOffer(sim, k) >= 0 || nearGift(sim, k) >= 0 ? input.interactHint(hintSlot(k)) : '')) : undefined,
       questView: campShown(sim) ? questView() : undefined, // (from the moment the camp is near, so its people are in place before the party arrives)
       storeView: campShown(sim) ? storeView() : undefined,
       routeLabel: sim.road?.town ? `THE TOWN  ${route.total} LEVELS AHEAD` : route.total > 1 ? (route.store ? `STORE  LEVEL ${route.index + 1} OF ${route.total}` : `LEVEL ${route.index + 1} OF ${route.total}`) : undefined,
@@ -700,6 +821,7 @@ if (__DEV__) {
   w.cast = () => cast;
   (w as unknown as { tutorial: () => Tutorial | null }).tutorial = () => tutorial;
   w.sprites = sprites;
+  (w as unknown as { online: () => unknown }).online = () => ({ link: online, lobby, guestJoined }); // dev aid: inspect online play from the console
   Object.defineProperty(w, 'fx', { get: () => fx }); // (the run replaces it, so hand out the live one)
   (w as unknown as { stats: typeof stats }).stats = stats;
 }

@@ -5,3 +5,6 @@ declare module '*.png' {
   const src: string;
   export default src;
 }
+
+/** The lobby server's address baked into a production build (`SERVER=https://... pnpm build`); absent in dev and tests. */
+declare const __SERVER__: string | undefined;

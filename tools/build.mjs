@@ -9,6 +9,6 @@ await esbuild.build({
   target: 'es2022',
   format: 'esm',
   loader: { '.png': 'dataurl' },
-  define: { __DEV__: 'false' },
+  define: { __DEV__: 'false', __SERVER__: JSON.stringify(process.env.SERVER ?? '') },
   logLevel: 'info',
 });

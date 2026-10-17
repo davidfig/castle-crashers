@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      server-geometry-client:
+        specifier: link:../server-geometry/client
+        version: link:../server-geometry/client
     devDependencies:
       '@types/node':
         specifier: ^26.6.4

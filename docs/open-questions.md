@@ -41,6 +41,6 @@ Track undecided items here. When resolved, move to an ADR in [decisions](decisio
 - [ ] Palette: master palette selection (e.g. start from an existing open palette or craft our own).
 
 ## Networking (deferred)
-- [ ] Host-auth vs rollback vs lockstep (see [08](08-multiplayer.md)).
-- [ ] Signaling hosting (serverless function vs. small relay).
+- [x] **Host-auth with a deterministic follower, through server-geometry's relay** ([ADR-0006](decisions/0006-online-through-server-geometry.md)). Rollback/prediction for a guest's own hero is the open follow-up.
+- [x] Signaling hosting: the shared `server-geometry` Worker (rooms, matchmaking, relay).
 - [ ] Cross-play of profile/renown in online sessions.

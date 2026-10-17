@@ -13,3 +13,4 @@
   - Generated scenery, biomes and the road: `docs/17-generated-scenery.md`, `docs/21-the-road.md`
   - Generated people: `docs/19-generated-humans.md`; generated heroes (class kit always drawn): `docs/20-generated-heroes.md`
   - Settled choices and their reasons: `docs/decisions/`; undecided things: `docs/open-questions.md`
+  - Online play (shared lobby server `../server-geometry`, host's browser runs the run, guests follow its frames), `src/platform/net/`: `docs/08-multiplayer.md`, `docs/decisions/0006-online-through-server-geometry.md`. **Anything that changes the sim must go through the frames the host sends**: online, state changed outside `step` (as the tutorial or a dev aid does) desyncs the guests. `pnpm dev:server` runs the lobby server (:8787); don't start it yourself, ask the user.
